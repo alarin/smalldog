@@ -1,0 +1,35 @@
+controller_manager:
+  ros__parameters:
+    update_rate: 200  # Hz
+
+    joint_state_broadcaster:
+      type: joint_state_broadcaster/JointStateBroadcaster
+
+    smalldog_controller:
+      type: joint_trajectory_controller/JointTrajectoryController
+
+
+smalldog_controller:
+  ros__parameters:
+    joints:
+      - fl_roll
+      - fl_pitch
+      - fl_knee
+      - fr_roll
+      - fr_pitch
+      - fr_knee
+      - rl_roll
+      - rl_pitch
+      - rl_knee
+      - rr_roll
+      - rr_pitch
+      - rr_knee
+
+    command_interfaces:
+      - position
+
+    state_interfaces:
+      - position
+
+    allow_partial_joints_goal: false
+    open_loop_control: true

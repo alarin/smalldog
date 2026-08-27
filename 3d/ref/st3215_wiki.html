@@ -1,0 +1,994 @@
+<!DOCTYPE html>
+<html class="client-nojs" lang="en" dir="ltr">
+<head>
+<meta charset="UTF-8"/>
+<title>ST3215 Servo - Waveshare Wiki</title>
+<script>document.documentElement.className="client-js";RLCONF={"wgBreakFrames":!1,"wgSeparatorTransformTable":["",""],"wgDigitTransformTable":["",""],"wgDefaultDateFormat":"dmy","wgMonthNames":["","January","February","March","April","May","June","July","August","September","October","November","December"],"wgRequestId":"c0ef872fd73ce2607d34c9b9","wgCSPNonce":!1,"wgCanonicalNamespace":"","wgCanonicalSpecialPageName":!1,"wgNamespaceNumber":0,"wgPageName":"ST3215_Servo","wgTitle":"ST3215 Servo","wgCurRevisionId":110300,"wgRevisionId":110300,"wgArticleId":11326,"wgIsArticle":!0,"wgIsRedirect":!1,"wgAction":"view","wgUserName":null,"wgUserGroups":["*"],"wgCategories":[],"wgPageContentLanguage":"en","wgPageContentModel":"wikitext","wgRelevantPageName":"ST3215_Servo","wgRelevantArticleId":11326,"wgIsProbablyEditable":!1,"wgRelevantPageIsProbablyEditable":!1,"wgRestrictionEdit":[],"wgRestrictionMove":[]};RLSTATE={"ext.gadget.tabber":"ready","site.styles":"ready","noscript":"ready"
+,"user.styles":"ready","user":"ready","user.options":"loading","mediawiki.toc.styles":"ready","skins.tweeki.styles":"ready","skins.tweeki.bootstraptheme.styles":"ready","skins.tweeki.externallinks.styles":"ready","skins.tweeki.awesome.styles":"ready"};RLPAGEMODULES=["site","mediawiki.page.startup","mediawiki.page.ready","mediawiki.toc","ext.FancyBoxThumbs","ext.HighlightjsIntegration","skins.tweeki.messages","skins.tweeki.scripts"];</script>
+<script>(RLQ=window.RLQ||[]).push(function(){mw.loader.implement("user.options@1hzgi",function($,jQuery,require,module){/*@nomin*/mw.user.tokens.set({"patrolToken":"+\\","watchToken":"+\\","csrfToken":"+\\"});
+});});</script>
+<link rel="stylesheet" href="/w/Uy8Yw0y/aAdkk0o.php?lang=en&amp;modules=mediawiki.toc.styles%7Cskins.tweeki.awesome.styles%7Cskins.tweeki.bootstraptheme.styles%7Cskins.tweeki.externallinks.styles%7Cskins.tweeki.styles&amp;only=styles&amp;skin=tweeki"/>
+<script async="" src="/w/Uy8Yw0y/aAdkk0o.php?lang=en&amp;modules=startup&amp;only=scripts&amp;raw=1&amp;skin=tweeki"></script>
+<meta name="ResourceLoaderDynamicStyles" content=""/>
+<link rel="stylesheet" href="/w/Uy8Yw0y/aAdkk0o.php?lang=en&amp;modules=ext.gadget.tabber&amp;only=styles&amp;skin=tweeki"/>
+<link rel="stylesheet" href="/w/Uy8Yw0y/aAdkk0o.php?lang=en&amp;modules=site.styles&amp;only=styles&amp;skin=tweeki"/>
+<meta name="generator" content="MediaWiki 1.35.5"/>
+<meta property="og:image" content="https://www.waveshare.com/w/upload/5/5f/ST3215_Servo.png"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<link rel="shortcut icon" href="/w/favicon.ico"/>
+<link rel="search" type="application/opensearchdescription+xml" href="/w/opensearch_desc.php" title="Waveshare Wiki (en)"/>
+<link rel="EditURI" type="application/rsd+xml" href="https://www.waveshare.com/w/api.php?action=rsd"/>
+<link rel="alternate" type="application/atom+xml" title="Waveshare Wiki Atom feed" href="/w/index.php?title=Special:RecentChanges&amp;feed=atom"/>
+<!--[if lt IE 9]><script src="/w/resources/lib/html5shiv/html5shiv.js"></script><![endif]-->
+</head>
+<body class="mediawiki ltr sitedir-ltr mw-hide-empty-elt ns-0 ns-subject page-ST3215_Servo rootpage-ST3215_Servo skin-tweeki action-view tweeki-animateLayout tweeki-non-advanced tweeki-user-anon">			<!-- navbar -->
+			<div id="mw-navigation" class="navbar navbar-default navbar-fixed-top navbar-expand-lg fixed-top navbar-light bg-light" role="navigation">
+				<h2>Navigation menu</h2>
+				<div id="mw-head" class="navbar-inner">
+					<div class="container">
+
+						<div class="navbar-header">
+							<button type="button" class="navbar-toggle" data-toggle="collapse" data-target=".navbar-collapse">
+								<span class="sr-only">Toggle navigation</span>
+								<span class="icon-bar"></span>
+								<span class="icon-bar"></span>
+								<span class="icon-bar"></span>
+							</button>
+
+							<a href="/wiki/Main_Page" class="navbar-brand"><img src="https://www.waveshare.com/w/upload/a/a7/Ws-watermark-en.svg" alt="Waveshare Wiki" /></a>
+						</div>
+
+						<div id="navbar" class="navbar-collapse collapse">
+													<ul class="nav navbar-nav">
+							<li class="nav"><a href="#" id="n-raspberry-pi" class="dropdown-toggle" data-toggle="dropdown">Raspberry Pi <b class="caret"></b></a><ul class="dropdown-menu " role="menu"><li id="n-main_page.2523rpi-boards"><a href="/wiki/Main_Page#RPi-Boards" tabindex="-1">Boards/Kits</a></li><li id="n-main_page.2523rpi-displays"><a href="/wiki/Main_Page#RPi-Displays" tabindex="-1">Displays</a></li><li id="n-main_page.2523rpi-cameras"><a href="/wiki/Main_Page#RPi-Cameras" tabindex="-1">Cameras</a></li><li id="n-main_page.2523rpi-expansions"><a href="/wiki/Main_Page#RPi-Expansions" tabindex="-1">Expansions</a></li><li id="n-main_page.2523rpi-laptops"><a href="/wiki/Main_Page#RPi-Laptops" tabindex="-1">All-in-one</a></li><li id="n-main_page.2523rpi-robots"><a href="/wiki/Main_Page#RPi-Robots" tabindex="-1">Robots</a></li><li id="n-main_page.2523rpi-games"><a href="/wiki/Main_Page#RPi-Games" tabindex="-1">Portable Gaming</a></li><li id="n-main_page.2523rpi-acces"><a href="/wiki/Main_Page#RPi-Acces" tabindex="-1">Accessories</a></li><li id="n-main_page.2523android-linux-boards"><a href="/wiki/Main_Page#Android-Linux-Boards" tabindex="-1">Other Android/Linux Boards</a></li></ul></li><li class="nav"><a href="#" id="n-ai" class="dropdown-toggle" data-toggle="dropdown">AI <b class="caret"></b></a><ul class="dropdown-menu " role="menu"><li id="n-main_page.2523jetson-ai-boards"><a href="/wiki/Main_Page#Jetson-AI-Boards" tabindex="-1">Boards/Kits</a></li><li id="n-main_page.2523jetson-ai-displays"><a href="/wiki/Main_Page#Jetson-AI-Displays" tabindex="-1">Displays</a></li><li id="n-main_page.2523jetson-ai-cameras"><a href="/wiki/Main_Page#Jetson-AI-Cameras" tabindex="-1">Cameras</a></li><li id="n-main_page.2523jetson-ai-hat"><a href="/wiki/Main_Page#Jetson-AI-HAT" tabindex="-1">Expansions</a></li><li id="n-main_page.2523jetson-ai-robots"><a href="/wiki/Main_Page#Jetson-AI-Robots" tabindex="-1">Robots</a></li></ul></li><li class="nav"><a href="#" id="n-displays" class="dropdown-toggle" data-toggle="dropdown">Displays <b class="caret"></b></a><ul class="dropdown-menu " role="menu"><li id="n-main_page.2523display-lcd-oleds"><a href="/wiki/Main_Page#Display-LCD-OLEDs" tabindex="-1">LCD/OLED</a></li><li id="n-main_page.2523display-e-paper"><a href="/wiki/Main_Page#Display-e-Paper" tabindex="-1">e-Paper</a></li></ul></li><li class="nav"><a href="#" id="n-iot" class="dropdown-toggle" data-toggle="dropdown">IoT <b class="caret"></b></a><ul class="dropdown-menu " role="menu"><li id="n-main_page.2523long-range-wireless-comm"><a href="/wiki/Main_Page#Long-range-wireless-comm" tabindex="-1">Long Range Wireless</a></li><li id="n-main_page.2523short-range-wireless-comm"><a href="/wiki/Main_Page#Short-range-wireless-comm" tabindex="-1">Short Range Wireless</a></li><li id="n-main_page.2523wired-communication"><a href="/wiki/Main_Page#Wired-communication" tabindex="-1">Wired Comm / Converter</a></li><li id="n-main_page.2523misc-cameras-av"><a href="/wiki/Main_Page#Misc-cameras-av" tabindex="-1">Cameras / Audio / Video</a></li><li id="n-main_page.2523misc-sensor-modules"><a href="/wiki/Main_Page#Misc-sensor-modules" tabindex="-1">Sensors</a></li><li id="n-main_page.2523misc-servos-motors"><a href="/wiki/Main_Page#Misc-servos-motors" tabindex="-1">Motors / Servos</a></li><li id="n-main_page.2523misc-other-modules"><a href="/wiki/Main_Page#Misc-other-modules" tabindex="-1">others</a></li></ul></li><li class="nav"><a href="#" id="n-robotics" class="dropdown-toggle" data-toggle="dropdown">Robotics <b class="caret"></b></a><ul class="dropdown-menu " role="menu"><li id="n-main_page.2523robotics-cars"><a href="/wiki/Main_Page#Robotics-cars" tabindex="-1">Mobile Robots</a></li><li id="n-main_page.2523dog-like-robots"><a href="/wiki/Main_Page#Dog-like-Robots" tabindex="-1">Dog-like Robots</a></li><li id="n-main_page.2523robotics-drivers-sensors"><a href="/wiki/Main_Page#Robotics-drivers-sensors" tabindex="-1">Drivers / Sensors</a></li><li id="n-main_page.2523robotics-robot-arms"><a href="/wiki/Main_Page#Robotics-robot-arms" tabindex="-1">Robot Arm / Control</a></li></ul></li><li class="nav"><a href="#" id="n-mcu.252Ffpga" class="dropdown-toggle" data-toggle="dropdown">MCU/FPGA <b class="caret"></b></a><ul class="dropdown-menu " role="menu"><li id="n-main_page.2523arduino-main-boards"><a href="/wiki/Main_Page#Arduino-main-boards" tabindex="-1">Arduino</a></li><li id="n-main_page.2523micro.253Abit"><a href="/wiki/Main_Page#micro:bit" tabindex="-1">micro:bit</a></li><li id="n-main_page.2523mcu.2farm" class="LPC"><a href="/wiki/Main_Page#MCU.2FARM" tabindex="-1">STM32</a></li><li id="n-main_page.2523fpga"><a href="/wiki/Main_Page#FPGA" tabindex="-1">FPGA</a></li></ul></li><li class="nav"><a href="https://service.waveshare.com" id="n-https.253A.252F.252Fservice.waveshare.com" rel="nofollow" target="_blank">Support</a></li>							</ul>
+						
+													<ul class="nav navbar-nav navbar-right">
+							</ul>
+				<form class="navbar-form navbar-right" action="/w/index.php" id="searchform">
+					<div class="form-group"><input type="search" name="search" placeholder="Product name search" title="Search Waveshare Wiki [f]" accesskey="f" id="searchInput" class="search-query form-control"/><input type="submit" name="go" value="Go" title="Go to a page with this exact name if it exists" id="mw-searchButton" class="searchButton btn hidden"/>
+					</div>
+				</form><ul class="nav navbar-nav navbar-right">							</ul>
+						</div>
+						
+					</div>
+				</div>
+			</div>
+			<!-- /navbar -->
+					<div id="mw-page-base"></div>
+			<div id="mw-head-base"></div>
+			<a id="top"></a>
+
+			<!-- content -->
+			<div id="contentwrapper" class="user-loggedout not-editable container with-navbar with-navbar-fixed">
+
+				
+				<div class="row">
+					<div class="col-md-offset-2 col-md-10" role="main">
+								<div class="mw-body" id="content">
+			<div id="mw-js-message" style="display:none;"></div>
+									<h1 id="firstHeading" class="firstHeading page-header" lang="en"><span dir="auto">ST3215 Servo</span></h1>
+									<!-- bodyContent -->
+			<div id="bodyContent">
+								<div id="siteSub">From Waveshare Wiki</div>
+								<div id="contentSub"></div>
+												<div id="jump-to-nav" class="mw-jump">
+					Jump to:					<a href="#mw-navigation">navigation</a>, 					<a href="#p-search">search</a>
+				</div>
+				<div id="mw-content-text" lang="en" dir="ltr" class="mw-content-ltr"><div class="mw-parser-output"><div class="wiki-pages jet-green-color">
+<table id="infotable" class="a-r at-c roundy bgd-green bl-white" style="margin-left: 5px; margin-bottom: 5px; width: 30%;">
+
+<tbody><tr>
+<td>
+<table class="at-c roundy" style="background: transparent;width:100%;">
+
+<tbody><tr>
+<td class="at-c textwhite"><b>ST3215 Servo</b>
+</td></tr>
+<tr>
+<td class="at-c bgwhite" style="margin:5px;"><a href="https://www.waveshare.com/st3215-servo.htm" target="_blank" rel="nofollow noreferrer noopener"><img alt="ST3215 Servo.png" src="/w/upload/5/5f/ST3215_Servo.png" decoding="async" loading="lazy" width="400" height="341" /></a><br /><br /><small>TTL bus servo interface</small>
+</td></tr></tbody></table>
+</td></tr>
+<tr style="display:none;">
+<td>
+<table class="roundy" style="background: transparent;width:100%;">
+
+<tbody><tr>
+<td class="at-c textwhite"><b>{{{name2}}}</b>
+</td></tr>
+<tr>
+<td class="at-c bgwhite" style="margin:5px;"><br />
+</td></tr></tbody></table>
+</td></tr>
+<tr style="display:none;">
+<td>
+<table class="roundy" style="background: transparent;width:100%;">
+
+<tbody><tr>
+<td class="at-c textwhite"><b>{{{name3}}}</b>
+</td></tr>
+<tr>
+<td class="at-c bgwhite" style="margin:5px;"><br />
+</td></tr></tbody></table>
+</td></tr>
+<tr style="display:none;">
+<td>
+<table class="roundy" style="background: transparent;width:100%;">
+
+<tbody><tr>
+<td class="at-c textwhite"><b>{{{name4}}}</b>
+</td></tr>
+<tr>
+<td class="at-c bgwhite" style="margin:5px;"><br />
+</td></tr></tbody></table>
+</td></tr>
+<tr style="display:none;">
+<td>
+<table class="roundy" style="background: transparent;width:100%;">
+
+<tbody><tr>
+<td class="at-c textwhite"><b>{{{name5}}}</b>
+</td></tr>
+<tr>
+<td class="at-c bgwhite" style="margin:5px;"><br />
+</td></tr></tbody></table>
+</td></tr>
+<tr style="display:none;">
+<td>
+<table class="roundy" style="background: transparent;width:100%;">
+
+<tbody><tr>
+<td class="at-c textwhite"><b>{{{name6}}}</b>
+</td></tr>
+<tr>
+<td class="at-c bgwhite" style="margin:5px;"><br />
+</td></tr></tbody></table>
+</td></tr>
+<tr>
+<td>
+<table class="roundy" style="display:none;">
+<tbody><tr>
+<td style="width:2%;">
+</td>
+<td style="width:3%;">
+</td>
+<th colspan="2" width="90%" class="at-c roundytop bgl-white">Primary Attribute
+</th>
+<td style="width:3%;">
+</td>
+<td style="width:2%;">
+</td></tr>
+<tr>
+<td colspan="6" width="90px" class="at-c roundytl roundytr bgwhite b-green" style="border-width: 0 0 1px 0;"><b>Category:</b> <a href="/wiki/Category:Expansions" title="Category:Expansions">Expansions</a>, <a href="/wiki/Category:Raspberry_Pi" title="Category:Raspberry Pi">Raspberry Pi</a>
+</td></tr>
+<tr style="display:none;">
+<th colspan="3" width="90px" class="at-r bgwhite b-green" style="border-width: 0 0 1px 0;">{{{userDefinedInfo}}}:
+</th>
+<td colspan="3" class="at-l b-green bgwhite" style="border-width: 0 0 1px 0;">{{{userdefinedvalue}}}
+</td></tr>
+<tr style="display:none;">
+<td colspan="6" width="90px" class="at-c roundybl roundybr bgwhite"><b>Brand:</b> Waveshare
+</td></tr></tbody></table>
+</td></tr>
+<tr>
+<td>
+<table class="a-r roundy" style="display:none;">
+<tbody><tr>
+<td style="width:2%;">
+</td>
+<td style="width:3%;">
+</td>
+<th colspan="2" width="90%" class="at-c roundytop bgl-white">Website
+</th>
+<td style="width:3%;">
+</td>
+<td style="width:2%;">
+</td></tr>
+<tr>
+<td colspan="6" width="90px" class="at-c roundytl roundytr bgwhite b-green" style="border-width: 0 0 1px 0;"><b>International:</b> <a target="_blank" rel="nofollow noreferrer noopener" class="external text" href="https://www.waveshare.com/st3215-servo.htm">Website</a>
+</td></tr>
+<tr>
+<td colspan="6" width="90px" class="at-c roundybl roundybr bgwhite"><b>Chinese:</b> <a target="_blank" rel="nofollow noreferrer noopener" class="external text" href="https://www.waveshare.net/shop/ST3215-Servo.htm">官网</a>
+</td></tr></tbody></table>
+</td></tr>
+<tr style="display:none;">
+<td>
+<table class="a-r roundy" style="background: transparent; border-collapse:collapse;width:100%;display:none;">
+<tbody><tr>
+<td style="width:2%;">
+</td>
+<td style="width:3%;">
+</td>
+<th colspan="2" width="90%" class="at-c roundytop bgl-white">Onboard Interfaces
+</th>
+<td style="width:3%;">
+</td>
+<td style="width:2%;">
+</td></tr>
+<tr>
+<td colspan="6" width="90px" class="at-l roundy bgwhite b-green" style="border-width: 0 0 1px 0;">
+<table class="roundy bgwhite fulltable" style="text-align:center;">
+
+<tbody><tr>
+<td class="roundy bl-gray bw-1" style="width:25%;display:none;"><small></small>
+</td>
+<td class="roundy bl-gray bw-1" style="width:25%;display:none;"><small></small>
+</td>
+<td class="roundy bl-gray bw-1" style="width:25%;display:none;"><small></small>
+</td>
+<td class="roundy bl-gray bw-1" style="width:25%;display:none;"><small></small>
+</td></tr>
+<tr>
+<td class="roundy bl-gray bw-1" style="width:25%;display:none;"><small></small>
+</td>
+<td class="roundy bl-gray bw-1" style="width:25%;display:none;"><small></small>
+</td>
+<td class="roundy bl-gray bw-1" style="width:25%;display:none;"><small></small>
+</td>
+<td class="roundy bl-gray bw-1" style="width:25%;display:none;"><small></small>
+</td></tr>
+<tr>
+<td class="roundy bl-gray bw-1" style="width:25%;display:none;"><small></small>
+</td>
+<td class="roundy bl-gray bw-1" style="width:25%;display:none;"><small></small>
+</td>
+<td class="roundy bl-gray bw-1" style="width:25%;display:none;"><small></small>
+</td>
+<td class="roundy bl-gray bw-1" style="width:25%;display:none;"><small></small>
+</td></tr>
+<tr>
+<td class="roundy bl-gray bw-1" style="width:25%;display:none;"><small></small>
+</td>
+<td class="roundy bl-gray bw-1" style="width:25%;display:none;"><small></small>
+</td>
+<td class="roundy bl-gray bw-1" style="width:25%;display:none;"><small></small>
+</td>
+<td class="roundy bl-gray bw-1" style="width:25%;display:none;"><small></small>
+</td></tr>
+<tr>
+<td class="roundy bl-gray bw-1" style="width:25%;display:none;"><small></small>
+</td>
+<td class="roundy bl-gray bw-1" style="width:25%;display:none;"><small></small>
+</td>
+<td class="roundy bl-gray bw-1" style="width:25%;display:none;"><small></small>
+</td>
+<td class="roundy bl-gray bw-1" style="width:25%;display:none;"><small></small>
+</td></tr></tbody></table>
+</td></tr></tbody></table>
+</td></tr>
+<tr style="display:none;">
+<td>
+<table class="a-r roundy" style="background: transparent; border-collapse:collapse;width:100%;;display:none;">
+<tbody><tr>
+<td style="width:2%;">
+</td>
+<td style="width:3%;">
+</td>
+<th colspan="2" width="90%" class="at-c roundytop bgl-white">Related Products
+</th>
+<td style="width:3%;">
+</td>
+<td style="width:2%;">
+</td></tr>
+<tr>
+<td colspan="6" width="90px" class="at-l roundy bgwhite b-green" style="border-width: 0 0 1px 0;">
+</td></tr></tbody></table>
+</td></tr></tbody></table>
+<div id="toc" class="toc" role="navigation" aria-labelledby="mw-toc-heading"><input type="checkbox" role="button" id="toctogglecheckbox" class="toctogglecheckbox" style="display:none" /><div class="toctitle" lang="en" dir="ltr"><h2 id="mw-toc-heading">Contents</h2><span class="toctogglespan"><label class="toctogglelabel" for="toctogglecheckbox"></label></span></div>
+<ul>
+<li class="toclevel-1 tocsection-1"><a href="#Overview"><span class="tocnumber">1</span> <span class="toctext">Overview</span></a>
+<ul>
+<li class="toclevel-2 tocsection-2"><a href="#Specification"><span class="tocnumber">1.1</span> <span class="toctext">Specification</span></a></li>
+<li class="toclevel-2 tocsection-3"><a href="#Feature"><span class="tocnumber">1.2</span> <span class="toctext">Feature</span></a></li>
+<li class="toclevel-2 tocsection-4"><a href="#How_to_Use_the_Hardware"><span class="tocnumber">1.3</span> <span class="toctext">How to Use the Hardware</span></a></li>
+<li class="toclevel-2 tocsection-5"><a href="#How_to_Use_the_Software"><span class="tocnumber">1.4</span> <span class="toctext">How to Use the Software</span></a>
+<ul>
+<li class="toclevel-3"><a href="#ST_Servo"><span class="tocnumber">1.4.1</span> <span class="toctext">ST Servo</span></a></li>
+<li class="toclevel-3 tocsection-6"><a href="#Compile_Arduino_IDE"><span class="tocnumber">1.4.2</span> <span class="toctext">Compile Arduino IDE</span></a>
+<ul>
+<li class="toclevel-4"><a href="#Install_Arduino_IDE"><span class="tocnumber">1.4.2.1</span> <span class="toctext">Install Arduino IDE</span></a></li>
+<li class="toclevel-4"><a href="#Download_the_Program_.26_Install_Dependency_Libraries"><span class="tocnumber">1.4.2.2</span> <span class="toctext">Download the Program &amp; Install Dependency Libraries</span></a></li>
+<li class="toclevel-4"><a href="#Upload_Demo"><span class="tocnumber">1.4.2.3</span> <span class="toctext">Upload Demo</span></a></li>
+</ul>
+</li>
+<li class="toclevel-3"><a href="#Product_Usage_Tutorial"><span class="tocnumber">1.4.3</span> <span class="toctext">Product Usage Tutorial</span></a>
+<ul>
+<li class="toclevel-4"><a href="#Secondary_Development_Tutorial"><span class="tocnumber">1.4.3.1</span> <span class="toctext">Secondary Development Tutorial</span></a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toclevel-1 tocsection-7"><a href="#Resources"><span class="tocnumber">2</span> <span class="toctext">Resources</span></a>
+<ul>
+<li class="toclevel-2 tocsection-8"><a href="#3D_Module"><span class="tocnumber">2.1</span> <span class="toctext">3D Module</span></a></li>
+<li class="toclevel-2 tocsection-9"><a href="#2D_Drawing"><span class="tocnumber">2.2</span> <span class="toctext">2D Drawing</span></a></li>
+<li class="toclevel-2 tocsection-10"><a href="#Document"><span class="tocnumber">2.3</span> <span class="toctext">Document</span></a></li>
+<li class="toclevel-2 tocsection-11"><a href="#Demo"><span class="tocnumber">2.4</span> <span class="toctext">Demo</span></a></li>
+<li class="toclevel-2 tocsection-12"><a href="#Software"><span class="tocnumber">2.5</span> <span class="toctext">Software</span></a></li>
+<li class="toclevel-2 tocsection-13"><a href="#Open_Source_Structure"><span class="tocnumber">2.6</span> <span class="toctext">Open Source Structure</span></a></li>
+<li class="toclevel-2 tocsection-14"><a href="#Customer_Case"><span class="tocnumber">2.7</span> <span class="toctext">Customer Case</span></a>
+<ul>
+<li class="toclevel-3 tocsection-15"><a href="#Rebelia_Robot_Arm"><span class="tocnumber">2.7.1</span> <span class="toctext">Rebelia Robot Arm</span></a></li>
+</ul>
+</li>
+<li class="toclevel-2 tocsection-16"><a href="#Project_Resources"><span class="tocnumber">2.8</span> <span class="toctext">Project Resources</span></a></li>
+</ul>
+</li>
+<li class="toclevel-1 tocsection-17"><a href="#FAQ"><span class="tocnumber">3</span> <span class="toctext">FAQ</span></a></li>
+<li class="toclevel-1 tocsection-18"><a href="#Support"><span class="tocnumber">4</span> <span class="toctext">Support</span></a></li>
+</ul>
+</div>
+
+<h1><span class="mw-headline" id="Overview">Overview</span></h1>
+<p>As a high-torque programmable serial bus servo, it is equipped with a 360° high-precision magnetic encoder, which can realize 360-degree absolute angle control. With the program to control, any angles can be set as the middle of the position, and it can also be switched to the continuously rotating motor or stepper motor mode. The built-in acceleration start-stop function makes the action softer. There are two interfaces on each servo, which can be used in series. In theory, 253 bus servos can be controlled at the same time, and each servo can obtain its current angle, load, voltage, mode, and so on. It is suitable for robot projects, such as robotic arms, hexapod walkers, humanoid robots, wheeled robots and so on, which require real-time feedback for closed-loop control.<br />
+At the same time, we provide an open-source 12-DOF robot dog model for this servo. You can download the model and project files of the open-source structure in <a href="#Resources">Resources</a>.
+</p>
+<h2><span class="mw-headline" id="Specification">Specification</span></h2>
+<ul><li>Input Voltage: 6-12.6V</li>
+<li>Mechanical Limited Angle: No Limit</li>
+<li>Rotating Angle: 360° (servo mode angle control) / motor mode continuous rotation</li>
+<li>Baudrate: 1Mbps</li>
+<li>Gear: high-precision metal gear</li>
+<li>No load Speed: 0.222sec/60°（45RPM）@12V</li>
+<li>Pos Sensor Resolution: 360°/4096</li>
+<li>ID Range: 0-253</li>
+<li>Feedback: Position, Load, Speed, Input Voltage</li>
+<li>No load Current: 200 mA</li>
+<li>Locked-rotor Current: 2.7 A</li>
+<li>Dimension: 45.22mm x 35mm x 24.72mm</li></ul>
+<h2><span class="mw-headline" id="Feature">Feature</span></h2>
+<ul><li>Up to 253 servos can be connected in series at the same time (requires full power), and also can obtain feedback information from each servo.</li>
+<li>360°magnetic encoder, larger angle control range.</li>
+<li>High precision, the angle control accuracy reaches 360°/4096.</li>
+<li>Any angles can be set as the middle of the position, which is convenient for assembly.</li>
+<li>Acceleration start and stop function, the movement effect is softer.</li>
+<li>Compact structure design and the product appearance are more beautiful.</li>
+<li>6-12.6V wide-voltage input, it can directly supply power with the 2s or 3s lithium battery.</li>
+<li>High torque, up to 30kg.cm@12V.</li>
+<li>The working mode can be set by the program: servo angle control/motor model can be rotated continuously.</li></ul>
+<h2><span class="mw-headline" id="How_to_Use_the_Hardware">How to Use the Hardware</span></h2>
+<ul><li>You can use our <a target="_blank" rel="nofollow noreferrer noopener" class="external text" href="https://www.waveshare.com/servo-driver-with-esp32.htm">Servo Driver</a> to control the bus servo.</li>
+<li>If you want to use the bus servo in your project, you can refer to the following schematic diagram: <a target="_blank" rel="nofollow noreferrer noopener" class="external text" href="https://www.waveshare.com/w/upload/d/d3/Bus_servo_control_circuit.pdf">Bus servo drive circuit schematic</a>.</li></ul>
+<h2><span class="mw-headline" id="How_to_Use_the_Software">How to Use the Software</span></h2>
+<h3><span class="mw-headline" id="ST_Servo">ST Servo</span></h3>
+<p>Generally, we control the ST series servos by compiling and uploading the demo through the Arduino IDE. However, compiling through Arduino requires installing various dependency libraries before use. Therefore, we provide an ESP32 download tool. With this tool, users can download the demo to the driver board without needing to download other dependency libraries or the Arduino IDE software.
+</p>
+<ul><li>Click <a target="_blank" rel="nofollow noreferrer noopener" class="external text" href="https://files.waveshare.com/wiki/Servo-Driver-with-ESP32/SERVO_DRIVER_WITH_ESP32_ST_FACTORY.rar">here</a> to download ESP32 Flash Download Tool. Once downloaded, extract the files and double-click on the "flash_download_tool_3.9.5.exe" program. After opening, two windows will appear. The UI interface of the download tool is the one you need to operate, while the other window serves as a terminal to display the working status of the download tool.</li>
+<li>In the "DOWNLOAD TOOL MODE" interface, select Chip Type as ESP32 and WorkMode as Factory. When using Factory to call the binary file, it will use a relative path, eliminating the need for users to manually input the binary file path. After making these selections, click OK.</li></ul>
+<p><a href="/wiki/File:ST3020_SERVO_esp.png" class="image"><img alt="ST3020 SERVO esp.png" src="/w/upload/e/e4/ST3020_SERVO_esp.png" decoding="async" loading="lazy" width="300" height="222" /></a>
+</p>
+<ul><li>In this software interface, keep the "LockSettings" option checked. On the right side, you can simultaneously upload demos to 8 driver boards. Next, connect the servo driver board to the computer using a USB cable. Click on "COM" and select the newly appeared COM port (in my case, it's COM3). BAUD is used to set the download speed, higher values result in faster speeds, with the ESP32 supporting speeds up to 921600.</li></ul>
+<p><a href="/wiki/File:ST3020_SERVO_esp2.png" class="image"><img alt="ST3020 SERVO esp2.png" src="/w/upload/5/57/ST3020_SERVO_esp2.png" decoding="async" loading="lazy" width="1000" height="556" /></a>
+</p>
+<ul><li>After selecting, click START to begin uploading the demo. Once the upload is complete, "IDLE" will change to "FINISH". After completing this process, you can disconnect the USB connection between the servo driver board and the computer. Then, connect the servos to the servo driver board, provide power to the driver board, and start controlling the ST series servos.</li></ul>
+<p><a href="/wiki/File:ST3020_SERVO_esp4.png" class="image"><img alt="ST3020 SERVO esp4.png" src="/w/upload/7/7a/ST3020_SERVO_esp4.png" decoding="async" loading="lazy" width="381" height="150" /></a><a href="/wiki/File:ST3020_SERVO_esp3.png" class="image"><img alt="ST3020 SERVO esp3.png" src="/w/upload/0/0f/ST3020_SERVO_esp3.png" decoding="async" loading="lazy" width="383" height="154" /></a>
+</p>
+<h3><span class="mw-headline" id="Compile_Arduino_IDE">Compile Arduino IDE</span></h3>
+<ul><li>We provide ST3215-compatible servo demo for <a target="_blank" rel="nofollow noreferrer noopener" class="external text" href="https://www.waveshare.com/servo-driver-with-esp32.htm">Servo Driver </a>, you can use it at <a target="_blank" rel="nofollow noreferrer noopener" class="external text" href="https://www.waveshare.com/servo-driver-with-esp32.htm">Servo Driver </a> to download <a target="_blank" rel="nofollow noreferrer noopener" class="external text" href="https://files.waveshare.com/upload/d/d8/ST_Servo.zip">open-source demo (Arduino)</a> to control the ST series servos, the following steps:</li></ul>
+<h4><span class="mw-headline" id="Install_Arduino_IDE">Install Arduino IDE</span></h4>
+<ul><li>You can directly click this <a target="_blank" rel="nofollow noreferrer noopener" class="external text" href="https://downloads.arduino.cc/arduino-1.8.19-windows.exe">link</a> to download the Arduino IDE from <a target="_blank" rel="nofollow noreferrer noopener" class="external text" href="https://www.arduino.cc/">Arduino.cc</a>.</li></ul>
+<ol>
+<li>
+Download the latest Arduino IDE 2.1.0 package from <a target="_blank" rel="nofollow noreferrer noopener" class="external text" href="https://www.arduino.cc/">Arduino website</a>. The official IDE supports different operating systems, just download it according to your operating system. The one I downloaded here is for Windows. (If you have already installed it, just skip to the second step) The installation process is very simple, just keep clicking next step.
+<br />
+<a href="/wiki/File:Arduino_IDE_2.1.0.png" class="image"><img alt="Arduino IDE 2.1.0.png" src="/w/upload/b/bb/Arduino_IDE_2.1.0.png" decoding="async" loading="lazy" width="600" height="317" /></a><br />
+<font color="#FF0000"><b>Note: It will prompt you to install the driver during installation, you can click to install.</b></font> 
+</li>
+</ol>
+<ol>
+<li>
+Open Arduino IDE, click the File on the left corner and choose "Preferences".<br />
+<a href="/wiki/File:RoArm-M1_Manual01.png" class="image"><img alt="RoArm-M1 Manual01.png" src="/w/upload/a/a8/RoArm-M1_Manual01.png" decoding="async" loading="lazy" width="431" height="346" /></a>
+</li>
+<li>
+Add the following link in the additional development board manager URL, then click OK.<br />
+<pre>https://dl.espressif.com/dl/package_esp32_index.json</pre>
+<p><a href="/wiki/File:RoArm-M1_Manual02.png" class="image"><img alt="RoArm-M1 Manual02.png" src="/w/upload/thumb/f/fd/RoArm-M1_Manual02.png/600px-RoArm-M1_Manual02.png" decoding="async" loading="lazy" width="600" height="405" srcset="/w/upload/f/fd/RoArm-M1_Manual02.png 1.5x" /></a><br />
+<font color="#FF0000"><b> Note: If you need to add more than one development board URL, it is not necessary to delete the URL of the ESP32 development board support, you can directly add the other URL to another line, the default display is comma separated URL. </b></font>For example, if you need to add the URL of the ESP8266 development board, add it directly to another line, it will be displayed as follows:
+</p>
+<pre>https://dl.espressif.com/dl/package_esp32_index.json，http://arduino.esp8266.com/stable/package_esp8266com_index.json
+</pre>
+<p><a href="/wiki/File:RoArm-M1_Manual03.png" class="image"><img alt="RoArm-M1 Manual03.png" src="/w/upload/thumb/e/e3/RoArm-M1_Manual03.png/600px-RoArm-M1_Manual03.png" decoding="async" loading="lazy" width="600" height="401" srcset="/w/upload/e/e3/RoArm-M1_Manual03.png 1.5x" /></a><br /><a href="/wiki/File:RoArm-M1_Manual04.png" class="image"><img alt="RoArm-M1 Manual04.png" src="/w/upload/thumb/3/37/RoArm-M1_Manual04.png/600px-RoArm-M1_Manual04.png" decoding="async" loading="lazy" width="600" height="403" srcset="/w/upload/3/37/RoArm-M1_Manual04.png 1.5x" /></a><br />
+</p>
+</li>
+<li>
+Download the <a target="_blank" rel="nofollow noreferrer noopener" class="external text" href="https://files.waveshare.com/upload/7/70/Packages.rar">package</a>, and copy the unzipped packages files to the following path:<br />
+<pre>C:\Users\username\AppData\Local\Arduino15</pre>
+<p>The "username" here would vary according to your computer's username, copy the unzipped packages file to the Arduino15 folder.<br />
+<a href="/wiki/File:L76K_GPS_Module_ESP32204.jpg" class="image"><img alt="L76K GPS Module ESP32204.jpg" src="/w/upload/e/e4/L76K_GPS_Module_ESP32204.jpg" decoding="async" loading="lazy" width="600" height="244" /></a>
+</p>
+</li>
+</ol>
+<h4><span id="Download_the_Program_&amp;_Install_Dependency_Libraries"></span><span class="mw-headline" id="Download_the_Program_.26_Install_Dependency_Libraries">Download the Program &amp; Install Dependency Libraries</span></h4>
+<ul><li>Please install the following libraries through Manage Libraries:
+<ul><li>Adafruit SSD1306</li>
+<li>Adafruit NeoPixel</li></ul></li>
+<li>Click Tools &gt; Manage Libraries to open the library manager.</li></ul>
+<p><a href="/wiki/File:QQ_screenshot_20211130115318.png" class="image"><img alt="QQ screenshot 20211130115318.png" src="/w/upload/thumb/c/c1/QQ_screenshot_20211130115318.png/500px-QQ_screenshot_20211130115318.png" decoding="async" loading="lazy" width="500" height="350" srcset="/w/upload/c/c1/QQ_screenshot_20211130115318.png 1.5x" /></a>
+</p>
+<ul><li>Enter the libraries that need to be installed through the library manager in the search box, and install:
+<ul><li>Adafruit SSD1306</li>
+<li>Adafruit NeoPixel</li></ul></li>
+<li>Click "Update", and if there is no "Update", please click "Install" for the newest version.</li></ul>
+<p><a href="/wiki/File:QQ_screenshot_20211130135130.png" class="image"><img alt="QQ screenshot 20211130135130.png" src="/w/upload/thumb/f/fa/QQ_screenshot_20211130135130.png/500px-QQ_screenshot_20211130135130.png" decoding="async" loading="lazy" width="500" height="279" srcset="/w/upload/thumb/f/fa/QQ_screenshot_20211130135130.png/750px-QQ_screenshot_20211130135130.png 1.5x, /w/upload/f/fa/QQ_screenshot_20211130135130.png 2x" /></a>
+<a href="/wiki/File:QQ_screenshot_20211130135223.png" class="image"><img alt="QQ screenshot 20211130135223.png" src="/w/upload/thumb/1/15/QQ_screenshot_20211130135223.png/500px-QQ_screenshot_20211130135223.png" decoding="async" loading="lazy" width="500" height="289" srcset="/w/upload/thumb/1/15/QQ_screenshot_20211130135223.png/750px-QQ_screenshot_20211130135223.png 1.5x, /w/upload/1/15/QQ_screenshot_20211130135223.png 2x" /></a>
+</p>
+<ul><li>Download the bus servo library and the Arduino program for the servo driver board:</li>
+<li><a target="_blank" rel="nofollow noreferrer noopener" class="external text" href="https://files.waveshare.com/upload/d/d8/ST_Servo.zip">ServoDriverST Open Source Program (Arduino)</a></li>
+<li>After downloading, unzip it, and you can get two file folders:
+<ul><li>"ServoDriverST": control ST series servo demo</li>
+<li>"SCServo": control servo library</li></ul></li>
+<li>Copy the SCServo folder to \Documents\Arduino\libraries after decompression, and install them for controlling the servo.</li></ul>
+<h4><span class="mw-headline" id="Upload_Demo">Upload Demo</span></h4>
+<p>1. Double-click on ServoDriverST.ino:<br />
+<a href="/wiki/File:Upload_Servo_demo01.png" class="image"><img alt="Upload Servo demo01.png" src="/w/upload/b/bc/Upload_Servo_demo01.png" decoding="async" loading="lazy" width="476" height="255" /></a><br />
+2. Click on "Tools" -&gt; "Port", please remember the COM port on your PC, and do not click on this COM port (COM1 is the port on my PC, different computers show different COMs). <br />
+<a href="/wiki/File:Upload_Servo_demo02.png" class="image"><img alt="Upload Servo demo02.png" src="/w/upload/7/7f/Upload_Servo_demo02.png" decoding="async" loading="lazy" width="600" height="406" /></a><br />
+3. Connect the serial bus servo with the PC with a USB cable, click on "Tools" -&gt; "Port", and then click on the new COM port (here is COM10):<br />
+<a href="/wiki/File:Upload_Servo_demo03.png" class="image"><img alt="Upload Servo demo03.png" src="/w/upload/2/22/Upload_Servo_demo03.png" decoding="async" loading="lazy" width="600" height="430" /></a><br />
+4. In Arduino IDE, click on "Tools" -&gt; "Board:'ESP32 Dev Module" -&gt; "esp32" -&gt; "ESP32 Dev Module".<br />
+<a href="/wiki/File:Upload_Servo_demo04.png" class="image"><img alt="Upload Servo demo04.png" src="/w/upload/5/54/Upload_Servo_demo04.png" decoding="async" loading="lazy" width="800" height="331" /></a><br />
+5. Click on "Tools", and the other settings as shown below: (it is recommended to set "Huge APP" for "Partition Scheme", and "PSARM" must be enabled).<br />
+<a href="/wiki/File:Upload_Servo_demo05.png" class="image"><img alt="Upload Servo demo05.png" src="/w/upload/3/32/Upload_Servo_demo05.png" decoding="async" loading="lazy" width="476" height="205" /></a><br />
+6. After setting, click to upload, and the demo will be uploaded to the device.<br />
+<a href="/wiki/File:Upload_Servo_demo06.png" class="image"><img alt="Upload Servo demo06.png" src="/w/upload/0/09/Upload_Servo_demo06.png" decoding="async" loading="lazy" width="540" height="274" /></a><br />
+After uploading, "Leaving... Hard resetting via RTS pin..." indicates the successful uploading.
+</p>
+<h3><span class="mw-headline" id="Product_Usage_Tutorial">Product Usage Tutorial</span></h3>
+<ul><li>The following tutorial uses <a target="_blank" rel="nofollow noreferrer noopener" class="external text" href="https://www.waveshare.com/servo-driver-with-esp32.htm">servo driver</a> by default to explain how to use the servo, if you need to use it in your own project, you can refer to the sample program and the <a target="_blank" rel="nofollow noreferrer noopener" class="external text" href="https://files.waveshare.com/upload/d/d3/Bus_servo_control_circuit.pdf">bus servo drive circuit schematic</a> for secondary development.</li>
+<li>The factory default ID of the servo is 1. Among the servos connected to the same servo drive board, the same ID can only correspond to one servo, and there cannot be more than one servo with the same ID in the one control circuit. When you set the ID for the servo, try to ensure that only one servo whose ID is to be changed is connected to the driver board. After the ID is changed, it will be permanently saved in the servo and will not be lost even if the power is off.</li>
+<li>First of all, you need to set an independent ID for each servo. When setting an ID for one servo, the driver board should not be connected to other servos.</li>
+<li>If you use the ST3215 servo, after connecting it to the driver board, you need to provide 6-12.6V (12V is recommended) via the DC port (5.5*2.1mm) on the board, and the port will directly power the servo. If you use a large number of servos, you need to provide enough currents for the port.</li>
+<li>After the driver board is powered on, a WiFi hotspot will be created by default. The default hotspot name is ESP32_DEV, and its password is 12345678. Please connect to this hotspot with your phone.</li>
+<li>After connecting to the hotspot issued by the servo driver board, it is recommended to use Google Chrome to access the address 192.168.4.1. Noted that the phone will fail to verify the server with ping after connecting the WiFi, so it may automatically switch to the other known WiFi. In this case, you should connect ESP32_DEV again, and the phone will not connect to other WiFi automatically after the reconnection is successful.</li>
+<li>The driver board will automatically scan the servo ID (0-20) when it is powered on (in order to save the boot time). If your servo ID is more than 20, you must change the MAX_ID value in ServoDriverST.ino and upload it to the driver board again.</li></ul>
+<p><a href="/wiki/File:ST3215-Servo-details-023.jpg" class="image"><img alt="ST3215-Servo-details-023.jpg" src="/w/upload/thumb/a/aa/ST3215-Servo-details-023.jpg/600px-ST3215-Servo-details-023.jpg" decoding="async" loading="lazy" width="600" height="588" srcset="/w/upload/thumb/a/aa/ST3215-Servo-details-023.jpg/900px-ST3215-Servo-details-023.jpg 1.5x, /w/upload/a/aa/ST3215-Servo-details-023.jpg 2x" /></a>
+</p>
+<ul><li>If the servo is connected after the driver board is powered on, you need to click <span style="background:#4247b7;color:#ffffff;margin: 2p;padding: 1px 5px;">Start Searching</span>on the mobile browser page to scan again.</li>
+<li><span style="background:black;color:#ffffff;margin: 2p;padding: 1px 5px;">Active ID</span>is the currently selected servo ID number, <span style="background:black;color:#ffffff;margin: 2p;padding: 1px 5px;">ID to Set</span>is the new ID number to be set, adjust the value of <span style="background:black;color:#ffffff;margin: 2p;padding: 1px 5px;">ID to Set</span>through <span style="background:#4247b7;color:#ffffff;margin: 2p;padding: 1px 5px;">ID to Set+</span>and<span style="background:#4247b7;color:#ffffff;margin: 2p;padding: 1px 5px;">ID to Set-</span>, and press the <span style="background:#4247b7;color:#ffffff;margin: 2p;padding: 1px 5px;">Set New ID</span> button to set the servo ID <span style="background:black;color:#ffffff;margin: 2p;padding: 1px 5px;">Active ID</span> as  <span style="background:black;color:#ffffff;margin: 2p;padding: 1px 5px;">ID to Set</span>.</li>
+<li>When the IDs of all servos are set, you can connect them all. If you do not restart the device, you need to click<span style="background:#4247b7;color:#ffffff;margin: 2p;padding: 1px 5px;">Start Searching</span>to scan all servos.</li>
+<li><span style="background:black;color:#ffffff;margin: 2p;padding: 1px 5px;">ID：</span> shows all ID numbers of servos currently connected to the servo driver board.</li>
+<li><span style="background:black;color:#ffffff;margin: 2p;padding: 1px 5px;">Active ID</span> The currently selected servo ID number, and the subsequent operations are all controlling this<span style="background:black;color:#ffffff;margin: 2p;padding: 1px 5px;">Active ID</span> servo.</li>
+<li>You can select the <span style="background:black;color:#ffffff;margin: 2p;padding: 1px 5px;">Active ID</span> servo via the <span style="background:#4247b7;color:#ffffff;margin: 2p;padding: 1px 5px;">ID to Set+</span> and <span style="background:#4247b7;color:#ffffff;margin: 2p;padding: 1px 5px;">ID to Set-</span> buttons.</li>
+<li><span style="background:#4247b7;color:#ffffff;margin: 2p;padding: 1px 5px;">Middle</span>key, you can turn the servo to the middle position, the position range of the servo is 0-4095, and the middle position is 2047.</li>
+<li><span style="background:#4247b7;color:#ffffff;margin: 2p;padding: 1px 5px;">Stop</span>key, the default program will not let the servo move all the time. If the servo cannot be stopped after the secondary development, you can press the <span style="background:#4247b7;color:#ffffff;margin: 2p;padding: 1px 5px;">Stop</span> key to hault the servo movement.</li>
+<li><span style="background:#4247b7;color:#ffffff;margin: 2p;padding: 1px 5px;">Release</span>key, press it and the servo will close torque lock (Torque Off), then you can turn the servo by hand.</li>
+<li><span style="background:#4247b7;color:#ffffff;margin: 2p;padding: 1px 5px;">Torque</span>key, after pressing the servo, the servo will turn on the torque lock (Torque On), at this time, the servo will maintain the specified position with force.</li>
+<li><span style="background:#4247b7;color:#ffffff;margin: 2p;padding: 1px 5px;">Position+</span>key, after pressing the servo, the servo will start to rotate clockwise. When the servo is in the servo mode, it will not continue to rotate after turning to the 4095 position.</li>
+<li><span style="background:#4247b7;color:#ffffff;margin: 2p;padding: 1px 5px;">Position-</span>key, after pressing the servo, the servo will start to rotate counterclockwise. When the servo is in the servo mode, it will not continue to rotate after turning to the 0 position.</li>
+<li><span style="background:#4247b7;color:#ffffff;margin: 2p;padding: 1px 5px;">Speed+</span> and <span style="background:#4247b7;color:#ffffff;margin: 2p;padding: 1px 5px;">Speed-</span> are used to set the speed of the servo. The maximum setting for ST series servos is about 3073. The speed is the number of steps per second, 50 steps/sec≈0.732RPM.</li>
+<li><span style="background:#4247b7;color:#ffffff;margin: 2p;padding: 1px 5px;">Set Middle Position</span>key, no matter what position the current servo is in, when this key is pressed, the servo will set the current position to the middle position (2047).</li>
+<li><span style="background:#4247b7;color:#ffffff;margin: 2p;padding: 1px 5px;">Set Servo Mode</span>key, set the servo to servo mode, 360° absolute angle control can be performed in the servo mode, the setting will be permanently saved and will not be lost even if the power is turned off.</li>
+<li><span style="background:#4247b7;color:#ffffff;margin: 2p;padding: 1px 5px;">Set Motor Mode</span>key, set the servo to stepper motor mode, the servo can rotate continuously 30,000 steps. If you press it continuously, the motor will keep rotating. This mode can control the relative angle within ±7 circles and the number of circles will not be saved when power is off, but the stepper motor mode settings will be permanently saved even if power is off.</li>
+<li><span style="background:#4247b7;color:#ffffff;margin: 2p;padding: 1px 5px;">Start Serial Forwarding</span>button, set the servo driver board to serial forwarding mode, you can directly control the servo and get the feedback of the servo with the typeC interface on the board. This function is used to debug the servo.</li>
+<li><span style="background:#4247b7;color:#ffffff;margin: 2p;padding: 1px 5px;">Normal</span>key, set the servo driver board to normal mode, in this mode, it will not send or receive any information via ESP-NOW.</li>
+<li><span style="background:#4247b7;color:#ffffff;margin: 2p;padding: 1px 5px;">Leader</span>key, set the servo driver board as the host, in this mode, the driver board continuously sends the ID, position, and speed of the current <span style="background:black;color:#ffffff;margin: 2p;padding: 1px 5px;">Active ID</span> servo to the driver board of the controlled slave through the ESP-NOW protocol. After the servo driver board is turned on, the <span style="background:black;color:#ffffff;margin: 2p;padding: 1px 5px;">MAC:</span>on the first line of the screen is the MAC address of this development board, which is unique, such as MAC: 08 3A F2 93 5F A8. The premise of ESP-NOW communication is to get the MAC address of the slave, please write down the address, and fill it in the broadcastAddress[] = {0x08, 0x3A, 0xF2, 0x93, 0x5F, 0xA8} of ServoDriverST.ino, then upload it to the driver of the host and the function is enabled.</li>
+<li><span style="background:#4247b7;color:#ffffff;margin: 2p;padding: 1px 5px;">Follower</span>key, set the servo drive board as the slave, after changing the MAC address of the slave in the program of the host, it can act under the remote control of the host.</li>
+<li><span style="background:#4247b7;color:#ffffff;margin: 2p;padding: 1px 5px;">RainbowON</span>and <span style="background:#4247b7;color:#ffffff;margin: 2p;padding: 1px 5px;">RainbowOFF</span>keys are used to turn on and off the rainbow effect of RGB lights.</li></ul>
+<h4><span class="mw-headline" id="Secondary_Development_Tutorial">Secondary Development Tutorial</span></h4>
+<ul><li>Servo initialization:</li></ul>
+<p>Each program for controlling the servo needs to initialize servo before it can be used.
+</p>
+<pre class="code2highlight lang-cpp">#include &lt;SCServo.h&gt;
+SMS_STS st;
+void setup(){
+Serial1.begin(1000000); //Initialize the serial port, if you use ESP32 and other devices, you can also choose a custom serial port
+// Serial1.begin(1000000, SERIAL_8N1, RX, TX); // custom serial port
+st.pSerial = &amp;Serial1;
+while(!Serial1) {}
+}</pre>
+<ul><li>Change servo ID:</li></ul>
+<p>In the servos connected in series, each ID corresponds to only one servo, otherwise the information fed back by the servos cannot be obtained normally.
+When changing the servo ID, please try to ensure that the driver board is connected to only one servo, and the ID will be permanently saved in the servo.
+</p>
+<pre class="code2highlight lang-cpp">#include &lt;SCServo.h&gt;
+SMS_STS st;
+int ID_ChangeFrom = 1; // Change the original servo ID, and the factory default is 1
+int ID_Changeto = 2; // new ID
+void setup(){
+  Serial1.begin(1000000);
+  st.pSerial = &amp;Serial1;
+  while(!Serial1) {}
+
+  st.unLockEprom(ID_ChangeFrom); //Unlock EPROM-SAFE
+  st.writeByte(ID_ChangeFrom, SMS_STS_ID, ID_Changeto);//Change ID
+  st.LockEprom(ID_Changeto); // EPROM-SAFE is locked
+}
+
+void loop(){
+}</pre>
+<ul><li>Ping:</li></ul>
+<p>Used to test whether a servo is connected normally.
+</p>
+<pre class="code2highlight lang-cpp">#include &lt;SCServo.h&gt;
+SMS_STS st;
+int TEST_ID = 3; // Servo ID to test
+void setup()
+{
+  Serial.begin(115200);
+  Serial1.begin(1000000, SERIAL_8N1, RX, TX); // custom serial port
+  st.pSerial = &amp;Serial1;
+  while(!Serial1) {}
+}
+
+void loop()
+{
+  int ID = st.Ping(TEST_ID); //Ping the servo with the given ID, and return -1 if it fails
+  if(ID!=-1){
+    Serial.print(&quot;Servo ID:&quot;);
+    Serial.println(ID, DEC);
+    delay(100);
+  }else{
+    Serial.println(&quot;Ping servo ID error!&quot;);
+    delay(2000);
+  }
+}</pre>
+<ul><li>Write position:</li></ul>
+<p>Can be used to control the rotation of individual servos.
+</p>
+<pre class="code2highlight lang-cpp">#include &lt;SCServo.h&gt;
+SMS_STS st;
+void setup()
+{
+  Serial1.begin(1000000);
+  st.pSerial = &amp;Serial1;
+  while(!Serial1) {}
+}
+
+void loop()
+{
+  st.WritePos(1, 1000, 1500, 50); // Control the servo with ID 1 to rotate to the position of 1000 at a speed of 1500 and start and stop the acceleration of 50.
+  delay(754);//[(P1-P0)/V]*1000+100
+
+  st.WritePos(1, 20, 1500, 50); // Control the servo with ID 1 to rotate to the position 20 at a speed of 1500 and start and stop the acceleration at 50.
+  delay(754);//[(P1-P0)/V]*1000+100
+}</pre>
+<ul><li>Synchronous write</li></ul>
+<p>Can be used to control multiple servos at the same time (turn to different positions and different speeds).
+</p>
+<pre class="code2highlight lang-cpp">#include &lt;SCServo.h&gt;
+SMS_STS st;
+
+// the uart used to control servos.
+// GPIO 18 - S_RXD, GPIO 19 - S_TXD, as default.
+#define S_RXD 18    //Custom IO pins of the serial port. If a custom serial port is not used, replace Serial1.begin(1000000, SERIAL_8N1, S_RXD, S_TXD); with Serial1.begin(1000000);
+#define S_TXD 19
+
+byte ID[2];
+s16 Position[2];
+u16 Speed[2];
+byte ACC[2];
+
+void setup()
+{
+  Serial1.begin(1000000, SERIAL_8N1, S_RXD, S_TXD);
+  st.pSerial = &amp;Serial1;
+  delay(1000);
+  ID[0] = 1;   // Save the IDs of the servos that need to be controlled into the ID[]
+  ID[1] = 2;   // Save the IDs of the servos that need to be controlled into the ID[]
+  Speed[0] = 3400;  // Set the servo speed, Speed[0] should correspond to the servo with ID[0]
+  Speed[1] = 3400;  // Set the servo speed, Speed[1] should correspond to the servo with ID[1] 
+  ACC[0] = 50;   // Set the start/stop acceleration. The smaller the value, the lower the acceleration. The maximum value that can be set is 150.
+  ACC[1] = 50;
+}
+
+void loop()
+{
+  Position[0] = 3000;  // Set the target position for the servo with ID[0] (which has an ID of 1) to a range of 0-4095
+  Position[1] = 3000;  // Set the target position for the servo with ID[0] (which has an ID of 1) to a range of 0-4095
+  st.SyncWritePosEx(ID, 2, Position, Speed, ACC);//servo(ID1/ID2) speed=3400，acc=50，move to position=3000.
+  delay(2000);
+
+  Position[0] = 100;
+  Position[1] = 100;
+  st.SyncWritePosEx(ID, 2, Position, Speed, ACC);//servo(ID1/ID2) speed=3400，acc=50，move to position=100.
+  delay(2000);
+}</pre>
+<ul><li>Get servo information feedback.</li></ul>
+<pre class="code2highlight lang-cpp">#define S_RXD 18
+#define S_TXD 19
+#include &lt;SCServo.h&gt;
+
+SMS_STS sms_sts;
+
+void setup()
+{
+  Serial1.begin(1000000, SERIAL_8N1, S_RXD, S_TXD);
+  Serial.begin(115200);
+  sms_sts.pSerial = &amp;Serial1;
+  delay(1000);
+}
+
+void loop()
+{
+  int Pos;
+  int Speed;
+  int Load;
+  int Voltage;
+  int Temper;
+  int Move;
+  int Current;
+  if(sms_sts.FeedBack(1)!=-1){
+    Pos = sms_sts.ReadPos(-1);
+    Speed = sms_sts.ReadSpeed(-1);
+    Load = sms_sts.ReadLoad(-1);
+    Voltage = sms_sts.ReadVoltage(-1);
+    Temper = sms_sts.ReadTemper(-1);
+    Move = sms_sts.ReadMove(-1);
+    Current = sms_sts.ReadCurrent(-1);
+    Serial.print(&quot;Position:&quot;);
+    Serial.println(Pos);
+    Serial.print(&quot;Speed:&quot;);
+    Serial.println(Speed);
+    Serial.print(&quot;Load:&quot;);
+    Serial.println(Load);
+    Serial.print(&quot;Voltage:&quot;);
+    Serial.println(Voltage);
+    Serial.print(&quot;Temper:&quot;);
+    Serial.println(Temper);
+    Serial.print(&quot;Move:&quot;);
+    Serial.println(Move);
+    Serial.print(&quot;Current:&quot;);
+    Serial.println(Current);
+    delay(10);
+  }else{
+    Serial.println(&quot;FeedBack err&quot;);
+    delay(500);
+  }
+  
+  Pos = sms_sts.ReadPos(1);  // Get the position feedback
+  if(Pos!=-1){
+    Serial.print(&quot;Servo position:&quot;);
+    Serial.println(Pos, DEC);
+    delay(10);
+  }else{
+    Serial.println(&quot;read position err&quot;);
+    delay(500);
+  }
+  
+  Voltage = sms_sts.ReadVoltage(1);   //Get the voltage feedback
+  if(Voltage!=-1){
+	Serial.print(&quot;Servo Voltage:&quot;);
+    Serial.println(Voltage, DEC);
+    delay(10);
+  }else{
+    Serial.println(&quot;read Voltage err&quot;);
+    delay(500);
+  }
+  
+  Temper = sms_sts.ReadTemper(1);   //Get the temperature feedback
+  if(Temper!=-1){
+    Serial.print(&quot;Servo temperature:&quot;);
+    Serial.println(Temper, DEC);
+    delay(10);
+  }else{
+    Serial.println(&quot;read temperature err&quot;);
+    delay(500);    
+  }
+
+  Speed = sms_sts.ReadSpeed(1);   //Get the speed feedback
+  if(Speed!=-1){
+    Serial.print(&quot;Servo Speed:&quot;);
+    Serial.println(Speed, DEC);
+    delay(10);
+  }else{
+    Serial.println(&quot;read Speed err&quot;);
+    delay(500);    
+  }
+  
+  Load = sms_sts.ReadLoad(1);   //Get the load feedback
+  if(Load!=-1){
+    Serial.print(&quot;Servo Load:&quot;);
+    Serial.println(Load, DEC);
+    delay(10);
+  }else{
+    Serial.println(&quot;read Load err&quot;);
+    delay(500);    
+  }
+  
+  Current = sms_sts.ReadCurrent(1);   //Get the current feedback
+  if(Current!=-1){
+    Serial.print(&quot;Servo Current:&quot;);
+    Serial.println(Current, DEC);
+    delay(10);
+  }else{
+    Serial.println(&quot;read Current err&quot;);
+    delay(500);    
+  }
+
+  Move = sms_sts.ReadMove(1);   //Get the movement feedback
+  if(Move!=-1){
+    Serial.print(&quot;Servo Move:&quot;);
+    Serial.println(Move, DEC);
+    delay(10);
+  }else{
+    Serial.println(&quot;read Move err&quot;);
+    delay(500);    
+  }
+  Serial.println();
+}</pre>
+<h1><span class="mw-headline" id="Resources">Resources</span></h1>
+<h2><span class="mw-headline" id="3D_Module">3D Module</span></h2>
+<ul><li><a target="_blank" rel="nofollow noreferrer noopener" class="external text" href="https://files.waveshare.com/upload/5/59/ST3215-3D.zip">ST3215 Servo STEP Module</a></li>
+<li><a target="_blank" rel="nofollow noreferrer noopener" class="external text" href="https://files.waveshare.com/upload/7/73/Servo_Driver_with_ESP32_3D.zip">Servo Driver Step Module</a></li></ul>
+<h2><span class="mw-headline" id="2D_Drawing">2D Drawing</span></h2>
+<ul><li><a target="_blank" rel="nofollow noreferrer noopener" class="external text" href="https://files.waveshare.com/upload/0/08/ST3215-2D.zip">2D Drawing</a></li></ul>
+<h2><span class="mw-headline" id="Document">Document</span></h2>
+<ul><li><a target="_blank" rel="nofollow noreferrer noopener" class="external text" href="https://files.waveshare.com/upload/d/d3/Bus_servo_control_circuit.pdf">Schematic</a></li>
+<li><a target="_blank" rel="nofollow noreferrer noopener" class="external text" href="https://files.waveshare.com/upload/f/f4/ST3215_Servo_User_Manual.pdf">User Manual</a></li>
+<li><a target="_blank" rel="nofollow noreferrer noopener" class="external text" href="https://files.waveshare.com/upload/2/27/Communication_Protocol_User_Manual-EN%28191218-0923%29.pdf">Communication Protocol User Manual</a></li>
+<li><a target="_blank" rel="nofollow noreferrer noopener" class="external text" href="https://files.waveshare.com/upload/b/b7/scservo.zip.zip">scservo</a></li>
+<li><a target="_blank" rel="nofollow noreferrer noopener" class="external text" href="https://files.waveshare.com/wiki/common/Smart%20%20Bus%20Servo%20Communication%20Protocol%20Manua.zip">Bus Servo Communication Protocol</a></li></ul>
+<h2><span class="mw-headline" id="Demo">Demo</span></h2>
+<ul><li><a target="_blank" rel="nofollow noreferrer noopener" class="external text" href="https://files.waveshare.com/upload/d/d8/ST_Servo.zip">Demo</a></li></ul>
+<h2><span class="mw-headline" id="Software">Software</span></h2>
+<ul><li><a target="_blank" rel="nofollow noreferrer noopener" class="external text" href="https://www.arduino.cc/en/Main/Software">Arduino IDE</a></li></ul>
+<h2><span class="mw-headline" id="Open_Source_Structure">Open Source Structure</span></h2>
+<p><a href="/wiki/File:WAVEGO_PRO_BETA_v3.png" class="image"><img alt="WAVEGO PRO BETA v3.png" src="/w/upload/thumb/d/d9/WAVEGO_PRO_BETA_v3.png/600px-WAVEGO_PRO_BETA_v3.png" decoding="async" loading="lazy" width="600" height="280" srcset="/w/upload/thumb/d/d9/WAVEGO_PRO_BETA_v3.png/900px-WAVEGO_PRO_BETA_v3.png 1.5x, /w/upload/thumb/d/d9/WAVEGO_PRO_BETA_v3.png/1200px-WAVEGO_PRO_BETA_v3.png 2x" /></a>
+</p>
+<ul><li><a target="_blank" rel="nofollow noreferrer noopener" class="external text" href="https://files.waveshare.com/upload/b/b5/ROBOTIC_DOG_-STEP.zip">12DOF ROBOTIC DOG STEP MODEL</a></li>
+<li><a target="_blank" rel="nofollow noreferrer noopener" class="external text" href="https://files.waveshare.com/upload/1/1d/ROBOTIC_DOG_-FUSION360.zip">12DOF Robotic Dog Fusion360 Project</a></li>
+<li><a target="_blank" rel="nofollow noreferrer noopener" class="external text" href="https://files.waveshare.com/upload/1/1a/ROBOTIC-DOG-Creo5.0.rar">12DOF ROBOTIC DOG Creo5.0 Project</a></li></ul>
+<h2><span class="mw-headline" id="Customer_Case">Customer Case</span></h2>
+<h3><span class="mw-headline" id="Rebelia_Robot_Arm">Rebelia Robot Arm</span></h3>
+<p><b>Products used:</b>
+</p>
+<ul><li><a target="_blank" rel="nofollow noreferrer noopener" class="external text" href="https://www.waveshare.com/st3215-servo.htm">ST3215 Servo bus servo</a></li>
+<li>Servo Driver with ESP32 driver board</li></ul>
+<p><b>Project introduction:</b> The Rebelia Robotic Hand is an open-source bionic robotic hand project developed by makers from the Hackday community. Flexible finger bending motion was achieved using the servo drive system and bus servos provided by us.
+<b>Project address:</b> <a target="_blank" rel="nofollow noreferrer noopener" class="external text" href="https://hackaday.io/project/204373-rebelia-robotic-hand">Hackaday address</a>
+</p>
+<h2><span class="mw-headline" id="Project_Resources">Project Resources</span></h2>
+<p>This section features third - party project resources. We merely provide links and bear no responsibility for content updates or maintenance. Thank you for your understanding.<br />
+</p><p><b>Kitajima-How to Use the ST3215 Servo Motor</b>
+<iframe width="400" height="315" src="//www.youtube.com/embed/T5T7qCg4pGE" frameborder="0" allowfullscreen=""></iframe>
+</p>
+<ul><li>Youtube&#160;: <a target="_blank" rel="nofollow noreferrer noopener" class="external text" href="https://www.youtube.com/watch?v=T5T7qCg4pGE">https://www.youtube.com/watch?v=T5T7qCg4pGE</a></li></ul>
+<h1><span class="mw-headline" id="FAQ">FAQ</span></h1>
+<div class="panel-group">
+				<div class="panel panel-default">
+					<div class="panel-heading">
+						<h4 class="panel-title">
+							<a data-toggle="collapse" data-parent="#accordion" href="#accordion1">
+								Question:  Could you please provide a complete registration list for the ST3215 series servers?
+
+							</a>
+						</h4>
+					</div>
+					<div id="accordion1" class="panel-collapse collapse in">
+						<div class="panel-body">
+<div>&#160;<b>Answer:</b></div>
+<div>
+<p>You can check the <a target="_blank" rel="nofollow noreferrer noopener" class="external text" href="https://files.waveshare.com/upload/2/27/ST3215%20memory%20register%20map-EN.xls">ST3215 series servo memory table</a>.
+</p>
+</div>
+<div style="display:none;"></div>
+<div style="display:none;"></div>
+<p><font color="red" style="display:none;">{{{5}}}</font>
+</p>
+						</div>
+					</div>
+				</div>
+</div>
+<p><br />
+</p>
+<div class="panel-group">
+				<div class="panel panel-default">
+					<div class="panel-heading">
+						<h4 class="panel-title">
+							<a data-toggle="collapse" data-parent="#accordion" href="#accordion2">
+								Question:  When using the ping.py demo, why does connecting two servos simultaneously result in incorrect status packets?
+							</a>
+						</h4>
+					</div>
+					<div id="accordion2" class="panel-collapse collapse in">
+						<div class="panel-body">
+<div>&#160;<b>Answer:</b></div>
+<div>
+<p>Because servos leave the factory with a default ID of 1. The bus does not allow servos with the same ID, as this causes ID conflicts. You need to assign a different ID to the other servo according to the servo protocol and memory table address. Remember to unlock the EPROM area before modifying parameters in the memory table; otherwise, changes will not be saved after power loss.
+</p>
+</div>
+<div style="display:none;"></div>
+<div style="display:none;"></div>
+<p><font color="red" style="display:none;"></font>
+</p>
+						</div>
+					</div>
+				</div>
+</div>
+<p><br />
+</p>
+<div class="panel-group">
+				<div class="panel panel-default">
+					<div class="panel-heading">
+						<h4 class="panel-title">
+							<a data-toggle="collapse" data-parent="#accordion" href="#accordion3">
+								Question:  Can the screws that are too long for mounting other structures on the servo come into contact with the servo body?
+							</a>
+						</h4>
+					</div>
+					<div id="accordion3" class="panel-collapse collapse in">
+						<div class="panel-body">
+<div>&#160;<b>Answer:</b></div>
+<div>
+<p>No, they cannot. If screws make contact with the servo body during tightening, it creates significant resistance. This leads to a sharp increase in the servo's current, which can ultimately cause the servo to burn out.
+</p>
+</div>
+<div style="display:none;"></div>
+<div style="display:none;"></div>
+<p><font color="red" style="display:none;"></font>
+</p>
+						</div>
+					</div>
+				</div>
+</div>
+<p><br />
+</p>
+<div class="panel-group">
+				<div class="panel panel-default">
+					<div class="panel-heading">
+						<h4 class="panel-title">
+							<a data-toggle="collapse" data-parent="#accordion" href="#accordion4">
+								Question:  What is the precise connector type of ST3215 Servo?
+
+							</a>
+						</h4>
+					</div>
+					<div id="accordion4" class="panel-collapse collapse in">
+						<div class="panel-body">
+<div>&#160;<b>Answer:</b></div>
+<div>
+<p>It is 5264/2.54 3P connector.
+</p>
+</div>
+<div style="display:none;"></div>
+<div style="display:none;"></div>
+<p><font color="red" style="display:none;">{{{5}}}</font>
+</p>
+						</div>
+					</div>
+				</div>
+</div>
+<p><br />
+</p>
+<div class="panel-group">
+				<div class="panel panel-default">
+					<div class="panel-heading">
+						<h4 class="panel-title">
+							<a data-toggle="collapse" data-parent="#accordion" href="#accordion5">
+								Question:  Can you give me an indication of the life of ST3215 in terms of cycles or hours?
+
+							</a>
+						</h4>
+					</div>
+					<div id="accordion5" class="panel-collapse collapse in">
+						<div class="panel-body">
+<div>&#160;<b>Answer:</b></div>
+<div>
+<p>There is no certain value of the life, according to the reliability testing, the life of the servo should be more than 100000 times (forward for 0.25s, stop for 0.5s backward for 0.25s, and then stop for 0.5s, take as one time).
+</p>
+</div>
+<div style="display:none;"></div>
+<div style="display:none;"></div>
+<p><font color="red" style="display:none;">{{{5}}}</font>
+</p>
+						</div>
+					</div>
+				</div>
+</div>
+<p><br />
+</p>
+<div class="panel-group">
+				<div class="panel panel-default">
+					<div class="panel-heading">
+						<h4 class="panel-title">
+							<a data-toggle="collapse" data-parent="#accordion" href="#accordion6">
+								Question:  Does servo work on half duplex or full duplex signal?
+
+							</a>
+						</h4>
+					</div>
+					<div id="accordion6" class="panel-collapse collapse in">
+						<div class="panel-body">
+<div>&#160;<b>Answer:</b></div>
+<div>
+<p>It is half duplex signal.
+</p>
+</div>
+<div style="display:none;"></div>
+<div style="display:none;"></div>
+<p><font color="red" style="display:none;">{{{5}}}</font>
+</p>
+						</div>
+					</div>
+				</div>
+</div>
+<p><br />
+</p>
+<h1><span class="mw-headline" id="Support">Support</span></h1>
+<p><br />
+<br />
+</p>
+<div style="background:linear-gradient(to bottom right,#91C942,#7DB036); border-radius:15px; width:100%;min-width:750px;">
+<div style="display:flex;flex-direction: row;align-items: flex-start;">
+<div style="flex:l; font-size:15px; width:70%; margin-top:20px; margin-bottom:20px; margin-right:40px;padding-left:40px;">
+<p style="font-size:20px; font-weight:bold;">
+Technical Support
+</p>
+<p>
+If you need technical support or have any feedback/review, please click the <b>Submit Now</b> button to submit a ticket, Our support team will check and reply to you within 1 to 2 working days. Please be patient as we make every effort to help you to resolve the issue. 
+<br /> 
+Working Time: 9 AM - 6 PM GMT+8 (Monday to Friday)
+</p>
+</div>
+<div style="margin-top:94px;">
+<div id="service" style="display:flex; flex:r; background-color:#393939; color:white; text-align:center; font-size:20px; border-radius:20px;">
+<p><a target="_blank" rel="nofollow noreferrer noopener" class="external text" href="https://service.waveshare.com/">Submit Now</a>
+</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- 
+NewPP limit report
+Cached time: 20260827151803
+Cache expiry: 0
+Dynamic content: true
+Complications: []
+CPU time usage: 0.179 seconds
+Real time usage: 0.349 seconds
+Preprocessor visited node count: 733/1000000
+Post‐expand include size: 24212/2097152 bytes
+Template argument size: 2881/2097152 bytes
+Highest expansion depth: 5/40
+Expensive parser function count: 0/100
+Unstrip recursion depth: 0/20
+Unstrip post‐expand size: 11769/5000000 bytes
+-->
+<!--
+Transclusion expansion time report (%,ms,calls,template)
+100.00%  166.095      1 -total
+ 14.51%   24.097      6 Template:FAQ
+ 14.09%   23.405      1 Template:Infobox_item
+ 12.07%   20.047      1 Template:Servicebox1
+ 10.94%   18.163      1 Template:How_to_use_the_product
+ 10.32%   17.134      1 Template:Install_Arduino_IDE
+  9.59%   15.928      1 Template:Secondary_development_tutorial
+  9.46%   15.708      1 Template:STSERVO_ESP_DOWNLOAD
+  8.88%   14.757      1 Template:Upload_Servo_demo
+  8.83%   14.660      1 Template:Download_the_program_and_install_the_dependency_library
+-->
+</div></div>								<div class="printfooter">
+				Retrieved from "<a dir="ltr" href="https://www.waveshare.com/w/index.php?title=ST3215_Servo&amp;oldid=110300">https://www.waveshare.com/w/index.php?title=ST3215_Servo&amp;oldid=110300</a>"				</div>
+												<div id="catlinks" class="catlinks catlinks-allhidden" data-mw="interface"></div>												<div class="visualClear"></div>
+							</div>
+			<!-- /bodyContent -->
+		</div>
+						</div>
+				</div>
+			</div>
+			<!-- /content -->
+
+			<!-- sidebar-left -->
+			<div class="sidebar-wrapper sidebar-left-wrapper">
+				<div class="sidebar-container container">
+					<div class="row">
+						<div id="sidebar-left" class="col-md-2 col-md-offset-0">
+							<div id="tweekiTOC"></div>						</div>
+					</div>
+				</div>
+			</div>
+			<!-- /sidebar-left -->
+					<!-- footer -->
+			<div id="footer" role="contentinfo" class="footer container footer-sticky bg-light">
+			<ul id="footer-custom"><li class="dropup"><a href="/w/index.php?title=Special:UserLogin&amp;returnto=ST3215+Servo" title="You are encouraged to log in; however, it is not mandatory [o]" accesskey="o">Login / Create Account</a></li></ul><div style="clear:both"></div>			</div>
+			<!-- /footer -->
+		
+<script>
+var fbtFancyBoxOptions = {};
+</script>
+
+<script>(RLQ=window.RLQ||[]).push(function(){mw.config.set({"wgPageParseReport":{"limitreport":{"cputime":"0.179","walltime":"0.349","ppvisitednodes":{"value":733,"limit":1000000},"postexpandincludesize":{"value":24212,"limit":2097152},"templateargumentsize":{"value":2881,"limit":2097152},"expansiondepth":{"value":5,"limit":40},"expensivefunctioncount":{"value":0,"limit":100},"unstrip-depth":{"value":0,"limit":20},"unstrip-size":{"value":11769,"limit":5000000},"timingprofile":["100.00%  166.095      1 -total"," 14.51%   24.097      6 Template:FAQ"," 14.09%   23.405      1 Template:Infobox_item"," 12.07%   20.047      1 Template:Servicebox1"," 10.94%   18.163      1 Template:How_to_use_the_product"," 10.32%   17.134      1 Template:Install_Arduino_IDE","  9.59%   15.928      1 Template:Secondary_development_tutorial","  9.46%   15.708      1 Template:STSERVO_ESP_DOWNLOAD","  8.88%   14.757      1 Template:Upload_Servo_demo","  8.83%   14.660      1 Template:Download_the_program_and_install_the_dependency_library"]},"cachereport":{"timestamp":"20260827151803","ttl":0,"transientcontent":true}}});mw.config.set({"wgBackendResponseTime":845});});</script>	<script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a31c0be6198d4b93',t:'MTc4Nzg0Mzg4MQ=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+</html>

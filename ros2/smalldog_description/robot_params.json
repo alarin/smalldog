@@ -1,0 +1,98 @@
+{
+  "joint_names": [
+    "fl_roll",
+    "fl_pitch",
+    "fl_knee",
+    "fr_roll",
+    "fr_pitch",
+    "fr_knee",
+    "rl_roll",
+    "rl_pitch",
+    "rl_knee",
+    "rr_roll",
+    "rr_pitch",
+    "rr_knee"
+  ],
+  "legs": [
+    "fl",
+    "fr",
+    "rl",
+    "rr"
+  ],
+  "sign_x": {
+    "fl": 1,
+    "fr": 1,
+    "rl": -1,
+    "rr": -1
+  },
+  "sign_y": {
+    "fl": 1,
+    "fr": -1,
+    "rl": 1,
+    "rr": -1
+  },
+  "hip_xyz_mm": {
+    "fl": [
+      90.0,
+      36.0,
+      0.0
+    ],
+    "fr": [
+      90.0,
+      -36.0,
+      0.0
+    ],
+    "rl": [
+      -90.0,
+      36.0,
+      0.0
+    ],
+    "rr": [
+      -90.0,
+      -36.0,
+      0.0
+    ]
+  },
+  "hip_to_pitch_mm": {
+    "fl": [
+      0.0,
+      40.0,
+      -30.0
+    ],
+    "fr": [
+      0.0,
+      -40.0,
+      -30.0
+    ],
+    "rl": [
+      0.0,
+      40.0,
+      -30.0
+    ],
+    "rr": [
+      0.0,
+      -40.0,
+      -30.0
+    ]
+  },
+  "l_thigh_mm": 75.0,
+  "l_shin_mm": 82.0,
+  "foot_r_mm": 13.0,
+  "joint_limits_rad": {
+    "roll": 0.9,
+    "pitch": 1.3,
+    "knee": 1.85
+  },
+  "joint_soft_limits_rad": {
+    "roll": 0.78,
+    "pitch": 1.18,
+    "knee": 1.73
+  },
+  "joint_velocity_limit": 4.7,
+  "stance_rad": {
+    "pitch": -0.42,
+    "knee": 1.05
+  },
+  "stance_base_height_m": 0.18073992620501958,
+  "total_mass_kg": 2.098
+}

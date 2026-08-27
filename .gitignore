@@ -1,0 +1,20 @@
+# --- generated output (never source; see 3d/CLAUDE.md) ---
+3d/out/
+3d/d.vtk
+3d/tools/_refcache/
+
+# --- ROS 2 colcon workspace ---
+ros2/build/
+ros2/install/
+ros2/log/
+
+# --- python ---
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+
+# --- macOS ---
+.DS_Store
