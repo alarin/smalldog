@@ -241,7 +241,7 @@ def part_mesh(name, size):
     mesh_path = os.path.join(OUT, f"{name}_{tag}_{size}.mesh")
     if not os.path.exists(mesh_path):
         import cadquery as cq
-        step_path = os.path.join(OUT, f"_{name}.step")
+        step_path = os.path.join(OUT, f"_{name}_{tag}.step")
         cq.exporters.export(wp, step_path)
         raw = mesh_path.replace(".mesh", ".msh")
         mesh_step(step_path, size, raw)
