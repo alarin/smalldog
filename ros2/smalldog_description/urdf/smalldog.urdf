@@ -6,9 +6,9 @@
   <material name="servo"><color rgba="0.12 0.12 0.14 1"/></material>
   <link name="base_link">
     <inertial>
-      <origin xyz="0.004100 -0.000000 0.025749" rpy="0 0 0"/>
-      <mass value="1.36252"/>
-      <inertia ixx="0.00331640" ixy="0.00000000" ixz="-0.00071774" iyy="0.00576865" iyz="-0.00000000" izz="0.00469926"/>
+      <origin xyz="0.006458 -0.000041 0.021964" rpy="0 0 0"/>
+      <mass value="1.55920"/>
+      <inertia ixx="0.00311178" ixy="0.00000662" ixz="-0.00077087" iyy="0.00653010" iyz="0.00000053" izz="0.00611987"/>
     </inertial>
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0"/>
@@ -40,9 +40,9 @@
   </link>
   <link name="fl_hip">
     <inertial>
-      <origin xyz="0.000133 0.005814 -0.015635" rpy="0 0 0"/>
-      <mass value="0.07642"/>
-      <inertia ixx="0.00003645" ixy="-0.00000021" ixz="-0.00000016" iyy="0.00002374" iyz="-0.00000095" izz="0.00002767"/>
+      <origin xyz="0.000199 0.009206 -0.015204" rpy="0 0 0"/>
+      <mass value="0.09039"/>
+      <inertia ixx="0.00005191" ixy="-0.00000031" ixz="-0.00000027" iyy="0.00003302" iyz="0.00000066" izz="0.00004076"/>
     </inertial>
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0"/>
@@ -58,9 +58,9 @@
   </link>
   <link name="fl_thigh">
     <inertial>
-      <origin xyz="0.000011 0.000137 -0.056140" rpy="0 0 0"/>
-      <mass value="0.08003"/>
-      <inertia ixx="0.00004481" ixy="0.00000000" ixz="-0.00000002" iyy="0.00003956" iyz="-0.00000027" izz="0.00001581"/>
+      <origin xyz="0.000014 0.000203 -0.053502" rpy="0 0 0"/>
+      <mass value="0.09732"/>
+      <inertia ixx="0.00006747" ixy="0.00000000" ixz="-0.00000002" iyy="0.00006039" iyz="-0.00000045" izz="0.00002115"/>
     </inertial>
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0"/>
@@ -76,9 +76,9 @@
   </link>
   <link name="fl_shin">
     <inertial>
-      <origin xyz="-0.000772 0.000360 -0.040301" rpy="0 0 0"/>
-      <mass value="0.02741"/>
-      <inertia ixx="0.00002189" ixy="-0.00000001" ixz="-0.00000019" iyy="0.00001913" iyz="-0.00000014" izz="0.00000592"/>
+      <origin xyz="-0.000760 0.000347 -0.040432" rpy="0 0 0"/>
+      <mass value="0.04659"/>
+      <inertia ixx="0.00003845" ixy="-0.00000001" ixz="-0.00000031" iyy="0.00003367" iyz="-0.00000027" izz="0.00001014"/>
     </inertial>
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0"/>
@@ -90,9 +90,9 @@
   </link>
   <link name="fr_hip">
     <inertial>
-      <origin xyz="0.000133 -0.005814 -0.015635" rpy="0 0 0"/>
-      <mass value="0.07642"/>
-      <inertia ixx="0.00003645" ixy="0.00000021" ixz="-0.00000016" iyy="0.00002374" iyz="0.00000095" izz="0.00002767"/>
+      <origin xyz="0.000199 -0.009206 -0.015204" rpy="0 0 0"/>
+      <mass value="0.09039"/>
+      <inertia ixx="0.00005191" ixy="0.00000031" ixz="-0.00000027" iyy="0.00003302" iyz="-0.00000066" izz="0.00004076"/>
     </inertial>
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0"/>
@@ -108,9 +108,9 @@
   </link>
   <link name="fr_thigh">
     <inertial>
-      <origin xyz="0.000011 -0.000137 -0.056140" rpy="0 0 0"/>
-      <mass value="0.08003"/>
-      <inertia ixx="0.00004481" ixy="-0.00000000" ixz="-0.00000002" iyy="0.00003956" iyz="0.00000027" izz="0.00001581"/>
+      <origin xyz="0.000014 -0.000203 -0.053502" rpy="0 0 0"/>
+      <mass value="0.09732"/>
+      <inertia ixx="0.00006747" ixy="-0.00000000" ixz="-0.00000002" iyy="0.00006039" iyz="0.00000045" izz="0.00002115"/>
     </inertial>
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0"/>
@@ -126,9 +126,9 @@
   </link>
   <link name="fr_shin">
     <inertial>
-      <origin xyz="-0.000772 -0.000360 -0.040301" rpy="0 0 0"/>
-      <mass value="0.02741"/>
-      <inertia ixx="0.00002189" ixy="0.00000001" ixz="-0.00000019" iyy="0.00001913" iyz="0.00000014" izz="0.00000592"/>
+      <origin xyz="-0.000760 -0.000347 -0.040432" rpy="0 0 0"/>
+      <mass value="0.04659"/>
+      <inertia ixx="0.00003845" ixy="0.00000001" ixz="-0.00000031" iyy="0.00003367" iyz="0.00000027" izz="0.00001014"/>
     </inertial>
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0"/>
@@ -140,9 +140,9 @@
   </link>
   <link name="rl_hip">
     <inertial>
-      <origin xyz="-0.000133 0.005814 -0.015635" rpy="0 0 0"/>
-      <mass value="0.07642"/>
-      <inertia ixx="0.00003645" ixy="0.00000021" ixz="0.00000016" iyy="0.00002374" iyz="-0.00000095" izz="0.00002767"/>
+      <origin xyz="-0.000199 0.009206 -0.015204" rpy="0 0 0"/>
+      <mass value="0.09039"/>
+      <inertia ixx="0.00005191" ixy="0.00000031" ixz="0.00000027" iyy="0.00003302" iyz="0.00000066" izz="0.00004076"/>
     </inertial>
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0"/>
@@ -158,9 +158,9 @@
   </link>
   <link name="rl_thigh">
     <inertial>
-      <origin xyz="-0.000011 0.000137 -0.056140" rpy="0 0 0"/>
-      <mass value="0.08003"/>
-      <inertia ixx="0.00004481" ixy="-0.00000000" ixz="0.00000002" iyy="0.00003956" iyz="-0.00000027" izz="0.00001581"/>
+      <origin xyz="-0.000014 0.000203 -0.053502" rpy="0 0 0"/>
+      <mass value="0.09732"/>
+      <inertia ixx="0.00006747" ixy="-0.00000000" ixz="0.00000002" iyy="0.00006039" iyz="-0.00000045" izz="0.00002115"/>
     </inertial>
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0"/>
@@ -176,9 +176,9 @@
   </link>
   <link name="rl_shin">
     <inertial>
-      <origin xyz="0.000772 0.000360 -0.040301" rpy="0 0 0"/>
-      <mass value="0.02741"/>
-      <inertia ixx="0.00002189" ixy="0.00000001" ixz="0.00000019" iyy="0.00001913" iyz="-0.00000014" izz="0.00000592"/>
+      <origin xyz="0.000760 0.000347 -0.040432" rpy="0 0 0"/>
+      <mass value="0.04659"/>
+      <inertia ixx="0.00003845" ixy="0.00000001" ixz="0.00000031" iyy="0.00003367" iyz="-0.00000027" izz="0.00001014"/>
     </inertial>
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0"/>
@@ -190,9 +190,9 @@
   </link>
   <link name="rr_hip">
     <inertial>
-      <origin xyz="-0.000133 -0.005814 -0.015635" rpy="0 0 0"/>
-      <mass value="0.07642"/>
-      <inertia ixx="0.00003645" ixy="-0.00000021" ixz="0.00000016" iyy="0.00002374" iyz="0.00000095" izz="0.00002767"/>
+      <origin xyz="-0.000199 -0.009206 -0.015204" rpy="0 0 0"/>
+      <mass value="0.09039"/>
+      <inertia ixx="0.00005191" ixy="-0.00000031" ixz="0.00000027" iyy="0.00003302" iyz="-0.00000066" izz="0.00004076"/>
     </inertial>
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0"/>
@@ -208,9 +208,9 @@
   </link>
   <link name="rr_thigh">
     <inertial>
-      <origin xyz="-0.000011 -0.000137 -0.056140" rpy="0 0 0"/>
-      <mass value="0.08003"/>
-      <inertia ixx="0.00004481" ixy="0.00000000" ixz="0.00000002" iyy="0.00003956" iyz="0.00000027" izz="0.00001581"/>
+      <origin xyz="-0.000014 -0.000203 -0.053502" rpy="0 0 0"/>
+      <mass value="0.09732"/>
+      <inertia ixx="0.00006747" ixy="0.00000000" ixz="0.00000002" iyy="0.00006039" iyz="0.00000045" izz="0.00002115"/>
     </inertial>
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0"/>
@@ -226,9 +226,9 @@
   </link>
   <link name="rr_shin">
     <inertial>
-      <origin xyz="0.000772 -0.000360 -0.040301" rpy="0 0 0"/>
-      <mass value="0.02741"/>
-      <inertia ixx="0.00002189" ixy="-0.00000001" ixz="0.00000019" iyy="0.00001913" iyz="0.00000014" izz="0.00000592"/>
+      <origin xyz="0.000760 -0.000347 -0.040432" rpy="0 0 0"/>
+      <mass value="0.04659"/>
+      <inertia ixx="0.00003845" ixy="-0.00000001" ixz="0.00000031" iyy="0.00003367" iyz="0.00000027" izz="0.00001014"/>
     </inertial>
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0"/>
@@ -321,5 +321,25 @@
     <origin xyz="0.00000 0.00000 -0.07500" rpy="0 0 0"/>
     <axis xyz="0 1 0"/>
     <limit lower="-1.8500" upper="1.8500" effort="3.0" velocity="4.7"/>
+  </joint>
+  <link name="lidar_link"/>
+  <joint name="lidar_link_joint" type="fixed">
+    <parent link="base_link"/><child link="lidar_link"/>
+    <origin xyz="0.0734663 0 0.0914663" rpy="0 0.785398 0"/>
+  </joint>
+  <link name="camera_link"/>
+  <joint name="camera_joint" type="fixed">
+    <parent link="base_link"/><child link="camera_link"/>
+    <origin xyz="0.0787343 0 0.0257543" rpy="0 -0.10472 0"/>
+  </joint>
+  <link name="camera_optical_frame"/>
+  <joint name="camera_optical_joint" type="fixed">
+    <parent link="camera_link"/><child link="camera_optical_frame"/>
+    <origin xyz="0 0 0" rpy="-1.5708 0 -1.5708"/>
+  </joint>
+  <link name="gps_link"/>
+  <joint name="gps_joint" type="fixed">
+    <parent link="base_link"/><child link="gps_link"/>
+    <origin xyz="-0.05200 0.00000 0.07260" rpy="0 0 0"/>
   </joint>
 </robot>

@@ -31,7 +31,7 @@
   <worldbody>
     <body name="base_link" pos="0 0 0.1807" childclass="mujoco">
       <freejoint name="base_freejoint"/>
-      <inertial pos="0.004100 -0.000000 0.025749" mass="1.36252" fullinertia="0.00331640 0.00576865 0.00469926 0.00000000 -0.00071774 -0.00000000"/>
+      <inertial pos="0.006458 -0.000041 0.021964" mass="1.55920" fullinertia="0.00311178 0.00653010 0.00611987 0.00000662 -0.00077087 0.00000053"/>
       <geom class="visual" type="mesh" mesh="base_link"/>
       <geom class="servo" type="mesh" mesh="fl_roll_servo"/>
       <geom class="servo" type="mesh" mesh="fr_roll_servo"/>
@@ -40,91 +40,97 @@
       <geom class="collision" type="box" size="0.06300 0.04600 0.02700" pos="0.00000 0.00000 0.00200"/>
       <geom class="collision" type="box" size="0.10650 0.04911 0.01536" pos="0.00000 0.00000 0.00000"/>
       <site name="imu" pos="0 0 0" size="0.005"/>
+      <site name="lidar" pos="0.0734663 0 0.0914663" quat="0.92388 0 0.382683 0" size="0.004" rgba="0.9 0.4 0.1 1"/>
+      <geom name="lidar_body" type="cylinder" group="2" contype="0" conaffinity="0" size="0.0375 0.0325" pos="0.064981 0 0.082981" quat="0.92388 0 0.382683 0" rgba="0.15 0.15 0.17 1"/>
+      <camera name="camera" pos="0.0787343 0 0.0257543" quat="-0.473147 -0.525483 0.525483 0.473147" fovy="52.23" resolution="3840 2160"/>
+      <geom name="camera_body" type="cylinder" group="2" contype="0" conaffinity="0" size="0.007 0.0081" pos="0.0700322 0 0.0248397" quat="0.525483 0.473147 0.473147 0.525483" rgba="0.1 0.1 0.12 1"/>
+      <site name="gps" pos="-0.05200 0.00000 0.07260" size="0.004" rgba="0.2 0.8 0.4 1"/>
+      <geom name="gps_body" class="visual" type="box" size="0.01800 0.01300 0.00605" pos="-0.05200 0.00000 0.07105" rgba="0.15 0.15 0.17 1"/>
       <body name="fl_hip" pos="0.09000 0.03600 0.00000">
         <joint name="fl_roll" axis="1 0 0" range="-0.8700 0.8700"/>
-        <inertial pos="0.000133 0.005814 -0.015635" mass="0.07642" fullinertia="0.00003645 0.00002374 0.00002767 -0.00000021 -0.00000016 -0.00000095"/>
+        <inertial pos="0.000199 0.009206 -0.015204" mass="0.09039" fullinertia="0.00005191 0.00003302 0.00004076 -0.00000031 -0.00000027 0.00000066"/>
         <geom class="visual" type="mesh" mesh="fl_hip"/>
         <geom class="servo" type="mesh" mesh="fl_pitch_servo"/>
         <geom class="collision" type="box" size="0.01536 0.01650 0.02560" pos="0.00000 0.04000 -0.04750"/>
         <body name="fl_thigh" pos="0.00000 0.04000 -0.03000">
           <joint name="fl_pitch" axis="0 1 0" range="-1.2700 1.2700"/>
-          <inertial pos="0.000011 0.000137 -0.056140" mass="0.08003" fullinertia="0.00004481 0.00003956 0.00001581 0.00000000 -0.00000002 -0.00000027"/>
+          <inertial pos="0.000014 0.000203 -0.053502" mass="0.09732" fullinertia="0.00006747 0.00006039 0.00002115 0.00000000 -0.00000002 -0.00000045"/>
           <geom class="visual" type="mesh" mesh="fl_thigh"/>
           <geom class="servo" type="mesh" mesh="fl_knee_servo"/>
           <geom class="collision" type="box" size="0.01536 0.01650 0.03500" pos="0.00000 0.00000 -0.04400"/>
           <body name="fl_shin" pos="0.00000 0.00000 -0.07500">
             <joint name="fl_knee" axis="0 1 0" range="-1.8200 1.8200"/>
-            <inertial pos="-0.000772 0.000360 -0.040301" mass="0.02741" fullinertia="0.00002189 0.00001913 0.00000592 -0.00000001 -0.00000019 -0.00000014"/>
+            <inertial pos="-0.000760 0.000347 -0.040432" mass="0.04659" fullinertia="0.00003845 0.00003367 0.00001014 -0.00000001 -0.00000031 -0.00000027"/>
             <geom class="visual" type="mesh" mesh="fl_shin"/>
             <geom class="collision" type="capsule" size="0.01200" fromto="0.00000 0.00000 -0.00800 0.00000 0.00000 -0.06900"/>
             <geom name="fl_foot" class="foot" type="sphere" size="0.01300" pos="0.00000 0.00000 -0.08200"/>
-            <site name="fl_foot_site" pos="0 0 -0.08200" size="0.004"/>
+            <site name="fl_foot_site" pos="0 0 -0.08200" size="0.01400"/>
           </body>
         </body>
       </body>
       <body name="fr_hip" pos="0.09000 -0.03600 0.00000">
         <joint name="fr_roll" axis="1 0 0" range="-0.8700 0.8700"/>
-        <inertial pos="0.000133 -0.005814 -0.015635" mass="0.07642" fullinertia="0.00003645 0.00002374 0.00002767 0.00000021 -0.00000016 0.00000095"/>
+        <inertial pos="0.000199 -0.009206 -0.015204" mass="0.09039" fullinertia="0.00005191 0.00003302 0.00004076 0.00000031 -0.00000027 -0.00000066"/>
         <geom class="visual" type="mesh" mesh="fr_hip"/>
         <geom class="servo" type="mesh" mesh="fr_pitch_servo"/>
         <geom class="collision" type="box" size="0.01536 0.01650 0.02560" pos="0.00000 -0.04000 -0.04750"/>
         <body name="fr_thigh" pos="0.00000 -0.04000 -0.03000">
           <joint name="fr_pitch" axis="0 1 0" range="-1.2700 1.2700"/>
-          <inertial pos="0.000011 -0.000137 -0.056140" mass="0.08003" fullinertia="0.00004481 0.00003956 0.00001581 -0.00000000 -0.00000002 0.00000027"/>
+          <inertial pos="0.000014 -0.000203 -0.053502" mass="0.09732" fullinertia="0.00006747 0.00006039 0.00002115 -0.00000000 -0.00000002 0.00000045"/>
           <geom class="visual" type="mesh" mesh="fr_thigh"/>
           <geom class="servo" type="mesh" mesh="fr_knee_servo"/>
           <geom class="collision" type="box" size="0.01536 0.01650 0.03500" pos="0.00000 0.00000 -0.04400"/>
           <body name="fr_shin" pos="0.00000 0.00000 -0.07500">
             <joint name="fr_knee" axis="0 1 0" range="-1.8200 1.8200"/>
-            <inertial pos="-0.000772 -0.000360 -0.040301" mass="0.02741" fullinertia="0.00002189 0.00001913 0.00000592 0.00000001 -0.00000019 0.00000014"/>
+            <inertial pos="-0.000760 -0.000347 -0.040432" mass="0.04659" fullinertia="0.00003845 0.00003367 0.00001014 0.00000001 -0.00000031 0.00000027"/>
             <geom class="visual" type="mesh" mesh="fr_shin"/>
             <geom class="collision" type="capsule" size="0.01200" fromto="0.00000 0.00000 -0.00800 0.00000 0.00000 -0.06900"/>
             <geom name="fr_foot" class="foot" type="sphere" size="0.01300" pos="0.00000 0.00000 -0.08200"/>
-            <site name="fr_foot_site" pos="0 0 -0.08200" size="0.004"/>
+            <site name="fr_foot_site" pos="0 0 -0.08200" size="0.01400"/>
           </body>
         </body>
       </body>
       <body name="rl_hip" pos="-0.09000 0.03600 0.00000">
         <joint name="rl_roll" axis="1 0 0" range="-0.8700 0.8700"/>
-        <inertial pos="-0.000133 0.005814 -0.015635" mass="0.07642" fullinertia="0.00003645 0.00002374 0.00002767 0.00000021 0.00000016 -0.00000095"/>
+        <inertial pos="-0.000199 0.009206 -0.015204" mass="0.09039" fullinertia="0.00005191 0.00003302 0.00004076 0.00000031 0.00000027 0.00000066"/>
         <geom class="visual" type="mesh" mesh="rl_hip"/>
         <geom class="servo" type="mesh" mesh="rl_pitch_servo"/>
         <geom class="collision" type="box" size="0.01536 0.01650 0.02560" pos="0.00000 0.04000 -0.04750"/>
         <body name="rl_thigh" pos="0.00000 0.04000 -0.03000">
           <joint name="rl_pitch" axis="0 1 0" range="-1.2700 1.2700"/>
-          <inertial pos="-0.000011 0.000137 -0.056140" mass="0.08003" fullinertia="0.00004481 0.00003956 0.00001581 -0.00000000 0.00000002 -0.00000027"/>
+          <inertial pos="-0.000014 0.000203 -0.053502" mass="0.09732" fullinertia="0.00006747 0.00006039 0.00002115 -0.00000000 0.00000002 -0.00000045"/>
           <geom class="visual" type="mesh" mesh="rl_thigh"/>
           <geom class="servo" type="mesh" mesh="rl_knee_servo"/>
           <geom class="collision" type="box" size="0.01536 0.01650 0.03500" pos="0.00000 0.00000 -0.04400"/>
           <body name="rl_shin" pos="0.00000 0.00000 -0.07500">
             <joint name="rl_knee" axis="0 1 0" range="-1.8200 1.8200"/>
-            <inertial pos="0.000772 0.000360 -0.040301" mass="0.02741" fullinertia="0.00002189 0.00001913 0.00000592 0.00000001 0.00000019 -0.00000014"/>
+            <inertial pos="0.000760 0.000347 -0.040432" mass="0.04659" fullinertia="0.00003845 0.00003367 0.00001014 0.00000001 0.00000031 -0.00000027"/>
             <geom class="visual" type="mesh" mesh="rl_shin"/>
             <geom class="collision" type="capsule" size="0.01200" fromto="0.00000 0.00000 -0.00800 0.00000 0.00000 -0.06900"/>
             <geom name="rl_foot" class="foot" type="sphere" size="0.01300" pos="0.00000 0.00000 -0.08200"/>
-            <site name="rl_foot_site" pos="0 0 -0.08200" size="0.004"/>
+            <site name="rl_foot_site" pos="0 0 -0.08200" size="0.01400"/>
           </body>
         </body>
       </body>
       <body name="rr_hip" pos="-0.09000 -0.03600 0.00000">
         <joint name="rr_roll" axis="1 0 0" range="-0.8700 0.8700"/>
-        <inertial pos="-0.000133 -0.005814 -0.015635" mass="0.07642" fullinertia="0.00003645 0.00002374 0.00002767 -0.00000021 0.00000016 0.00000095"/>
+        <inertial pos="-0.000199 -0.009206 -0.015204" mass="0.09039" fullinertia="0.00005191 0.00003302 0.00004076 -0.00000031 0.00000027 -0.00000066"/>
         <geom class="visual" type="mesh" mesh="rr_hip"/>
         <geom class="servo" type="mesh" mesh="rr_pitch_servo"/>
         <geom class="collision" type="box" size="0.01536 0.01650 0.02560" pos="0.00000 -0.04000 -0.04750"/>
         <body name="rr_thigh" pos="0.00000 -0.04000 -0.03000">
           <joint name="rr_pitch" axis="0 1 0" range="-1.2700 1.2700"/>
-          <inertial pos="-0.000011 -0.000137 -0.056140" mass="0.08003" fullinertia="0.00004481 0.00003956 0.00001581 0.00000000 0.00000002 0.00000027"/>
+          <inertial pos="-0.000014 -0.000203 -0.053502" mass="0.09732" fullinertia="0.00006747 0.00006039 0.00002115 0.00000000 0.00000002 0.00000045"/>
           <geom class="visual" type="mesh" mesh="rr_thigh"/>
           <geom class="servo" type="mesh" mesh="rr_knee_servo"/>
           <geom class="collision" type="box" size="0.01536 0.01650 0.03500" pos="0.00000 0.00000 -0.04400"/>
           <body name="rr_shin" pos="0.00000 0.00000 -0.07500">
             <joint name="rr_knee" axis="0 1 0" range="-1.8200 1.8200"/>
-            <inertial pos="0.000772 -0.000360 -0.040301" mass="0.02741" fullinertia="0.00002189 0.00001913 0.00000592 -0.00000001 0.00000019 0.00000014"/>
+            <inertial pos="0.000760 -0.000347 -0.040432" mass="0.04659" fullinertia="0.00003845 0.00003367 0.00001014 -0.00000001 0.00000031 0.00000027"/>
             <geom class="visual" type="mesh" mesh="rr_shin"/>
             <geom class="collision" type="capsule" size="0.01200" fromto="0.00000 0.00000 -0.00800 0.00000 0.00000 -0.06900"/>
             <geom name="rr_foot" class="foot" type="sphere" size="0.01300" pos="0.00000 0.00000 -0.08200"/>
-            <site name="rr_foot_site" pos="0 0 -0.08200" size="0.004"/>
+            <site name="rr_foot_site" pos="0 0 -0.08200" size="0.01400"/>
           </body>
         </body>
       </body>
@@ -147,10 +153,19 @@
   <sensor>
     <framequat name="imu_quat" objtype="site" objname="imu"/>
     <gyro name="imu_gyro" site="imu"/>
-    <accelerometer name="imu_acc" site="imu"/>
+    <accelerometer name="imu_accel" site="imu"/>
     <touch name="fl_contact" site="fl_foot_site"/>
     <touch name="fr_contact" site="fr_foot_site"/>
     <touch name="rl_contact" site="rl_foot_site"/>
     <touch name="rr_contact" site="rr_foot_site"/>
   </sensor>
+  <custom>
+    <numeric name="lidar_cone" data="1.67552"/>
+    <numeric name="lidar_rate" data="21600"/>
+    <numeric name="lidar_range" data="0.05 30"/>
+    <numeric name="lidar_sigma" data="0.02"/>
+    <numeric name="lidar_spin" data="121.6 -75.1529"/>
+    <numeric name="lidar_frame_hz" data="10"/>
+    <numeric name="lidar_groups" data="1 1 0 1 1 1"/>
+  </custom>
 </mujoco>

@@ -10,11 +10,13 @@ from the tessellated solids, and writes:
     urdf/smalldog.urdf  URDF for robot_state_publisher / ros2_control
     mujoco/robot.xml    MJCF body tree + position actuators
     mujoco/scene.xml    world + ground plane
+    mujoco/scene_terrain.xml  the same world on the procedural heightfield
+    meshes/terrain.png  that heightfield (from 3d/terrain.py)
     mujoco/defaults.xml joint / actuator / geom defaults
 
 Run it again after changing anything in mini_dog.py.
 """
-import os, sys, math, json
+import os, sys, math, json, argparse
 import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -24,6 +26,9 @@ sys.path.insert(0, CAD)
 
 import cadquery as cq
 import mini_dog as md
+import terrain as terrain_gen
+import lidar as lidar_gen
+import camera as camera_gen
 
 MESHES = os.path.join(PKG, "meshes")
 URDF   = os.path.join(PKG, "urdf")
@@ -31,18 +36,34 @@ MJCF   = os.path.join(PKG, "mujoco")
 for d in (MESHES, URDF, MJCF):
     os.makedirs(d, exist_ok=True)
 
+_ap = argparse.ArgumentParser(description="regenerate the SmallDog description from the CAD")
+_ap.add_argument("--terrain-amp", type=float, default=terrain_gen.AMP_MM,
+                 help=f"scene_terrain.xml heightfield amplitude in mm, +- this"
+                      f" (default {terrain_gen.AMP_MM:g})")
+_ap.add_argument("--terrain-wave", type=float, default=terrain_gen.WAVELEN_MM,
+                 help=f"heightfield longest feature in mm"
+                      f" (default {terrain_gen.WAVELEN_MM:g})")
+_ap.add_argument("--no-terrain-obstacles", action="store_true",
+                 help="scene_terrain.xml without the ramp/wall/log course from terrain.py"
+                      " — the smooth relief the gait gains were measured on")
+_ap.add_argument("--terrain-seed", type=int, default=terrain_gen.SEED,
+                 help="heightfield seed; same seed, same ground, run after run")
+ARGS = _ap.parse_args()
+
 MM = 1e-3
 
 # ---------------------------------------------------------------- mass model
 # Every number here comes from the CAD's own mass block (mini_dog.py section 4).  Do not
 # reintroduce local copies: this file and 3d/export_sim.py are two exporters of the same
 # robot, and the last time they each kept their own servo mass they disagreed by 60 g.
-RHO_PRINT = md.PRINT_RHO * 1e-3   # g/cm^3 -> g/mm^3 (tri_inertia wants g/mm^3)
-RHO_TPU   = md.TPU_RHO   * 1e-3
+def rho(part):                    # g/cm^3 -> g/mm^3 (tri_inertia wants g/mm^3), per part
+    return md.part_rho(part) * 1e-3   # measured fill factors, mini_dog.py section 4
 M_SERVO   = md.SERVO_KG           # kg
 M_BATTERY = md.BATTERY_KG
 M_ELECTR  = md.ELECTRONICS_KG
 M_LIDAR   = md.LIDAR_KG
+M_GPS     = md.GPS_KG
+M_CAMERA  = md.CAMERA_KG
 
 def tri_inertia(verts, tris, density_g_mm3):
     """Exact mass properties of a closed triangle mesh (mm, g/mm^3).
@@ -134,7 +155,9 @@ print("building CAD parts ...")
 hb, th, sh, ft = md.build()
 chassis = (md.PARTS["chassis_bottom"][0]
            .union(md.PARTS["chassis_top"][0])
-           .union(md.PARTS["lidar_mount"][0]))
+           .union(md.PARTS["lidar_mount"][0])
+           .union(md.PARTS["gps_mount"][0])
+           .union(md.PARTS["camera_mount"][0]))
 
 links = {}          # name -> dict(mesh, body, extras)
 SERVO_VIS = {}      # link name -> [servo mesh names]  (visual only, mass already
@@ -143,14 +166,32 @@ SERVO_VIS = {}      # link name -> [servo mesh names]  (visual only, mass alread
 # ---- base_link -------------------------------------------------------------
 print("base_link ...")
 base = Body()
-base.add_solid(chassis, RHO_PRINT)
+# the body parts share one mesh but not one fill factor - they print at
+# different wall/infill settings, so each carries its own density
+for _p in ("chassis_bottom", "chassis_top", "lidar_mount", "gps_mount", "camera_mount"):
+    base.add_solid(md.PARTS[_p][0], rho(_p))
 for leg in LEGS:                                   # the four hip-roll servos
     o = origin(leg, "hip")
     base.add_box(M_SERVO, o + np.array([0, SY[leg] * (R.S_L / 2 - R.S_AX), 0]),
                  (R.S_H, R.S_L, R.S_W))
 base.add_box(M_BATTERY, (0, 0, R.BODY_Z0 + 3 + R.BATT_H / 2), (R.BATT_L, R.BATT_W, R.BATT_H))
-base.add_box(M_ELECTR,  (-22.0, 0, R.BODY_Z1 + 12.0), (100.0, 62.0, 18.0))
-base.add_box(M_LIDAR,   (42.0, 0, R.BODY_Z1 + R.DECK_T + R.LIDAR_H + 30.0), (70.0, 70.0, 60.0))
+# the Orange Pi stack, on the envelope mini_dog holds for it (md.OPI_BOX, md.opi_com()).
+# It used to be a local 100 x 62 x 18 here against a 92 x 62 x 20 in 3d/export_sim.py -
+# the same drift the mass block exists to stop, on the box gps_mount is now shaped around.
+base.add_box(M_ELECTR,  md.opi_com(), md.OPI_BOX)
+# the NEO-6M and its active patch, sitting on gps_mount's platform
+base.add_box(M_GPS,     md.gps_com(), md.GPS_STACK)
+# Unitree L2, at the pose mini_dog.py holds for it (md.lidar_com(), md.LIDAR_L2_BOX -
+# envelope and mass both off the sensor's own drawing).  This used to be a 42.0 literal
+# and a guessed 70x70x60, which is exactly the divergence mini_dog's mass block exists to
+# prevent.  The box stays axis-aligned while the real sensor leans LIDAR_TILT forward:
+# exact in mass and centroid, ~7 % out on one inertia axis of 9 % of the robot.
+base.add_box(M_LIDAR, md.lidar_com(), md.LIDAR_L2_BOX)
+# the IMX415 module in its channel at the nose - its own envelope off the vendor drawing,
+# 90 x 15 mm of board with the lens block on the optical axis.  It sits further forward
+# than anything else the robot carries, which is why the mass block flags it **verify**.
+base.add_box(M_CAMERA, md.camera_com(),
+             (md.CAM_LENS_H, md.CAM_BOARD[0], md.CAM_BOARD[1]))
 export_stl(chassis, np.zeros(3), "base_link")
 SERVO_VIS["base_link"] = []
 for leg in LEGS:                                   # the four hip-roll servos, as they sit
@@ -168,7 +209,7 @@ for leg in LEGS:
 
     o_hip, o_thigh, o_shin = (origin(leg, k) for k in ("hip", "thigh", "shin"))
 
-    b = Body(); b.add_solid(export_stl(hip_w, o_hip, f"{leg}_hip"), RHO_PRINT)
+    b = Body(); b.add_solid(export_stl(hip_w, o_hip, f"{leg}_hip"), rho("hip_bracket_A"))
     b.add_box(M_SERVO, np.array([0, 0, R.PITCH_Z - R.ROLL_Z + R.S_L / 2 - R.S_AX]),
               (R.S_W, R.S_H, R.S_L))       # hip-pitch servo, body points up
     export_stl(leg_transform(leg, md.mv(md.servo_dummy(), md.PITCH_LOC)), o_hip,
@@ -176,7 +217,7 @@ for leg in LEGS:
     SERVO_VIS[f"{leg}_hip"] = [f"{leg}_pitch_servo"]
     links[f"{leg}_hip"] = dict(mesh=f"{leg}_hip", body=b)
 
-    b = Body(); b.add_solid(export_stl(thigh_w, o_thigh, f"{leg}_thigh"), RHO_PRINT)
+    b = Body(); b.add_solid(export_stl(thigh_w, o_thigh, f"{leg}_thigh"), rho("thigh_A"))
     b.add_box(M_SERVO, np.array([0, 0, -R.L_THIGH + R.S_L / 2 - R.S_AX]),
               (R.S_W, R.S_H, R.S_L))       # knee servo, body points up the thigh
     export_stl(leg_transform(leg, md.mv(md.servo_dummy(), md.KNEE_LOC)), o_thigh,
@@ -184,10 +225,11 @@ for leg in LEGS:
     SERVO_VIS[f"{leg}_thigh"] = [f"{leg}_knee_servo"]
     links[f"{leg}_thigh"] = dict(mesh=f"{leg}_thigh", body=b)
 
-    b = Body(); b.add_solid(export_stl(shin_w, o_shin, f"{leg}_shin"), RHO_PRINT)
+    b = Body(); b.add_solid(export_stl(shin_w, o_shin, f"{leg}_shin"), rho("shin_A"))
     # shin and foot ship as one mesh but not as one material: correct the foot's share
     # by the density difference.  add_solid is linear in rho, so this is exact.
-    b.add_solid(leg_transform(leg, ft).translate(tuple(-o_shin)), RHO_TPU - RHO_PRINT)
+    b.add_solid(leg_transform(leg, ft).translate(tuple(-o_shin)),
+                rho("foot") - rho("shin_A"))
     links[f"{leg}_shin"] = dict(mesh=f"{leg}_shin", body=b)
 
 total = sum(l["body"].m for l in links.values())
@@ -301,6 +343,20 @@ def write_urdf():
                    f'    <limit lower="{-lim:.4f}" upper="{lim:.4f}"'
                    f' effort="{J_EFF}" velocity="{J_VEL}"/>\n'
                    f'  </joint>')
+    # the L2's optical centre and its own frame - the TF a point cloud hangs off.  Pose
+    # and tilt come from lidar.py, which reads them out of mini_dog like everything else.
+    out += lidar_gen.urdf_link()
+    # ... and the camera, in BOTH conventions - see camera.py's header for why an image
+    # pipeline needs camera_optical_frame and not just camera_link.
+    out += camera_gen.urdf_links()
+    # ... and the GPS patch's phase centre, so a NavSatFix has a frame to name.  +Z is the
+    # patch normal, which is why gps_mount's platform is level: no rpy here is a statement.
+    _g = tuple(v * MM for v in md.gps_pose())
+    out += ['  <link name="gps_link"/>',
+            '  <joint name="gps_joint" type="fixed">\n'
+            '    <parent link="base_link"/><child link="gps_link"/>\n'
+            f'    <origin xyz="{_g[0]:.5f} {_g[1]:.5f} {_g[2]:.5f}" rpy="0 0 0"/>\n'
+            '  </joint>']
     out.append('</robot>')
     with open(os.path.join(URDF, "smalldog.urdf"), "w") as f:
         f.write("\n".join(out) + "\n")
@@ -353,6 +409,16 @@ def write_mjcf():
           mj_inertial(links["base_link"]["body"], 6)]
     o += mj_geoms("base_link", None, 6)
     o += ['      <site name="imu" pos="0 0 0" size="0.005"/>']
+    o += lidar_gen.site_xml("      ")     # the L2: its frame, and the sensor drawn on it
+    o += camera_gen.camera_xml("      ")  # ... and the camera MuJoCo can actually render
+    _g = tuple(v * MM for v in md.gps_pose())        # the GPS patch, and its receiver drawn
+    _c = tuple(v * MM for v in md.gps_com())
+    _s = tuple(v * MM / 2 for v in md.GPS_STACK)
+    o += [f'      <site name="gps" pos="{_g[0]:.5f} {_g[1]:.5f} {_g[2]:.5f}" size="0.004"'
+          f' rgba="0.2 0.8 0.4 1"/>',
+          f'      <geom name="gps_body" class="visual" type="box"'
+          f' size="{_s[0]:.5f} {_s[1]:.5f} {_s[2]:.5f}"'
+          f' pos="{_c[0]:.5f} {_c[1]:.5f} {_c[2]:.5f}" rgba="0.15 0.15 0.17 1"/>']
     for leg in LEGS:
         jr, jp, jk = joints_of(leg)
         o.append(f'      <body name="{leg}_hip" pos="{jr[4][0]:.5f} {jr[4][1]:.5f} {jr[4][2]:.5f}">')
@@ -370,7 +436,12 @@ def write_mjcf():
                  f' range="{-jk[6]+MJ_MARGIN:.4f} {jk[6]-MJ_MARGIN:.4f}"/>')
         o.append(mj_inertial(links[f"{leg}_shin"]["body"], 12))
         o += mj_geoms(f"{leg}_shin", leg, 12)
-        o.append(f'            <site name="{leg}_foot_site" pos="0 0 {-R.L_SHIN*MM:.5f}" size="0.004"/>')
+        # the touch sensor sums the contacts that fall *inside* this site's volume, and
+        # every foot contact sits on the surface of the FOOT_D sphere - so the site has to
+        # enclose that sphere, not mark its centre.  A token 4 mm site here means all four
+        # {leg}_contact sensors read a permanent 0.0 N with the feet visibly on the ground.
+        o.append(f'            <site name="{leg}_foot_site" pos="0 0 {-R.L_SHIN*MM:.5f}"'
+                 f' size="{(R.FOOT_D/2 + 1.0)*MM:.5f}"/>')
         o += ['          </body>', '        </body>', '      </body>']
     o += ['    </body>', '  </worldbody>', '  <actuator>']
     for jn in JOINT_NAMES:
@@ -378,10 +449,18 @@ def write_mjcf():
     o += ['  </actuator>', '  <sensor>',
           '    <framequat name="imu_quat" objtype="site" objname="imu"/>',
           '    <gyro name="imu_gyro" site="imu"/>',
-          '    <accelerometer name="imu_acc" site="imu"/>']
+          # mujoco_ros2_control finds an IMU by name: a <sensor name="X_imu"> in the
+          # ros2_control tag makes it look for MuJoCo sensors X_quat / X_gyro / X_accel.
+          # Hence "accel", not "acc" — with the short name the plugin logs "Failed to
+          # find IMU sensor" and the robot runs blind.  See smalldog-mujoco.urdf.xacro.
+          '    <accelerometer name="imu_accel" site="imu"/>']
     for leg in LEGS:
         o.append(f'    <touch name="{leg}_contact" site="{leg}_foot_site"/>')
-    o += ['  </sensor>', '</mujoco>']
+    o += ['  </sensor>']
+    # the scan parameters ride inside the model: mujoco_ros2_control is C++ and cannot
+    # import lidar.py, so the compiled mjModel is the interface.  See lidar.py's header.
+    o += lidar_gen.custom_xml("  ")
+    o += ['</mujoco>']
     with open(os.path.join(MJCF, "robot.xml"), "w") as f:
         f.write("\n".join(o) + "\n")
     print("wrote mujoco/robot.xml")
@@ -440,11 +519,45 @@ SCENE = '''<mujoco model="smalldog_scene">
 </mujoco>
 '''
 
+# The rough-ground variant is the flat scene with its plane swapped for a heightfield -
+# derived from SCENE rather than copied, so the two worlds can never drift apart in
+# lighting, friction or contact flags.  meshdir="../meshes" (set in robot.xml) governs
+# hfield files as well as meshes, which is why terrain.png is written there.
+FLOOR = SCENE[SCENE.index('    <geom name="floor"'):SCENE.index('/>', SCENE.index('    <geom name="floor"')) + 2]
+
+
+def write_scenes():
+    open(os.path.join(MJCF, "defaults.xml"), "w").write(DEFAULTS)
+    open(os.path.join(MJCF, "scene.xml"), "w").write(SCENE)
+    hf = terrain_gen.write(MESHES, amp_mm=ARGS.terrain_amp,
+                           wavelen_mm=ARGS.terrain_wave, seed=ARGS.terrain_seed,
+                           obstacles=not ARGS.no_terrain_obstacles)
+    terr = (f'    <geom name="floor" type="hfield" hfield="terrain"'
+            f' pos="0 0 {hf["pos_z"]:.6g}" material="groundplane"\n'
+            f'          condim="3" contype="1" conaffinity="15"'
+            f' friction="1.0 0.005 0.0001"/>')
+    scene = (SCENE.replace("smalldog_scene", "smalldog_scene_terrain")
+                  .replace("  </asset>",
+                           f'    <hfield name="terrain" file="{hf["file"]}"'
+                           f' size="{terrain_gen.size_attr(hf)}"/>\n  </asset>')
+                  .replace(FLOOR, terr))
+    # the course goes in with the floor's own friction and contact flags: an obstacle in a
+    # different contact group than the ground under it is a fault nobody looks for
+    obs = terrain_gen.obstacle_xml(
+        hf, "    ", ' condim="3" contype="1" conaffinity="15"'
+                    ' friction="1.0 0.005 0.0001"')
+    if obs:
+        scene = scene.replace("  </worldbody>", obs + "\n  </worldbody>")
+    assert "type=\"hfield\"" in scene and 'type="plane"' not in scene
+    open(os.path.join(MJCF, "scene_terrain.xml"), "w").write(scene)
+    print(f"wrote mujoco/defaults.xml, mujoco/scene.xml, mujoco/scene_terrain.xml,"
+          f" meshes/{hf['file']} ({hf['nrow']}x{hf['nrow']}, +-{hf['amp_mm']:.1f} mm,"
+          f" flat pad at the origin, {len(hf['obstacles'])} obstacle geoms)")
+
+
 write_urdf()
 write_mjcf()
-open(os.path.join(MJCF, "defaults.xml"), "w").write(DEFAULTS)
-open(os.path.join(MJCF, "scene.xml"), "w").write(SCENE)
-print("wrote mujoco/defaults.xml, mujoco/scene.xml")
+write_scenes()
 
 with open(os.path.join(PKG, "robot_params.json"), "w") as f:
     json.dump({
