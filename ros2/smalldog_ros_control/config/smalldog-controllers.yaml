@@ -1,3 +1,12 @@
+# The sim node needs the same rate before the controller_manager exists: the joint
+# limiters are built inside the resource manager, which it creates first, and they size
+# their per-cycle allowance from whatever rate that manager was given (100 Hz by default).
+# Set both, or every joint limit is enforced at the wrong scale.  mujoco_ros2_control
+# logs an error if these two disagree.
+mujoco_ros2_control_node:
+  ros__parameters:
+    update_rate: 200  # Hz — keep equal to controller_manager's below
+
 controller_manager:
   ros__parameters:
     update_rate: 200  # Hz

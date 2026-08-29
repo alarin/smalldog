@@ -205,6 +205,23 @@ name → (workplane, qty, note) and drives both the export loop and the BOM;
    or limit change than the flat one. Judge it on the travelled distance and the end-of-run
    pitch together; the terrain is seeded, so both are repeatable.
 
+   **Every distance above this paragraph predates 2026-08-29**, when the walker's own rate
+   limit went 0.85 -> 0.65 x the servo speed so that `JointTrajectoryController`'s catch-up
+   stops overrunning the URDF velocity limit (`../ros2/smalldog_walker/.../gait.py`; the
+   reasoning is in `../ros2/README.md` under Gait). They are history, not targets. The
+   current baselines, and the paired control taken on this same tree immediately before
+   that change:
+
+   | run | before (0.85) | now (0.65) |
+   |---|---|---|
+   | flat 5 s, 2.496 kg | 781 mm | **665 mm** |
+   | terrain, default seed | 710 mm | **652 mm** |
+   | terrain, seeds 7..12 | 635 +-60 mm | **583 +-51 mm** (max abs pitch 6.6 -> 3.7 deg) |
+   | course, default seed | 6/7, 3117 mm | **5/7, 3026 mm** |
+
+   A gait change moves all four at once and that is expected; a CAD change should move none
+   of them by more than the spread.
+
    **The flat trot is hypersensitive to total mass at this operating point, so never read a
    distance drop as a geometry regression without a control beside it.** Measured, same
    seed, fully deterministic to 0.1 mm across runs: 2.448 kg travels 778 mm; add 11 g

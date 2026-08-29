@@ -225,20 +225,37 @@ problem (4K render+readback measured at 16.6 ms against 13.2 at 1400x1000, ~10 %
 6 Hz), so fixing it is a correctness job: either raise the buffer to match `CAM_PIX` or give
 `camera.py` a render resolution that fits, and regenerate. Not done here.
 
+**A second one, found from the console.** `sim.sh` used to log a steady stream of
+`Command of at least one joint is out of limits ... with desired period : 0.010000 sec`.
+That period is the tell: the loop runs at 200 Hz, i.e. 0.005 s. The joint limiters live in
+the `ResourceManager`, and `ResourceStorage` sizes their per-cycle allowance from
+`ResourceManagerParams::update_rate` — which defaults to **100 Hz** and which
+`mujoco_ros2_control` never set, because it builds the resource manager *before* the
+`controller_manager` that would supply it. So every command limit — position, velocity,
+effort — was enforced at twice its real allowance, silently. The fix is in the submodule:
+the plugin now reads `update_rate` off its own node, and `smalldog-controllers.yaml`
+carries it under `mujoco_ros2_control_node` as well as under `controller_manager`. Set
+them differently and the node logs the mismatch and the ratio instead of hiding it.
+`ros2 param get /controller_manager update_rate` is not evidence either way here — the
+controller_manager's own copy was always 200; it is the resource manager's that was stale.
+
 Current self-test result:
 
 ```
-model ok: 19 dof, 12 actuators, mass 2.499 kg
+model ok: 19 dof, 12 actuators, mass 2.496 kg
   stand    z= 199.4 mm  roll= +0.0 pitch= +0.0
-  hold 1s  z= 170.0 mm  roll= -0.0 pitch= -0.0  drift= 10.5 mm
-  trot 5s  z= 167.7 mm  roll= +1.3 pitch= +0.5  travelled x= 780.1 mm  y=  -4.6 mm
-  turn 4s  z= 168.7 mm  roll= -0.0 pitch= +0.1
+  hold 1s  z= 170.0 mm  roll= +0.0 pitch= +0.0  drift= 11.4 mm
+  trot 5s  z= 168.2 mm  roll= +2.0 pitch= -0.3  travelled x= 664.6 mm  y=  -6.5 mm
+  turn 4s  z= 167.8 mm  roll= -0.0 pitch= +0.3
 RESULT: OK — stands and trots forward
 ```
 
-0.15 m/s against a 0.20 m/s command, 5 mm lateral drift over 5 s, attitude within 1.4°.
-That 22 % is not lag or torque — see "Forward speed, and what does not move it" under Gait
-before trying to tune it out. It is also the *only* thing about this robot that is slow: both
+0.13 m/s against a 0.20 m/s command, 7 mm lateral drift over 5 s, attitude within 2.0°.
+(781 mm and 0.156 m/s until 2026-08-29, when the gait's rate limit went 0.85 → 0.65 × the
+servo speed to stop the trajectory controller overrunning the URDF velocity limit — see
+"Forward speed" under Gait.)
+That shortfall is not lag or torque — see "Forward speed, and what does not move it" under
+Gait before trying to tune it out. It is also the *only* thing about this robot that is slow: both
 viewers were measured running at or above real time, so an impression that the gait looks slow
 is the gait, not the renderer.
 
@@ -390,9 +407,24 @@ before/after for each one that did.
 
 **That lag is not the servo, whatever this file used to say here.** It is `joint_targets`'
 own rate limiter. At the default 0.20 m/s the profile demands up to 23.6 rad/s of the knee
-against a 4.0 rad/s limit (0.85 × the ST3215's 4.7); the limiter clips 28 % of all
-joint-steps and runs up to 9.3° behind, and because it clamps against its own *previous
-output* rather than the previous target, once it falls behind it stays behind. The demand
+against a 3.06 rad/s limit (0.65 × the ST3215's 4.7); the limiter clips 30 % of all
+joint-steps and runs up to 10.5° behind, and because it clamps against its own *previous
+output* rather than the previous target, once it falls behind it stays behind.
+
+That factor was 0.85 until 2026-08-29, and what moved it is downstream of the gait
+entirely. `JointTrajectoryController` runs `open_loop_control`, so it interpolates from its
+own *last command*, not from the measured joint — which leaves it perpetually ~2 ticks
+behind this stream and closing that gap whenever a trajectory arrives late. Measured over
+the real gait output with realistic arrival jitter, one late message makes it traverse
+~1.47 × whatever rate is set here: 0.85 peaked at 5.9 rad/s against the URDF's
+`velocity="4.7"`, and `ros2_control`'s joint limiter clipped the knees and filled the
+console with `Command of at least one joint is out of limits`. 0.65 peaks at 4.5 and stays
+clean at every control rate and jitter tried. Raising the loop rate does *not* fix it — the
+lag is in ticks, not in seconds. The cost is real and is not noise: the 5 s flat trot went
+781 → 665 mm, the terrain sweep 635 ±60 → 583 ±51 mm over seeds 7..12 (max |pitch| 6.6° →
+3.7°), the course 6/7 at 3117 mm → 5/7 at 3026 mm on the default seed. A slower swing walks
+slower; the servo could not do 4 rad/s under load anyway, since 4.7 is its speed at zero
+torque. The demand
 is not a spike to be smoothed away either — the whole swing, phase 0.5 to 1.0, sits at
 6–7.6 rad/s. Knowing this does not make the robot faster (below), but it does mean the
 thresholds are compensating for a software clamp, and would need re-measuring on hardware
@@ -572,13 +604,15 @@ joint limits already come from the CAD sweep, so the sim does not need to re-dis
 - yaw is folded in as `v + ω × r_hip`, so turning and translating compose
 - a `_moving` blend keeps the feet planted when the command drops to zero, instead of
   freezing mid-swing
-- joint outputs are clamped to the soft limits, then rate-limited to 0.85 × the servo's
-  4.7 rad/s, so start-up ramps into stance instead of stepping there
+- joint outputs are clamped to the soft limits, then rate-limited to 0.65 × the servo's
+  4.7 rad/s, so start-up ramps into stance instead of stepping there — and so the
+  trajectory controller's catch-up stays inside the URDF's velocity limit (above)
 
 ### Forward speed, and what does not move it
 
-The trot makes 0.156 m/s on a 0.20 m/s command — 781 mm in the 5 s flat run. Asking for
-more buys little and then goes backwards:
+The trot makes 0.133 m/s on a 0.20 m/s command — 665 mm in the 5 s flat run. Asking for
+more buys little and then goes backwards (the table below was swept at the old 0.85 rate
+limit, i.e. against 781 mm on the 0.20 row; the shape holds, every row shifts down ~15 %):
 
 | commanded | achieved | gait period | body z | mean tracking error | torque saturation |
 |---|---|---|---|---|---|
@@ -593,7 +627,8 @@ Two thirds of "it walks slowly" is simply that nobody asks for more: 0.20 m/s is
 in the viewer's `scale`, in the teleop node's `speed` parameter and in the headless
 self-test. The teleop `.` key goes to 0.45.
 
-**The remaining 22 % has been chased and is not what it looks like.** Four hypotheses were
+**The remaining 22 % — as it stood at the old 0.85 rate limit — has been chased and is not
+what it looks like.** Four hypotheses were
 measured and all four are dead:
 
 - *not torque.* Actuator force is inside ±3 N·m for 99–100 % of every run.

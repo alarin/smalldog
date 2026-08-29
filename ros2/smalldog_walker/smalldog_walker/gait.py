@@ -58,7 +58,15 @@ class TrotGait:
         self.swing_height = 0.022
         self._body_height = 0.158
         self.body_height = self._body_height          # runs the setter -> clamps
-        self.max_joint_rate = p.get("joint_velocity_limit", 4.7) * 0.85
+        # Well under the servo's own no-load speed, and the margin is not slack: the
+        # JointTrajectoryController interpolates from its *last command*, so it runs
+        # perpetually ~2 ticks behind this stream and closes that gap whenever a
+        # trajectory arrives late.  Measured over the real gait output, one late message
+        # makes it traverse ~1.47x whatever rate is set here, and ros2_control's joint
+        # limiter then clips the knees against <limit velocity> and logs it.  0.85 peaked
+        # at 5.9 rad/s against a 4.7 limit; 0.65 peaks at 4.5 and stays clean.  The servo
+        # cannot do 4 rad/s under load anyway - 4.7 is its speed at zero torque.
+        self.max_joint_rate = p.get("joint_velocity_limit", 4.7) * 0.65
 
         # ---- terrain feedback: all off until feedback() is actually called ----------
         # tuned over 12 terrain seeds, because one seed's distance is noise: the blind
@@ -361,7 +369,8 @@ class TrotGait:
         for n in self.joint_names:
             leg, kind = n.split("_")
             out.append(_clamp(q[leg][order[kind]], self.limits[kind]))
-        # rate-limit to the servo's own speed so start-up never asks for a step change
+        # rate-limit (see max_joint_rate): start-up never asks for a step change, and the
+        # swing stays inside what the controller chain can deliver without being clipped
         step = self.max_joint_rate * max(dt, 1e-4)
         out = [pv + _clamp(v - pv, step) for v, pv in zip(out, self._q_prev)]
         self._q_prev = list(out)
