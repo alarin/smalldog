@@ -1,0 +1,81 @@
+# ROS 2 environment for SmallDog.
+#
+# This workspace used to borrow the pixi env from ../../ogonek25-spider, which meant
+# smalldog could not be run without an unrelated project checked out next to it, and
+# which package set it got was whatever the spider needed that week.  This is the same
+# RoboStack recipe, cut down to what smalldog actually launches, plus
+# imu-sensor-broadcaster - the controller that publishes the body IMU, without which the
+# gait has no terrain feedback and trots blind.
+#
+#   pixi install --manifest-path ros2/pixi/pixi.toml     # first time, big download
+#   source ros2/tools/env.sh                             # activates this + the overlay
+#
+# osx-arm64 only, deliberately: solving for platforms nobody builds on costs time and
+# breaks on packages that are not published for them.  Add yours if you need it.
+[workspace]
+name = "smalldog-ros"
+description = "ROS 2 Kilted environment for the SmallDog quadruped"
+channels = ["https://prefix.dev/robostack-kilted", "https://prefix.dev/conda-forge"]
+platforms = ["osx-arm64"]
+
+[dependencies]
+# --- ROS 2 base ---------------------------------------------------------------------
+ros-kilted-ros-base = "*"
+ros-kilted-xacro = "*"
+ros-kilted-robot-state-publisher = "*"
+# --- ros2_control -------------------------------------------------------------------
+# PINNED, and the pin is load-bearing.  src/mujoco_ros2_control builds against
+# hardware_interface 5.6: by 5.12 ResourceManager::import_component only takes
+# Actuator/Sensor/SystemInterface, and the plugin's MujocoSystemInterface no longer
+# matches any overload - "no known conversion ... for 1st argument", and the workspace
+# does not build at all.  ros2_control and ros2_controllers version separately, hence
+# the two numbers; they are the pair the plugin is known to work with.
+ros-kilted-ros2-control = "==5.6.0"
+ros-kilted-controller-manager = "==5.6.0"
+ros-kilted-ros2-control-cmake = "*"
+ros-kilted-control-toolbox = "*"
+ros-kilted-ros2controlcli = "*"
+ros-kilted-joint-state-broadcaster = "==5.7.0"
+ros-kilted-joint-trajectory-controller = "==5.7.0"
+ros-kilted-position-controllers = "==5.7.0"
+ros-kilted-effort-controllers = "==5.7.0"
+# the reason this file exists: mujoco_ros2_control exposes the body IMU as a
+# ros2_control sensor, and this is the controller that turns it into a topic
+ros-kilted-imu-sensor-broadcaster = "==5.7.0"
+# --- looking at the data ------------------------------------------------------------
+# Foxglove, not RViz.  rviz2 on macOS is both a large install and a poor citizen there;
+# the bridge is 5 MB, runs headless, and the viewer is a separate app (or a browser) that
+# talks to it over a websocket.  It is what makes the LiDAR PointCloud2 watchable at all
+# on this platform - see README, "Looking at it".  Not pinned: it talks a stable
+# websocket protocol to the app, not a C++ ABI to anything here.
+ros-kilted-foxglove-bridge = "*"
+# --- what mujoco_ros2_control needs to build ----------------------------------------
+# also pinned: mjv_moveCamera grew an argument after 3.3, and the plugin's
+# mujoco_rendering.cpp calls the old signature ("no matching function for call to
+# 'mjv_moveCamera'").  3.12 is what the 3d/.venv uses for headless work - that one is a
+# separate Python package and is unaffected by this pin.
+libmujoco = "3.3.*"
+glfw = "*"
+eigen = "*"
+# c-/cxx-compiler, not the "compilers" metapackage.  On osx-arm64 "compilers" also drags
+# in a fortran toolchain and lands you with plain clang-21 + gcc instead of the conda
+# wrappers (arm64-apple-darwin*-clang++), and CC/CXX stay unset, so CMake silently picks
+# /usr/bin/c++.  The wrapper is what passes -dead_strip_dylibs: without it the node links
+# 18 *__rosidl_generator_py dylibs it never calls into and dies at startup with
+# "symbol not found in flat namespace '_PyExc_RuntimeError'".
+# The conda clang *wrappers*, by name and pinned to 19: c-compiler/cxx-compiler 2.0 no
+# longer pull them on osx-arm64 (you get plain clang-21, CC/CXX unset, and CMake silently
+# takes /usr/bin/c++), and the wrapper is what passes -dead_strip_dylibs.  Without it the
+# node links 18 *__rosidl_generator_py dylibs it never calls into and dies at startup with
+# "symbol not found in flat namespace '_PyExc_RuntimeError'".
+clang_osx-arm64 = "19.*"
+clangxx_osx-arm64 = "19.*"
+cmake = "*"
+ninja = "*"
+make = "*"
+pkg-config = "*"
+colcon-common-extensions = "*"
+python = "*"
+# controller_manager's spawner imports it; without it every spawner dies with
+# ModuleNotFoundError and the robot comes up with no controllers loaded at all
+filelock = "*"
