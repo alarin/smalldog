@@ -158,17 +158,43 @@ problem and stay on plain `python`.
 `--lidar` is the only flag that needs the CAD tree (`../3d`) beside the workspace — the
 scan model lives in `../3d/lidar.py`, next to the geometry it is a sensor for.
 
-**The viewer is paced against the wall clock, and that is not the obvious way round.** The
-physics here runs 26–37x real time (measured, 1 ms steps, flat and heightfield), so an
-unpaced `while v.is_running(): step; sync()` does not run fast — it runs at whatever rate
-`sync()` allows, and `sync()` is a scene copy under a lock, an order of magnitude dearer
-than the step it follows. Calling it once per 1 ms step is also ~16x more often than 60 fps
-needs. The result was a robot in slow motion for no reason at all: 0.50x real time on the
-flat scene, 0.48x on terrain, at ~500 sync/s. `interactive()` now steps to a wall-clock
-budget and syncs at 60 Hz — 0.99x real time at 58 sync/s, on both scenes. `CATCHUP` caps how
-much sim time one frame may make up, so a dragged window or a scene heavy enough to fall
-behind degrades to slow motion instead of sprinting to catch up. None of this touches the
-headless runs, which have no viewer and are deliberately not paced.
+**The viewer is paced against the wall clock.** It did not used to be: the loop was
+`while v.is_running(): step; sync()`, which runs at whatever rate `sync()` allows and shows
+whatever sim time that happens to produce. Measured under the real passive viewer, that was
+**1.49x real time** at ~1490 sync/s — `sync()` costs 0.67 ms here, and the 1 ms physics step
+it follows costs far less. So the viewer was not slow, it was fast: everything on screen,
+the gait included, ran half again quicker than the robot really moves, which is exactly the
+sort of thing you calibrate your eye against without noticing. `interactive()` now steps to
+a wall-clock budget and syncs at 60 Hz — measured 1.000x real time at 58 sync/s. `CATCHUP`
+caps how much sim time one frame may make up, so a dragged window or a scene heavy enough to
+fall behind degrades to slow motion instead of sprinting to catch up.
+
+None of this touches the headless runs, which have no viewer and are deliberately not paced,
+and none of it touches `tools/sim.sh` — see below.
+
+**`tools/sim.sh` is a different loop and has no pacing problem either.** The ROS 2 node
+(`src/mujoco_ros2_control`) advances 1/60 s of sim per rendered frame and does not sleep, so
+it runs as fast as the frame costs. Profiled on this machine, robot standing, `teleop:=false`:
+
+```
+2.79x real time | 164 fps | frame 6.09 ms = phys/ctrl 0.42 + render 4.24 + lidar 0.03 + cam 1.40
+3.03x real time | 178 fps | frame 5.61 ms = phys/ctrl 0.45 + render 3.78 + lidar 0.03 + cam 1.35
+```
+
+Rendering is 70 % of a frame and the camera another 23 %; physics *and* the whole ros2_control
+stack together are 7–8 %. Per physics step, over ~6000 steps: `/clock` publish 11.1 µs,
+`mj_step1` 6.3, controller_manager read+update 4.9 (200 Hz, so one step in five), write 0.3,
+`mj_step2` 4.2 — 26.7 µs/step all in. Nothing there is worth optimising; if `sim.sh` ever does
+crawl, profile it again rather than assuming, because at 2.8–3.0x the headroom is large.
+
+**One real defect found while profiling, unrelated to speed.** `robot.xml`'s camera declares
+`resolution="3840 2160"` while the scene's offscreen buffer is `offwidth="1400" offheight="1000"`.
+MuJoCo's Python API rejects that combination outright; the C++ `MujocoCameras::register_cameras`
+does not check, and sets the viewport to 3840x2160 against a 1400x1000 buffer — so what
+`camera/color` and `camera/depth` publish is not a valid image. It is not a performance
+problem (4K render+readback measured at 16.6 ms against 13.2 at 1400x1000, ~10 % of a frame at
+6 Hz), so fixing it is a correctness job: either raise the buffer to match `CAM_PIX` or give
+`camera.py` a render resolution that fits, and regenerate. Not done here.
 
 Current self-test result:
 
@@ -183,7 +209,9 @@ RESULT: OK — stands and trots forward
 
 0.15 m/s against a 0.20 m/s command, 5 mm lateral drift over 5 s, attitude within 1.4°.
 That 22 % is not lag or torque — see "Forward speed, and what does not move it" under Gait
-before trying to tune it out.
+before trying to tune it out. It is also the *only* thing about this robot that is slow: both
+viewers were measured running at or above real time, so an impression that the gait looks slow
+is the gait, not the renderer.
 
 ## Rough ground
 
