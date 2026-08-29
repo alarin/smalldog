@@ -30,6 +30,7 @@ their own location (`out/…`).
 | `camera.py` | the IMX415 module **as a sensor**: MJCF `<camera>` + the two URDF frames, shared by both sim exporters. No CAD, like `lidar.py`. |
 | `terrain.py` | procedural MuJoCo heightfield ground **and the ramp/wall/log obstacle course bedded into it**. Imported by *both* sim exporters; no CAD in it. |
 | `lidar.py` | the Unitree L2 as a *sensor*: the MJCF site and `<custom>` numerics both sim exporters emit, and the `mj_multiRay` scanner that turns them into a point cloud. No CAD in it either. |
+| `servo_bench.py` | **the test stands**, and a *third* consumer of this CAD: three printed rigs that measure the ST3215 (torque, compliance, backlash, step response, foot force) so leg motion can be searched instead of solved by IK. Imports `mini_dog` for every servo dimension and `export_sim.MP` for mass properties; adds no geometry to the robot. `BENCH.md` is its spec. |
 | `render.py` | offscreen VTK renders of `out/stl/*.stl`. |
 | `tools/` | one-off measurement/diagnostic scripts, not part of the build (see `tools/README.md`). |
 | `ref/` | vendor downloads: ST3215 STEP/PDF/wiki, Waveshare ROBOTIC DOG STEP, and `camera/` - the IMX415 module's dimensions, transcribed, with the two uncertain readings flagged. Read-only inputs. |
@@ -130,6 +131,16 @@ name → (workplane, qty, note) and drives both the export loop and the BOM;
   for `../ros2/smalldog_description/{meshes,urdf,mujoco,robot_params.json}`: every one of
   those files is output of `scripts/generate_model.py`, which imports this `mini_dog.py`.
   Never hand-edit them, and never let a model edit end without re-running that script.
+- **The stands hold the servo the way the robot does, and that is the whole point.**
+  `servo_bench.py` builds its joint out of `md.sleeve()`, `md.fork()` and the stock hubs,
+  unmodified, so what it measures is this robot's joint and not a servo in a vice. It
+  therefore inherits every servo invariant above, including the 23 < r < 34 annulus — its
+  buttress escapes that one by staying behind a plane tangent to the sweep circle, since
+  a yoke is impossible (the sleeve ends at |y| = 16.5, the fork arms start at 17.9). If
+  the `S_*` / `HUB_*` block ever changes, re-run `servo_bench.py` too: the stands move
+  with it, and a stand built to the old interface measures a different joint. It is the
+  one consumer that adds nothing to the robot, so it never invalidates the FEA or either
+  sim export.
 - The Waveshare `ROBOTIC DOG.step` supplies the **shape** of the shin (`SHIN_PROFILE`,
   measured by `tools/ref_ws_shin.py`) and nothing else. It is an aluminium-plate,
   single-shear-horn design: do not transfer its joint spacing or its absolute sections.
@@ -242,7 +253,14 @@ name → (workplane, qty, note) and drives both the export loop and the BOM;
    `--symlink-install`, so the install space points at these files. `out/sim/` from step 5
    and the ROS 2 package are *not* the same model: different link decomposition (the foot
    is merged into the shin there) and different collision primitives. Both must be current.
-7. `rom_scan(..., step=2)` before committing to real joint limits — the default 10° sweep
+7. **If the servo interface moved** (`S_*`, `HUB_*`, `SLEEVE_*`, `ARM_*`, `SPINE_*`,
+   `THRUST_*`) — `.venv/bin/python servo_bench.py`. It is the third consumer of this CAD
+   and the only one that is hardware rather than a model, so a stale one is a rig that
+   does not fit. Its own two failure lines are `!! INTERFERENCE` between the static parts
+   and a `!! wanted +-N` on either sweep; both are failures, not warnings. Nothing here
+   feeds back into the robot, so it is not part of the strength/sim loop above — but a
+   number it *produces* is: see `BENCH.md`, "Measurement -> parameter".
+8. `rom_scan(..., step=2)` before committing to real joint limits — the default 10° sweep
    is coarse. `export_sim.py` reads the limits out of `out/bom.json`, so re-run
    `mini_dog.py` before re-exporting, or pass `--rom-step 2` to re-scan them itself.
 
