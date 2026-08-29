@@ -47,6 +47,8 @@ python checks/check_model.py --terrain        # ... on the heightfield scene
 python checks/check_model.py --view           # ... plus the passive viewer
 python checks/check_model.py --shot out.png   # ... plus one offscreen frame
 python checks/imu_placement.py                # does the IMU mounting point matter?
+python checks/wheels.py                       # wheels, and what ratio they need
+python checks/wheels.py --gear 6 --diameters 0.06,0.08,0.10
 ```
 
 `--view` opens MuJoCo's passive viewer; on macOS that needs `mjpython`, exactly
@@ -76,6 +78,7 @@ ladders mean three different things.
 |---|---|
 | `checks/check_model.py` | model audit — step 2 |
 | `checks/imu_placement.py` | how much the IMU mounting point costs — step 2 |
+| `checks/wheels.py` | wheels: free, ratchet, and driven over gear ratio and diameter |
 | `actuator.py` | ST3215 voltage law, back-EMF, friction, backlash — step 3 |
 | `params/st3215.json` | actuator parameters. **Currently the vendor priors, not a fit** — `actuator.load()` says so out loud. Overwritten by `robot/bench/fit_bam.py` |
 | `params/bus_timing.json` | written by `robot/bench/bus_probe.py`; the measured command delay step 4 randomises around |
