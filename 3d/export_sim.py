@@ -16,6 +16,10 @@ keep its own copy of a mass or a density - they all come from mini_dog.py sectio
     .venv/bin/python export_sim.py --rom-step 2   # re-scan the joint limits finely
     .venv/bin/python export_sim.py --mesh-uri relative   # non-ROS mesh paths
 
+Two MJCFs come out of every run: mini_dog.xml stands on a flat plane, mini_dog_terrain.xml
+on the procedural heightfield from terrain.py (out/sim/meshes/terrain.png).  Same robot,
+same masses, different ground - the flat one stays the reference for --check.
+
 Conventions of the exported model
   * SI: metres, kilograms, radians.  The STL meshes stay in mm and are scaled by 0.001.
   * Frames match mini_dog's robot frame: +X forward, +Y left, +Z up, origin at the
@@ -35,12 +39,15 @@ from OCP.BRepGProp import BRepGProp
 from OCP.GProp import GProp_GProps
 
 import mini_dog as md
+import terrain as terr
+import lidar as ld
+import camera as cam
 
 OUT    = os.path.join(md.OUT, "sim")
 MESHES = os.path.join(OUT, "meshes")
 
-RHO_PRINT = md.PRINT_RHO * 1e-6        # g/cm3 -> kg/mm3
-TPU_RHO   = md.TPU_RHO   * 1e-6        # ditto; both live in mini_dog's mass block
+def rho(part):                          # g/cm3 -> kg/mm3, per part
+    return md.part_rho(part) * 1e-6     # the fill factors live in mini_dog's mass block
 
 # collision primitives - deliberately a little proud of the real part
 R_THIGH, R_SHIN = 0.014, 0.011         # capsule radii, m
@@ -210,6 +217,8 @@ def sim_solids():
         "chassis_bottom": (md.chassis_bottom(), (0, 0, 0)),
         "chassis_top":    (md.chassis_top(),    (0, 0, 0)),
         "lidar_mount":    (md.lidar_mount(),    (0, 0, 0)),
+        "gps_mount":      (md.gps_mount(),      (0, 0, 0)),
+        "camera_mount":   (md.camera_mount(),   (0, 0, 0)),
         "hip_bracket_A":  (hb,            fl["roll"]),
         "thigh_A":        (th,            fl["pitch"]),
         "shin_A":         (sh.union(ft),  fl["knee"]),
@@ -226,21 +235,34 @@ def link_masses(parts):
     legs = {}
     for tag, L in LEGS.items():
         f, xf = leg_frames(L), L["xf"]
-        hip = MP.of(xf(hb), RHO_PRINT) + servo_mp(L, md.PITCH_LOC)
-        thi = MP.of(xf(th), RHO_PRINT) + servo_mp(L, md.KNEE_LOC)
-        shn = MP.of(xf(sh), RHO_PRINT) + MP.of(xf(ft), TPU_RHO)
+        hip = MP.of(xf(hb), rho("hip_bracket_A")) + servo_mp(L, md.PITCH_LOC)
+        thi = MP.of(xf(th), rho("thigh_A")) + servo_mp(L, md.KNEE_LOC)
+        shn = MP.of(xf(sh), rho("shin_A")) + MP.of(xf(ft), rho("foot"))
         legs[tag] = dict(hip=hip.moved_to(f["roll"]),
                          thigh=thi.moved_to(f["pitch"]),
                          shin=shn.moved_to(f["knee"]))
-    base = (MP.of(md.chassis_bottom(), RHO_PRINT)
-            + MP.of(md.chassis_top(), RHO_PRINT)
-            + MP.of(md.lidar_mount(), RHO_PRINT)
+    base = (MP.of(md.chassis_bottom(), rho("chassis_bottom"))
+            + MP.of(md.chassis_top(), rho("chassis_top"))
+            + MP.of(md.lidar_mount(), rho("lidar_mount"))
+            + MP.of(md.gps_mount(), rho("gps_mount"))
+            + MP.of(md.camera_mount(), rho("camera_mount"))
             + box_mp(md.BATTERY_KG, (md.BATT_L, md.BATT_W, md.BATT_H),
                      (0.0, 0.0, md.BODY_Z0 + 3.0 + md.BATT_H / 2.0))
-            + box_mp(md.ELECTRONICS_KG, (92.0, 62.0, 20.0),
-                     (-22.0, 0.0, md.BODY_Z1 + md.DECK_T + 10.0))
-            + box_mp(md.LIDAR_KG, (70.0, 70.0, 60.0),     # the L2 itself, on its pedestal
-                     (42.0, 0.0, md.BODY_Z1 + md.DECK_T + md.LIDAR_H + 30.0)))
+            # the Orange Pi stack, on the envelope mini_dog now holds for it - this used
+            # to be a local 92 x 62 x 20 that had already drifted from the ROS 2 side's
+            # 100 x 62 x 18.  gps_mount's arms are shaped around the same box.
+            + box_mp(md.ELECTRONICS_KG, md.OPI_BOX, md.opi_com())
+            # the receiver and its patch, sitting on gps_mount's platform
+            + box_mp(md.GPS_KG, md.GPS_STACK, md.gps_com())
+            # the camera module in its channel at the nose.  Its own envelope, not a
+            # guess: 90 x 15 mm of board with the lens block on the optical axis.
+            + box_mp(md.CAMERA_KG, (md.CAM_LENS_H, md.CAM_BOARD[0], md.CAM_BOARD[1]),
+                     md.camera_com())
+            # The L2, at the pose mini_dog.py holds for it.  Envelope and mass are the
+            # sensor's own drawing; the box stays axis-aligned while the real one leans
+            # LIDAR_TILT forward, which is exact in mass and centroid and ~7 % out on one
+            # inertia axis of a part that is 9 % of the robot.
+            + box_mp(md.LIDAR_KG, md.LIDAR_L2_BOX, md.lidar_com()))
     for L in LEGS.values():                          # the four hip-roll servos ride the chassis
         base = base + servo_mp(L, md.ROLL_LOC)
     return base, legs
@@ -277,7 +299,8 @@ def urdf(base_mp, legmp, rom, meshes, mesh_uri):
          '  <material name="rubber"><color rgba="0.12 0.12 0.14 1"/></material>',
          '  <link name="base_link">',
          '    <inertial>', urdf_inertial(base_mp).rstrip('\n'), '    </inertial>']
-    for m in ("chassis_bottom", "chassis_top", "lidar_mount"):
+    for m in ("chassis_bottom", "chassis_top", "lidar_mount", "gps_mount",
+              "camera_mount"):
         x.append(mesh(m).rstrip('\n'))
     x += [f'    <collision>\n'
           f'      <origin xyz="0 0 {(md.BODY_Z0 + md.BODY_Z1) / 2000.0:.6g}"/>\n'
@@ -289,7 +312,19 @@ def urdf(base_mp, legmp, rom, meshes, mesh_uri):
           f'  <joint name="imu_joint" type="fixed">\n'
           f'    <parent link="base_link"/><child link="imu_link"/>\n'
           f'    <origin xyz="{fmt(IMU_XYZ)}" rpy="0 0 0"/>\n'
+          f'  </joint>',
+          # the GPS patch's phase centre, so a NavSatFix has a frame to name.  +Z is the
+          # patch normal, which is why the platform is level: no rpy here is a statement.
+          # the lens, in both conventions - see camera.py's header for why both
+          *cam.urdf_links(),
+          '  <link name="gps_link"/>',
+          f'  <joint name="gps_joint" type="fixed">\n'
+          f'    <parent link="base_link"/><child link="gps_link"/>\n'
+          f'    <origin xyz="{fmt(tuple(v/1000.0 for v in md.gps_pose()))}" rpy="0 0 0"/>\n'
           f'  </joint>']
+    # the L2's optical centre and its own frame, so a cloud has a TF to hang off.  Both
+    # the pose and the tilt come out of lidar.py, which reads them from mini_dog.
+    x += ld.urdf_link()
 
     for tag, L in LEGS.items():
         f, rz = leg_frames(L), L["rz"]
@@ -351,7 +386,7 @@ def stand_height():
     return -z / 1000.0
 
 
-def mjcf(base_mp, legmp, rom, meshes):
+def mjcf(base_mp, legmp, rom, meshes, hf=None):
     def inertial(mp):
         ixx, iyy, izz, ixy, ixz, iyz = mp.inertia
         return (f'<inertial pos="{fmt(mp.com_m)}" mass="{mp.m:.6g}"'
@@ -389,18 +424,41 @@ def mjcf(base_mp, legmp, rom, meshes):
          '    <texture name="grid" type="2d" builtin="checker" rgb1="0.2 0.22 0.25"'
          ' rgb2="0.28 0.3 0.33" width="512" height="512"/>',
          '    <material name="grid" texture="grid" texrepeat="8 8" reflectance="0.1"/>']
+    if hf:
+        x.append(f'    <hfield name="terrain" file="{hf["file"]}"'
+                 f' size="{terr.size_attr(hf)}"/>')
     for name, f in meshes.items():
         x.append(f'    <mesh name="{name}" file="{f}" scale="0.001 0.001 0.001"/>')
     x += ['  </asset>',
           '  <worldbody>',
           '    <light pos="0 0 2.5" dir="0 0 -1" directional="true"/>',
-          '    <geom name="floor" type="plane" size="5 5 0.05" material="grid"'
-          ' friction="1.0 0.02 0.001"/>',
+          (f'    <geom name="floor" type="hfield" hfield="terrain"'
+           f' pos="0 0 {hf["pos_z"]:.6g}" material="grid"'
+           f' friction="1.0 0.02 0.001"/>' if hf else
+           '    <geom name="floor" type="plane" size="5 5 0.05" material="grid"'
+           ' friction="1.0 0.02 0.001"/>'),
+          ]
+    if hf and hf.get("obstacles"):
+        # same friction as the floor: an obstacle that is slipperier than the ground it
+        # stands on is a bug the gait would spend a day being blamed for
+        x.append(terr.obstacle_xml(hf, "    ", ' friction="1.0 0.02 0.001"'))
+    x += [
           f'    <body name="base_link" pos="0 0 {stand_height():.6g}">',
           '      <freejoint name="root"/>',
           f'      {inertial(base_mp)}',
-          f'      <site name="imu" pos="{fmt(IMU_XYZ)}" size="0.005"/>']
-    for m in ("chassis_bottom", "chassis_top", "lidar_mount"):
+          f'      <site name="imu" pos="{fmt(IMU_XYZ)}" size="0.005"/>',
+          # the GPS patch's phase centre, and the receiver stack drawn on gps_mount's
+          # platform so it is visible that something is up there taking up mass.
+          f'      <site name="gps" pos="{fmt(tuple(v/1000.0 for v in md.gps_pose()))}"'
+          f' size="0.004" rgba="0.2 0.8 0.4 1"/>',
+          f'      <geom name="gps_body" type="box" group="2" contype="0" conaffinity="0"'
+          f' size="{fmt(tuple(v/2000.0 for v in md.GPS_STACK))}"'
+          f' pos="{fmt(tuple(v/1000.0 for v in md.gps_com()))}"'
+          f' rgba="0.15 0.15 0.17 1"/>']
+    x += ld.site_xml("      ")          # the L2: its frame, and the sensor drawn on it
+    x += cam.camera_xml("      ")       # ... and the camera, which MuJoCo can render from
+    for m in ("chassis_bottom", "chassis_top", "lidar_mount", "gps_mount",
+              "camera_mount"):
         x.append(f'      {vis(m, 0.0)}')
     x.append(f'      <geom class="col" type="box" pos="0 0'
              f' {(md.BODY_Z0 + md.BODY_Z1) / 2000.0:.6g}"'
@@ -458,9 +516,11 @@ def mjcf(base_mp, legmp, rom, meshes):
           '  <sensor>',
           '    <framequat name="imu_quat" objtype="site" objname="imu"/>',
           '    <gyro name="imu_gyro" site="imu"/>',
-          '    <accelerometer name="imu_acc" site="imu"/>',
-          '  </sensor>',
-          '</mujoco>']
+          '    <accelerometer name="imu_accel" site="imu"/>',   # ..._accel: see ../ros2
+          '  </sensor>']
+    # the scan parameters travel inside the model, not beside it - see lidar.py's header.
+    x += ld.custom_xml("  ")
+    x += ['</mujoco>']
     return "\n".join(x) + "\n"
 
 
@@ -471,6 +531,14 @@ def main():
                     help="re-run the ROM scan at this step (deg) instead of reading out/bom.json")
     ap.add_argument("--mesh-uri", choices=("package", "relative"), default="package")
     ap.add_argument("--package", default="mini_dog_description")
+    ap.add_argument("--terrain-amp", type=float, default=terr.AMP_MM,
+                    help=f"heightfield amplitude in mm, +- this (default {terr.AMP_MM:g})")
+    ap.add_argument("--terrain-wave", type=float, default=terr.WAVELEN_MM,
+                    help=f"heightfield longest feature in mm (default {terr.WAVELEN_MM:g};"
+                         " shorter reads rougher and costs the gait less than a long climb)")
+    ap.add_argument("--no-terrain-obstacles", action="store_true",
+                    help="heightfield only, without the ramp/wall/log course — the smooth"
+                         " relief the gait gains were measured on")
     ap.add_argument("--check", action="store_true",
                     help="load both files in MuJoCo and drop the robot on the floor")
     a = ap.parse_args()
@@ -488,6 +556,11 @@ def main():
         f.write(urdf(base_mp, legmp, rom, meshes, uri))
     with open(os.path.join(OUT, "mini_dog.xml"), "w") as f:
         f.write(mjcf(base_mp, legmp, rom, meshes))
+    # meshdir="meshes" governs hfield files too, so the image lives with them
+    hf = terr.write(MESHES, amp_mm=a.terrain_amp, wavelen_mm=a.terrain_wave,
+                    obstacles=not a.no_terrain_obstacles)
+    with open(os.path.join(OUT, "mini_dog_terrain.xml"), "w") as f:
+        f.write(mjcf(base_mp, legmp, rom, meshes, hf))
 
     total = base_mp.m + sum(mp.m for l in legmp.values() for mp in l.values())
     print(f"\n  link masses (kg)   base {base_mp.m:.3f}"
@@ -505,6 +578,9 @@ def main():
         print(f"    {j:10s} {math.degrees(lo):+7.1f} .. {math.degrees(hi):+7.1f}{sat}")
     print(f"\n  -> {os.path.relpath(OUT)}/mini_dog.urdf, mini_dog.xml, meshes/ "
           f"({len(meshes)} STL)")
+    print(f"  -> {os.path.relpath(OUT)}/mini_dog_terrain.xml + meshes/terrain.png"
+          f" ({hf['nrow']}x{hf['nrow']}, +-{hf['amp_mm']:.1f} mm, flat pad at the origin,"
+          f" {len(hf['obstacles'])} obstacle geoms)")
 
     try:
         import fea
@@ -528,22 +604,95 @@ def check(uri):
     except ImportError:
         print("\n  --check needs mujoco in the venv")
         return
+    def stand(xml):
+        """3 s in the stand pose; returns the model, its data and how it ended up"""
+        m = mujoco.MjModel.from_xml_path(os.path.join(OUT, xml))
+        d = mujoco.MjData(m)
+        mujoco.mj_resetDataKeyframe(m, d, 0)
+        d.ctrl[:] = m.key_ctrl[0]
+        for _ in range(1500):
+            mujoco.mj_step(m, d)
+        # count feet, not contacts: one foot on the heightfield touches several triangles
+        gname = lambda g: mujoco.mj_id2name(m, mujoco.mjtObj.mjOBJ_GEOM, g) or ""
+        feet = len({n for c in d.contact[:d.ncon] for n in (gname(c.geom1), gname(c.geom2))
+                    if n.startswith("foot_")})
+        up = 1.0 - 2.0 * (d.qpos[4] ** 2 + d.qpos[5] ** 2)      # world z of the body z axis
+        return m, d, d.qpos[2], feet, up
+
     print("\n  MuJoCo check")
-    m = mujoco.MjModel.from_xml_path(os.path.join(OUT, "mini_dog.xml"))
-    d = mujoco.MjData(m)
-    mujoco.mj_resetDataKeyframe(m, d, 0)
-    d.ctrl[:] = m.key_ctrl[0]
-    for _ in range(1500):
-        mujoco.mj_step(m, d)
-    feet = sum(1 for c in d.contact[:d.ncon]
-               if "foot" in (mujoco.mj_id2name(m, mujoco.mjtObj.mjOBJ_GEOM, c.geom1) or "")
-               + (mujoco.mj_id2name(m, mujoco.mjtObj.mjOBJ_GEOM, c.geom2) or ""))
-    up = 1.0 - 2.0 * (d.qpos[4] ** 2 + d.qpos[5] ** 2)          # world z of the body z axis
-    ok = feet == 4 and up > 0.9 and d.qpos[2] > 0.05
+    m, d, z, feet, up = stand("mini_dog.xml")
+    ok = feet == 4 and up > 0.9 and z > 0.05
     print(f"    mjcf   nq {m.nq} nu {m.nu}, mass {m.body_subtreemass[1]:.3f} kg;"
-          f" after 3 s in the stand pose: base z {d.qpos[2]*1000:.0f} mm,"
+          f" after 3 s in the stand pose: base z {z*1000:.0f} mm,"
           f" {feet} feet down, upright {up:+.2f}"
           f"{'' if ok else '   !! it fell over'}")
+    # same robot on the heightfield.  The spawn pad is flat, so this should differ from
+    # the line above only in the odd foot that lands on the fade-out ring.
+    try:
+        _, _, tz, tfeet, tup = stand("mini_dog_terrain.xml")
+        tok = tfeet == 4 and tup > 0.9 and tz > 0.05
+        print(f"    terrain  base z {tz*1000:.0f} mm, {tfeet} feet down,"
+              f" upright {tup:+.2f}{'' if tok else '   !! it fell over on the heightfield'}")
+    except Exception as e:
+        print(f"    terrain  !! failed to load: {e}")
+
+    # the L2.  One frame, cast from the robot standing still on the flat floor, so the
+    # numbers are checkable by hand: the near edge of the cone should land at the distance
+    # mini_dog.py's tilt argument claims (~150 mm ahead of the leading foot), and the only
+    # things in the way are the robot's own legs.
+    sc = ld.Scanner(m)
+    if not sc.ok:
+        print(f"    lidar  !! {sc.missing}")
+    else:
+        c = sc.scan(m, d)
+        floor = m.geom("floor").id
+        gnd = c["world"][c["geom"] == floor]
+        mid = gnd[abs(gnd[:, 1]) < 0.05]        # on the centreline, where the dog walks
+        foot = float(max(d.geom(f"foot_{t}").xpos[0] for t in LEGS))
+        print(f"    lidar  {c['n_rays']} rays/frame at {sc.frame_hz:.0f} Hz ->"
+              f" {len(c['range'])} returns, {len(gnd)} of them ground,"
+              f" {len(c['range']) - len(gnd)} the robot itself;"
+              f" range {c['range'].min():.2f}..{c['range'].max():.2f} m")
+        print(f"           ground on the centreline from x {mid[:, 0].min()*1000:+.0f} mm"
+              f" ({(mid[:, 0].min() - foot)*1000:+.0f} mm past the leading foot)"
+              f" out to {mid[:, 0].max()*1000:+.0f} mm")
+
+    # the camera.  Rendering one frame is the only check that catches a wrong quaternion:
+    # a camera that is 90 deg off still has a plausible pose, a plausible fovy and a
+    # completely useless picture.  The segmentation pass gives the honest number - how
+    # much of the frame the robot is spending on looking at itself.
+    try:
+        import numpy as np
+        gn = lambda g: mujoco.mj_id2name(m, mujoco.mjtObj.mjOBJ_GEOM, int(g)) or ""
+        cid = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_CAMERA, "camera")
+        if cid < 0:
+            print("    camera !! no <camera> in the model")
+        else:
+            w, h = 640, 360
+            r = mujoco.Renderer(m, height=h, width=w)
+            r.update_scene(d, camera="camera")
+            png = os.path.join(OUT, "camera_view.png")
+            try:
+                from PIL import Image
+                Image.fromarray(r.render()).save(png)
+                saved = f" -> {os.path.relpath(png)}"
+            except ImportError:
+                saved = ""
+            r.enable_segmentation_rendering()
+            r.update_scene(d, camera="camera")
+            seg = r.render()[:, :, 0]
+            own = float(np.isin(seg, [g for g in np.unique(seg)
+                                      if g >= 0 and gn(g) != "floor"]).mean())
+            hf_, vf_ = md.camera_fov()
+            fwd = d.cam_xmat[cid].reshape(3, 3)[:, 2] * -1.0
+            print(f"    camera {hf_:.0f} x {vf_:.0f} deg, axis"
+                  f" ({fwd[0]:+.2f} {fwd[1]:+.2f} {fwd[2]:+.2f}) world,"
+                  f" {own*100:.1f}% of the frame is the robot{saved}")
+            if fwd[0] < 0.9 or abs(fwd[1]) > 0.05:
+                print("    camera !! it is not looking forward - check camera.py's quat")
+    except Exception as e:
+        print(f"    camera !! render failed: {e}")
+
     # the URDF has to survive a parser too; MuJoCo reads URDF, given relative mesh paths
     import re
     tmp = os.path.join(OUT, "_check.urdf")
