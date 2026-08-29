@@ -8,6 +8,16 @@ controller_manager:
     smalldog_controller:
       type: joint_trajectory_controller/JointTrajectoryController
 
+    imu_sensor_broadcaster:
+      type: imu_sensor_broadcaster/IMUSensorBroadcaster
+
+
+imu_sensor_broadcaster:
+  ros__parameters:
+    # must match the <sensor name=...> in smalldog-mujoco.urdf.xacro
+    sensor_name: imu_imu
+    frame_id: base_link
+
 
 smalldog_controller:
   ros__parameters:

@@ -1,19 +1,26 @@
 #!/usr/bin/env python3
 """Keyboard teleop for SmallDog.
 
-Reads the terminal in raw mode and publishes:
+Turns key presses into:
     /cmd_vel               geometry_msgs/Twist
     /smalldog/body_height  std_msgs/Float64
     /smalldog/enable       std_msgs/Bool
 
-Run it in its own terminal — it needs the focused TTY.
+Keys arrive from either source, and both may be live at once:
+
+* the **MuJoCo render window** — `mujoco_ros2_control` republishes every printable key
+  pressed over its viewer on `~/key` (`key_topic` here). This is the path the launch file
+  uses: no second terminal, just click the sim window and type.
+* **this terminal**, read raw, when stdin is a TTY and `read_stdin` is true. That needs
+  the focused TTY, so it only works when the node is started by hand
+  (`ros2 run smalldog_teleop keyboard`), not from a launch file.
 """
 import sys, os, select, termios, tty, threading
 import rclpy
 import rclpy.executors
 from rclpy.node import Node
 from geometry_msgs.msg import Twist
-from std_msgs.msg import Bool, Float64
+from std_msgs.msg import Bool, Float64, String
 
 BANNER = """
 SmallDog keyboard teleop
@@ -44,6 +51,10 @@ class KeyboardTeleop(Node):
         self.declare_parameter('turn', 1.2)
         self.declare_parameter('body_height', 0.158)
         self.declare_parameter('repeat_rate', 50.0)
+        # `~/key` of the mujoco_ros2_control node, which publishes what the viewer window
+        # sees. Absolute, because that node is not a child of this one.
+        self.declare_parameter('key_topic', '/mujoco_ros2_control_node/key')
+        self.declare_parameter('read_stdin', True)
 
         self.speed = self.get_parameter('speed').value
         self.turn = self.get_parameter('turn').value
@@ -54,9 +65,15 @@ class KeyboardTeleop(Node):
         self.pub = self.create_publisher(Twist, '/cmd_vel', 10)
         self.pub_h = self.create_publisher(Float64, '/smalldog/body_height', 10)
         self.pub_e = self.create_publisher(Bool, '/smalldog/enable', 10)
+        self.create_subscription(String, self.get_parameter('key_topic').value,
+                                 self.on_key_msg, 10)
 
         rate = float(self.get_parameter('repeat_rate').value)
         self.create_timer(1.0 / rate, self.publish_cmd)
+
+    def on_key_msg(self, msg):
+        if msg.data:
+            self.on_key(msg.data[0].lower())
 
     def publish_cmd(self):
         t = Twist()
@@ -84,8 +101,16 @@ class KeyboardTeleop(Node):
         elif key == 't':
             self.enabled = not self.enabled
             self.pub_e.publish(Bool(data=self.enabled))
-        sys.stdout.write(self.status())
-        sys.stdout.flush()
+        self.show_status()
+
+    def show_status(self):
+        # without a TTY the \r trick is useless — launch buffers by line and prefixes each
+        # one — so say it through the logger instead.
+        if sys.stdin.isatty():
+            sys.stdout.write(self.status())
+            sys.stdout.flush()
+        else:
+            self.get_logger().info(self.status().strip())
 
 
 def main(args=None):
@@ -98,20 +123,30 @@ def main(args=None):
     spin = threading.Thread(target=executor.spin, daemon=True)
     spin.start()
 
-    settings = termios.tcgetattr(sys.stdin)
-    print(BANNER)
-    sys.stdout.write(node.status())
-    sys.stdout.flush()
+    raw = node.get_parameter('read_stdin').value and sys.stdin.isatty()
+    print(BANNER + ('' if raw else '\nkeys come from the MuJoCo window — click it and type\n'))
+    settings = termios.tcgetattr(sys.stdin) if raw else None
+    if raw:
+        node.show_status()
     try:
-        tty.setraw(sys.stdin.fileno())
+        if raw:
+            tty.setraw(sys.stdin.fileno())
         while rclpy.ok():
+            if not raw:
+                spin.join(timeout=0.5)
+                if not spin.is_alive():
+                    break
+                continue
             if select.select([sys.stdin], [], [], 0.1)[0]:
                 key = sys.stdin.read(1)
                 if key == '\x03':
                     break
                 node.on_key(key.lower())
+    except KeyboardInterrupt:
+        pass
     finally:
-        termios.tcsetattr(sys.stdin, termios.TCSADRAIN, settings)
+        if raw:
+            termios.tcsetattr(sys.stdin, termios.TCSADRAIN, settings)
         node.cmd = {'x': 0.0, 'y': 0.0, 'z': 0.0}
         node.publish_cmd()
         print()
