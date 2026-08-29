@@ -72,3 +72,55 @@ def test_gait_pushes_backwards_when_walking_forward():
         prev = cur
     assert stance_deltas
     assert sum(stance_deltas) / len(stance_deltas) < 0
+
+
+# --- heading hold -------------------------------------------------------------------
+def quat_yaw(a):
+    """body quaternion for a yaw of `a` radians, level."""
+    return (math.cos(a / 2), 0.0, 0.0, math.sin(a / 2))
+
+
+def walking_gait(yaw=0.0, wzg=0.0):
+    """a gait that has been walking long enough for `_moving` to be up, fed a heading."""
+    g = TrotGait(params())
+    for _ in range(200):
+        g.feedback(quat=quat_yaw(yaw), gyro=(0.0, 0.0, wzg))
+        g.foot_targets(0.01, 0.20, 0.0, 0.0)
+    return g
+
+
+def test_heading_hold_turns_back_towards_the_reference():
+    # latched straight ahead, then knocked 15 deg to the left: the correction must be
+    # negative (turn right).  Getting this sign backwards is a divergent loop, and the
+    # equivalent mistake in the roll term of _level put the robot on its back in a second.
+    g = walking_gait()
+    assert g._yaw_ref is not None
+    g.feedback(quat=quat_yaw(g._yaw_ref + math.radians(15)))
+    assert g._heading(0.0, True) < 0.0
+    g.feedback(quat=quat_yaw(g._yaw_ref - math.radians(15)))
+    assert g._heading(0.0, True) > 0.0
+
+
+def test_heading_hold_takes_the_short_way_round():
+    # a reference just past +180 and a body just short of -180 are 10 deg apart, not 350
+    g = walking_gait()
+    g._yaw_ref = math.radians(175)
+    g.feedback(quat=quat_yaw(math.radians(-175)))
+    c = g._heading(0.0, True)
+    assert c < 0.0 and abs(c) < g.yaw_kp * math.radians(20)
+
+
+def test_heading_hold_lets_a_commanded_turn_through():
+    g = walking_gait()
+    g.feedback(quat=quat_yaw(g._yaw_ref + math.radians(15)))
+    assert g._heading(1.0, True) == 0.0          # operator is turning: do not fight it
+    assert g._yaw_ref is None                    # ... and the reference is dropped
+    assert g._heading(0.0, False) == 0.0         # stale feedback: blind gait
+
+
+def test_heading_hold_is_clamped():
+    # a large error must not turn into a large turn command
+    g = walking_gait()
+    g._yaw_ref = math.radians(170)
+    g.feedback(quat=quat_yaw(0.0), gyro=(0.0, 0.0, 3.0))
+    assert abs(g._heading(0.0, True)) <= g.yaw_max + 1e-9
