@@ -172,9 +172,33 @@ fall behind degrades to slow motion instead of sprinting to catch up.
 None of this touches the headless runs, which have no viewer and are deliberately not paced,
 and none of it touches `tools/sim.sh` — see below.
 
-**`tools/sim.sh` is a different loop and has no pacing problem either.** The ROS 2 node
-(`src/mujoco_ros2_control`) advances 1/60 s of sim per rendered frame and does not sleep, so
-it runs as fast as the frame costs. Profiled on this machine, robot standing, `teleop:=false`:
+**`tools/sim.sh` is a different loop, and it is now paced too.** The ROS 2 node
+(`src/mujoco_ros2_control`) advances a fixed 1/60 s of sim per rendered frame and used to
+never sleep, so it ran as fast as the frame cost — 2.6–3.0x real time on this machine. Faster
+than real time is not free: everything on screen moves at that multiple, `/clock` outruns the
+wall clock so any wall-clock timeout outside the sim fires early relative to what the robot
+has actually done, and a gait tuned by eye gets tuned against a robot that does not exist.
+
+```bash
+./tools/sim.sh                # 1.0x - real time, the default
+./tools/sim.sh rtf:=2.0       # twice real time
+./tools/sim.sh rtf:=0         # pacing off: as fast as the frame costs, as it was before
+```
+
+Measured from outside, off `/clock`, so it is the number every other node sees and not the
+loop marking its own homework:
+
+| `rtf` | measured | samples |
+|---|---|---|
+| 1.0 (default) | 1.000x real time | 6005 |
+| 2.0 | 2.007x | 8945 |
+| 0 (off) | 2.630x | 10525 |
+
+A machine that cannot keep up falls behind rather than accumulating debt: past 0.1 s of lag
+the pacing resyncs, so it degrades to slow motion instead of sprinting through a backlog the
+moment it gets one fast frame. `rtf:=0` is what long unattended runs want.
+
+The frame profile that says there is headroom for this, robot standing, `teleop:=false`:
 
 ```
 2.79x real time | 164 fps | frame 6.09 ms = phys/ctrl 0.42 + render 4.24 + lidar 0.03 + cam 1.40
@@ -184,8 +208,13 @@ it runs as fast as the frame costs. Profiled on this machine, robot standing, `t
 Rendering is 70 % of a frame and the camera another 23 %; physics *and* the whole ros2_control
 stack together are 7–8 %. Per physics step, over ~6000 steps: `/clock` publish 11.1 µs,
 `mj_step1` 6.3, controller_manager read+update 4.9 (200 Hz, so one step in five), write 0.3,
-`mj_step2` 4.2 — 26.7 µs/step all in. Nothing there is worth optimising; if `sim.sh` ever does
-crawl, profile it again rather than assuming, because at 2.8–3.0x the headroom is large.
+`mj_step2` 4.2 — 26.7 µs/step all in. Nothing there is worth optimising. If `sim.sh` ever does
+crawl, check `rtf` first and then profile; it is not short of headroom.
+
+**The pacing itself lives in the submodule** (`src/mujoco_ros2_control`), alongside the LiDAR
+work already there, so it is not in this repo's history — only the `rtf` launch argument is.
+A fresh clone gets the argument and a node that ignores it until the submodule is built from
+the same working tree.
 
 **One real defect found while profiling, unrelated to speed.** `robot.xml`'s camera declares
 `resolution="3840 2160"` while the scene's offscreen buffer is `offwidth="1400" offheight="1000"`.

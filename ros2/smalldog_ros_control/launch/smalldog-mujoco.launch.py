@@ -32,7 +32,9 @@ def generate_launch_description():
 
     mujoco_node = Node(
         package='mujoco_ros2_control', executable='mujoco_ros2_control', output='screen',
-        parameters=[robot_description, controllers, {'mujoco_model_path': mujoco_xml}],
+        parameters=[robot_description, controllers, {'mujoco_model_path': mujoco_xml},
+                    {'real_time_factor': ParameterValue(LaunchConfiguration('rtf'),
+                                                        value_type=float)}],
     )
 
     robot_state_pub = Node(
@@ -117,6 +119,13 @@ def generate_launch_description():
                                           'ws://localhost:8765 (foxglove_bridge). This is '
                                           'how the LiDAR cloud is meant to be looked at on '
                                           'macOS; see README, "Looking at it"'),
+        DeclareLaunchArgument('rtf', default_value='1.0',
+                              description='how fast the sim runs against the wall clock. '
+                                          '1.0 is real time; 2.0 is twice as fast; 0 turns '
+                                          'the pacing off entirely and lets it run as fast '
+                                          'as the frame costs, which on this machine is '
+                                          '~2.9x and is what it did before the pacing '
+                                          'existed'),
         DeclareLaunchArgument('terrain', default_value='false',
                               description='stand the robot on mujoco/scene_terrain.xml '
                                           '(rough ground) instead of the flat plane'),
