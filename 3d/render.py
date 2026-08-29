@@ -38,6 +38,9 @@ if __name__ == "__main__":
     sc.append((md.PARTS["chassis_bottom"][0].val(), grey))
     sc.append((md.PARTS["chassis_top"][0].val(), grey))
     sc.append((md.PARTS["lidar_mount"][0].val(), grey))
+    sc.append((md.PARTS["gps_mount"][0].val(), grey))
+    sc.append((md.PARTS["camera_mount"][0].val(), grey))
+    sc.append((md.camera_module().val(), blk))
     srv = [md.mv(md.servo_dummy(), L) for _, L in md.JOINTS]
     hub = [md.mv(md.hubs(), L) for _, L in md.JOINTS]
     for f in (lambda w: w, md.mirY, md.mirX, lambda w: md.mirX(md.mirY(w))):
