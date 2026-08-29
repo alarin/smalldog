@@ -654,7 +654,10 @@ frame above.
   for tipping — crouch harder in the gait, or shorten `L_THIGH` / `L_SHIN`.
 - The thigh is still a plain constant-section box between its two joints. That matches
   what the reference legs do there, but its corners are unblended, unlike the shin's.
-- No IMU mount, no shell/covers, no connector strain reliefs yet.
+- No IMU mount, no shell/covers, no connector strain reliefs yet. Nothing on the robot
+  is sealed either: the body carries ~5700 mm² of open section and the servos set the
+  ceiling anyway — [moisture_resistance.md](moisture_resistance.md) surveys what it would
+  take to reach IPX4, and it is a plan, not a change.
 - The ROM scan is a 10° sweep; refine with `step=2` before committing to joint limits.
 - The Waveshare `ROBOTIC DOG.step` supplies the **shape** of the shin and nothing else.
   Its joint spacing does not transfer — it is an aluminium-plate design with a single-shear
