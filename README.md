@@ -6,7 +6,7 @@ same robot.
 
 | | |
 |---|---|
-| [`3d/`](3d/) | **the source of truth.** Pure code-CAD (CadQuery) — every dimension, mass and joint limit lives in [`3d/mini_dog.py`](3d/mini_dog.py). Also linear-static FEA ([`fea.py`](3d/fea.py)), the URDF/MJCF exporter ([`export_sim.py`](3d/export_sim.py)) and the servo test stands ([`servo_bench.py`](3d/servo_bench.py), spec in [`3d/BENCH.md`](3d/BENCH.md)). |
+| [`3d/`](3d/) | **the source of truth.** Pure code-CAD (CadQuery) — every dimension, mass and joint limit lives in [`3d/mini_dog.py`](3d/mini_dog.py). Also linear-static FEA ([`fea.py`](3d/fea.py)), the URDF/MJCF exporter ([`export_sim.py`](3d/export_sim.py)) and the servo identification bench ([`servo_bench.py`](3d/servo_bench.py), spec in [`3d/BENCH.md`](3d/BENCH.md)). |
 | [`ros2/`](ros2/) | ROS 2 workspace: description, `ros2_control` wiring, trot gait, keyboard teleop, MuJoCo standing in for the hardware. |
 
 Everything structural is FDM-printed (PETG/ASA): no aluminium, no machining, no
@@ -29,18 +29,21 @@ change workflow (rebuild → FEA → re-export sim → regenerate the ROS 2 desc
 
 - Printed parts and the servo interface: [`3d/README.md`](3d/README.md)
 - Simulation, gait and teleop: [`ros2/README.md`](ros2/README.md)
-- Measuring the servo, so the gait can stop guessing: [`3d/BENCH.md`](3d/BENCH.md)
+- Talking to the hardware, and identifying the servo: [`robot/README.md`](robot/README.md)
+- The bench that identification runs on, as printed parts: [`3d/BENCH.md`](3d/BENCH.md)
 
 ## Where the numbers are still guesses
 
 Every *structural* dimension in this repo is measured. Every *actuator* number is not:
-stall torque, no-load speed and the four MuJoCo `MJ_*` constants are vendor figures or
-estimates, and the joint's real compliance and backlash are nowhere in the model at all.
-That is the ceiling on both the simulation and on any attempt to replace the analytic leg
-IK with a search over joint-space motions — a search can only be as good as the actuator
-model it filters against. [`3d/BENCH.md`](3d/BENCH.md) is the CAD and the BOM for three
-printed stands that measure them, and a map from each measurement to the constant it
-replaces.
+`rl/params/st3215.json` is committed as vendor priors and says so — `"fitted": false` —
+and the four MuJoCo `MJ_*` constants in `3d/export_sim.py` are flagged as estimates. That
+is the ceiling on the simulation and on anything trained in it.
+
+[`robot/bench`](robot/README.md) is the pipeline that replaces them: drive one servo
+through trajectories designed around the degeneracies, then fit. It needs hardware to run
+on, and [`3d/BENCH.md`](3d/BENCH.md) is that hardware — a printed portal that hangs one
+ST3215 as a pendulum in the robot's own sleeve and fork, so what gets identified is this
+robot's joint rather than a servo in a vice.
 
 ## Not in this repository
 

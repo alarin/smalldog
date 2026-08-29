@@ -52,9 +52,16 @@ protocol the runtime will not use.
 
 ## The bench, in order
 
-**Build it first.** The parts list is in the project notes; the two things that
-decide the quality of the result are a supply whose voltage you can *set* and
-two different arms.
+**Build it first.** The parts list is [`3d/BENCH.md`](../3d/BENCH.md), generated
+by `3d/servo_bench.py` off the same CAD the robot is: a portal frame that hangs
+one servo as a pendulum in `mini_dog`'s own sleeve and fork, the two arms, and the
+payload carrier. It also prints the `--mass`, `--radius` and `--arm-inertia` to
+pass here for each arm and station — including the correction for the arm's own
+weight, which `mgr = mass*g*radius` below does not carry and which is worth 7-20 %
+of the first moment.
+
+The two things that decide the quality of the result are a supply whose voltage
+you can *set* and two different arms.
 
 1. **`--check`** — preflight. Prints every control register. Nothing moves.
 
@@ -67,7 +74,8 @@ two different arms.
    `3d/ref/` implies the former; `rl/actuator.py`'s `enc_after_backlash` default
    assumes it; step 4's observation wiring depends on it.
 
-3. **`--traj freeswing`, light short arm.** This is the one direct measurement of
+3. **`--traj freeswing`, light short arm** (`arm_short`, on either station). This is
+   the one direct measurement of
    the reflected rotor inertia, which `rl/checks/check_model.py` found to be
    **73× the knee link's own inertia** and which is currently a guess in
    `3d/export_sim.py`. Use the *smallest* mass at the *shortest* radius that
@@ -76,7 +84,7 @@ two different arms.
    one arm cannot separate the inertia from the Coulomb friction, because a
    heavier J with less friction fits the same fall.
 
-4. **`--traj hold`, heavy long arm, at three voltages.** Here a big torque is
+4. **`--traj hold`, heavy long arm** (`arm_long`)**, at three voltages.** Here a big torque is
    exactly what is wanted. At steady state the torque balance is exact and two
    linear regressions give the torque constant and the loop gain.
 

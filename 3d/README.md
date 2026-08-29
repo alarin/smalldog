@@ -22,12 +22,12 @@ There is a fourth script, and it builds hardware rather than robot:
 .venv/bin/python servo_bench.py           # writes out/bench/{step,stl}, out/bench/bom.json
 ```
 
-Three printed stands that **measure** the ST3215 — stall torque, joint compliance,
-backlash, step response at known inertia, and foot force on a whole leg — so leg motion can
-be found by searching joint space instead of solved by the analytic IK in
-`../ros2/smalldog_walker`. Every actuator number in this repo is a vendor figure today
-(`SERVO_STALL_NM`, `SERVO_NOLOAD_RADS`, all four `MJ_*`), and a search filtered against
-vendor figures is a search over a robot that does not exist. Spec, BOM and protocols:
+The printed parts `../robot/bench` asks for and does not have — its README says *"Build it
+first. The parts list is in the project notes"*. A portal frame that hangs one ST3215 as a
+pendulum, the two arms its identification trajectories need, and the payload carrier; plus
+a leg rig that is not part of that protocol. It also computes the `--mass`, `--radius` and
+`--arm-inertia` those arms are worth, including the correction for the arm's own weight
+that `fit_bam.py`'s gravity model does not carry. Spec, BOM and assembly:
 [BENCH.md](BENCH.md). It imports `mini_dog.py` and adds nothing to the robot, so it is not
 part of the strength/sim loop above.
 
