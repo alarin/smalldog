@@ -1,0 +1,36 @@
+# SmallDog RL — the third consumer of the CAD, after 3d/ and ros2/.
+#
+# This tree deliberately does NOT use pixi the way ros2/ does.  JAX with CUDA
+# ships as pip wheels, and the RTX 5070 Ti is Blackwell (sm_120), which needs a
+# jaxlib built against CUDA 12.8 or newer — an older wheel fails at runtime with
+# "no kernel image is available for execution on the device", not at install
+# time.  Putting that resolution through a conda channel adds a second place for
+# the CUDA version to disagree with itself, in the one spot where it is already
+# tight.  3d/ is a plain uv venv for the same reason.
+#
+#   uv sync --extra cpu     # mac: same code, CPU JAX, seconds-long smoke tests
+#   uv sync --extra cuda    # WSL2: training
+#   uv sync --extra fit     # scipy + matplotlib, for the bench fit (step 3)
+#
+# `check_model.py` needs neither: mujoco and numpy are the base dependencies, so
+# the model audit runs anywhere, including on the robot.
+[project]
+name = "smalldog-rl"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+    "mujoco>=3.2",
+    "numpy>=1.26",
+]
+
+[project.optional-dependencies]
+cuda = ["jax[cuda12]>=0.5.3", "mujoco-mjx>=3.2", "brax>=0.12"]
+cpu  = ["jax>=0.5.3",         "mujoco-mjx>=3.2", "brax>=0.12"]
+fit  = ["scipy>=1.13", "matplotlib>=3.8"]
+onnx = ["onnx>=1.16", "onnxruntime>=1.18"]
+
+# Nothing here is a distributable package; scripts are run in place
+# (`uv run python checks/check_model.py`).  Skipping the build backend keeps the
+# tree free of a wheel nobody installs.
+[tool.uv]
+package = false

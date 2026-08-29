@@ -1,0 +1,20 @@
+# Line endings.  This repository is developed on macOS and, since the RL work,
+# inside WSL2 on Windows; its shell scripts (ros2/tools/*.sh) are executed by
+# bash in both.  A CRLF checkout makes every one of them die with
+#     bash: $'\r': command not found
+# which reads like a broken install rather than a line-ending problem, and the
+# same checkout silently breaks Python files that start with a shebang.  Force
+# LF on everything textual so the three machines see identical bytes.
+* text=auto eol=lf
+
+# Generated and vendor binaries: never normalise, never try to diff.
+*.stl   binary
+*.step  binary
+*.STEP  binary
+*.dxf   binary
+*.zip   binary
+*.png   binary
+*.jpg   binary
+*.pdf   binary
+*.onnx  binary
+*.npz   binary
