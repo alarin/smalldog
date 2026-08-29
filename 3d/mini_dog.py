@@ -1196,16 +1196,20 @@ def thigh():
     y0, y1 = LEG_Y-SLEEVE_LEN/2, LEG_Y+SLEEVE_LEN/2
     s = s.union(bxc(x0, x1, y0, y1, KNEE_Z+S_L-S_AX+SLEEVE_W, PITCH_Z-SPINE_R0-3.0)  # box beam
                 .cut(bxc(x0+3, x1-3, y0+3, y1-3, KNEE_Z+S_L-S_AX, PITCH_Z-SPINE_R0)))
-    # cable-tie slots, obround for the same reason the sleeve's cooling windows are: as
-    # sharp 6 x 2.6 rectangles their corners were this part's peak-stress site (12.2 MPa
-    # against a p99 of 5.3, on the lower slot, right where the beam lands on the sleeve).
-    tl, td = 6.0, 2.6                                     # slot length x width, unchanged
+    # Cable-tie slots, left as sharp rectangles on purpose - the obvious "round the corners
+    # for strength" move was tried here and measured, and it buys nothing.  thigh_A stall at
+    # 1.2 mm over four variants: sharp 23.19 MPa, obround 23.15, obround stopping short of
+    # the pocket wall 22.95, no slot at all 22.98.  The slot is worth 0.2 MPa of 23.  At
+    # 2.0 mm the same four spread 15.7 .. 18.5, which is one mesh's luck on a corner that
+    # has not converged and not a difference between the parts - do not read that spread as
+    # a result in either direction.  What the peak IS: the knee sleeve's cable window leaves
+    # this beam's two +-y walls unsupported over the 15 mm it spans, and both hot cells sit
+    # 0.3 mm inside its edges (23.1 MPa against a p99 of 9.0, at 82.81 / 97.17 in x against
+    # window edges at 82.5 / 97.5).  Bounding that window in local z - it runs the sleeve's
+    # whole length today and the connector only needs +-7 - is the change that would move
+    # this number.  It touches all three sleeves, so it is its own job.
     for z in (PITCH_Z-34.0, PITCH_Z-44.0):
-        zc = z+td/2
-        c = bxc(x0-1, x0+4, LEG_Y-(tl-td)/2, LEG_Y+(tl-td)/2, zc-td/2, zc+td/2)
-        for e in (-1, 1):
-            c = c.union(cyl(td/2, 5.0, (x0-1, LEG_Y+e*(tl-td)/2, zc), axis=(1,0,0)))
-        s = s.cut(c)
+        s = s.cut(bxc(x0-1, x0+4, LEG_Y-3, LEG_Y+3, z, z+2.6))
     return s.cut(env_all("pitch"))         # its fork bolts to the pitch hubs
 
 _SHIN_F = []

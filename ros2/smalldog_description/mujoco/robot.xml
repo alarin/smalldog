@@ -54,7 +54,7 @@
         <geom class="collision" type="box" size="0.01536 0.01650 0.02560" pos="0.00000 0.04000 -0.04750"/>
         <body name="fl_thigh" pos="0.00000 0.04000 -0.03000">
           <joint name="fl_pitch" axis="0 1 0" range="-1.2700 1.2700"/>
-          <inertial pos="0.000014 0.000203 -0.053502" mass="0.09732" fullinertia="0.00006747 0.00006039 0.00002115 0.00000000 -0.00000002 -0.00000045"/>
+          <inertial pos="0.000016 0.000203 -0.053504" mass="0.09731" fullinertia="0.00006747 0.00006039 0.00002114 0.00000000 -0.00000002 -0.00000045"/>
           <geom class="visual" type="mesh" mesh="fl_thigh"/>
           <geom class="servo" type="mesh" mesh="fl_knee_servo"/>
           <geom class="collision" type="box" size="0.01536 0.01650 0.03500" pos="0.00000 0.00000 -0.04400"/>
@@ -76,7 +76,7 @@
         <geom class="collision" type="box" size="0.01536 0.01650 0.02560" pos="0.00000 -0.04000 -0.04750"/>
         <body name="fr_thigh" pos="0.00000 -0.04000 -0.03000">
           <joint name="fr_pitch" axis="0 1 0" range="-1.2700 1.2700"/>
-          <inertial pos="0.000014 -0.000203 -0.053502" mass="0.09732" fullinertia="0.00006747 0.00006039 0.00002115 -0.00000000 -0.00000002 0.00000045"/>
+          <inertial pos="0.000016 -0.000203 -0.053504" mass="0.09731" fullinertia="0.00006747 0.00006039 0.00002114 -0.00000000 -0.00000002 0.00000045"/>
           <geom class="visual" type="mesh" mesh="fr_thigh"/>
           <geom class="servo" type="mesh" mesh="fr_knee_servo"/>
           <geom class="collision" type="box" size="0.01536 0.01650 0.03500" pos="0.00000 0.00000 -0.04400"/>
@@ -98,7 +98,7 @@
         <geom class="collision" type="box" size="0.01536 0.01650 0.02560" pos="0.00000 0.04000 -0.04750"/>
         <body name="rl_thigh" pos="0.00000 0.04000 -0.03000">
           <joint name="rl_pitch" axis="0 1 0" range="-1.2700 1.2700"/>
-          <inertial pos="-0.000014 0.000203 -0.053502" mass="0.09732" fullinertia="0.00006747 0.00006039 0.00002115 -0.00000000 0.00000002 -0.00000045"/>
+          <inertial pos="-0.000016 0.000203 -0.053504" mass="0.09731" fullinertia="0.00006747 0.00006039 0.00002114 -0.00000000 0.00000002 -0.00000045"/>
           <geom class="visual" type="mesh" mesh="rl_thigh"/>
           <geom class="servo" type="mesh" mesh="rl_knee_servo"/>
           <geom class="collision" type="box" size="0.01536 0.01650 0.03500" pos="0.00000 0.00000 -0.04400"/>
@@ -120,7 +120,7 @@
         <geom class="collision" type="box" size="0.01536 0.01650 0.02560" pos="0.00000 -0.04000 -0.04750"/>
         <body name="rr_thigh" pos="0.00000 -0.04000 -0.03000">
           <joint name="rr_pitch" axis="0 1 0" range="-1.2700 1.2700"/>
-          <inertial pos="-0.000014 -0.000203 -0.053502" mass="0.09732" fullinertia="0.00006747 0.00006039 0.00002115 0.00000000 0.00000002 0.00000045"/>
+          <inertial pos="-0.000016 -0.000203 -0.053504" mass="0.09731" fullinertia="0.00006747 0.00006039 0.00002114 0.00000000 0.00000002 0.00000045"/>
           <geom class="visual" type="mesh" mesh="rr_thigh"/>
           <geom class="servo" type="mesh" mesh="rr_knee_servo"/>
           <geom class="collision" type="box" size="0.01536 0.01650 0.03500" pos="0.00000 0.00000 -0.04400"/>
