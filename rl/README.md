@@ -54,6 +54,15 @@ as `ros2/tools/view.sh` documents for the standalone sim. `--shot` needs a GL
 backend (`MUJOCO_GL=egl` with a GPU, `osmesa` for software) and says so plainly
 rather than dying if there is none.
 
+`actuator.py` is the servo model and is the one file the training environment and
+the bench fit share: `robot/bench/fit_bam.py` fits its parameters, `rl/model.py`
+will install them into MuJoCo, and neither keeps a second copy of the law. It has
+its own consistency check:
+
+```bash
+python -c "import actuator; actuator._selftest()"
+```
+
 `check_model.py` is not a second copy of `export_sim.py --check`, which asks
 whether the model is still the robot. This asks whether the model is fit to
 train against — which turns on things a standing test cannot see: that the
@@ -68,7 +77,8 @@ ladders mean three different things.
 | `checks/check_model.py` | model audit — step 2 |
 | `checks/imu_placement.py` | how much the IMU mounting point costs — step 2 |
 | `actuator.py` | ST3215 voltage law, back-EMF, friction, backlash — step 3 |
-| `params/st3215.json` | **output of the bench fit**, the one source of actuator parameters — step 3 |
+| `params/st3215.json` | actuator parameters. **Currently the vendor priors, not a fit** — `actuator.load()` says so out loud. Overwritten by `robot/bench/fit_bam.py` |
+| `params/bus_timing.json` | written by `robot/bench/bus_probe.py`; the measured command delay step 4 randomises around |
 | `params/domain_rand.json` | randomisation ranges, each marked measured or guessed — step 4 |
 | `model.py` | training model = generated MJCF + MjSpec edits — step 4 |
 | `env/` | observations, actions, rewards, commands, randomisation — step 4 |

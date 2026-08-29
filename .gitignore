@@ -28,3 +28,8 @@ __pycache__/
 # a pinned resolution is the point when three machines share one tree.
 rl/runs/
 rl/.venv/
+
+# --- bench ---
+# raw servo logs: hundreds of MB, and the fit's output (rl/params/st3215.json)
+# is the thing worth versioning, not its input.
+robot/bench/data/

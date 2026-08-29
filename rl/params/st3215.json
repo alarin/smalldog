@@ -1,0 +1,32 @@
+{
+  "R": 4.44,
+  "k_e": 2.55,
+  "k_u": 0.245,
+  "J_m": 0.008,
+  "J_l": 0.0,
+  "tau_c": 0.05,
+  "b_v": 0.01,
+  "kp": 32.0,
+  "kd": 0.0,
+  "deadband": 0.0030679615757712823,
+  "punch": 0.0,
+  "duty_max": 1.0,
+  "loop_hz": 1000.0,
+  "theta_bl": 0.008726646259971648,
+  "k_bl": 3000.0,
+  "c_bl": 1.0,
+  "enc_after_backlash": true,
+  "v_eps": 0.02,
+  "fitted": false,
+  "source": "vendor spec (2.94 N*m, 4.71 rad/s, 2.7 A stall, all @ 12 V); NOT fitted",
+  "servo_ids": [],
+  "rms_pos_deg": NaN,
+  "rms_current_a": NaN,
+  "_derived": {
+    "k_w_Nm_s_per_rad": 0.6247499999999999,
+    "stall_Nm_at_12V": 2.94,
+    "stall_Nm_at_9.9V": 2.4255,
+    "no_load_rad_s_at_12V": 4.705882352941177,
+    "backlash_deg": 0.5
+  }
+}
