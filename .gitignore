@@ -19,3 +19,6 @@ __pycache__/
 
 # --- macOS ---
 .DS_Store
+
+# --- OrcaSlicer CLI logs into the CWD (tools/slice_orca.py) ---
+3d/*.log
