@@ -104,7 +104,16 @@ Non-printed, and the bench does not work without them:
   Coulomb linear in time, viscous exponential — so the fit has nowhere to put it
   except into the servo. One chunk, or a stack pulled hard together through the M8
   on big washers. The offset it stands off the face is harmless: 350 g at 28 mm is
-  0.094 N·m out of plane, 7 N per bolt pair on the ⌀14 circle;
+  0.094 N·m out of plane, 7 N per bolt pair on the ⌀14 circle. Steel box section
+  is the awkward case, because a hollow one has to be *long* to weigh anything:
+  **50×50×3 is the smallest that works** — 350 g is 79 mm of it, 28 % share. Below
+  that it fails both ways at once, and 25×25×2 is the illustration: 242 mm of it
+  lies flat out to radius 211 against 150 mm of ground clearance, or stands 123 mm
+  off the face, and the share is 36 % either way. Slide the piece onto a long M8
+  **along its own axis** and pull it down with a washer over the far end: that
+  loads the ring section in compression, needs no hole in the tube at all, and
+  tunes by the length of the cut. Do not clamp it across two opposite walls — the
+  bolt dents them, and a soft joint is the rattle above;
 - **a clamp.** The stand only holds itself down by 1.4× with the heavy arm out
   horizontal — the two slots in the base take an M6 or a G-clamp, and
   `bench_rig.py` prints that ratio on every run;
