@@ -23,6 +23,13 @@ __pycache__/
 # --- OrcaSlicer CLI logs into the CWD (tools/slice_orca.py) ---
 3d/*.log
 
+# --- terrain seed sweep ---
+# MuJoCo caches a heightfield by file name inside a process, so sweeping seeds
+# writes one scene + one png per seed.  Scratch: the committed terrain is
+# terrain.png / scene_terrain.xml at terrain.SEED.
+ros2/smalldog_description/mujoco/sweep_terrain_*.xml
+ros2/smalldog_description/meshes/sweep_terrain_*.png
+
 # --- RL ---
 # runs/ is checkpoints and rollout video; uv.lock is deliberately NOT here,
 # a pinned resolution is the point when three machines share one tree.
