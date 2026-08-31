@@ -53,9 +53,14 @@ def rho(part):                          # g/cm3 -> kg/mm3, per part
 R_THIGH, R_SHIN = 0.014, 0.011         # capsule radii, m
 IMU_XYZ = (0.0, 0.0, md.BODY_Z1 / 1000.0)
 
-# MuJoCo joint feel.  Not measured - the ST3215 gearbox is a black box; these are
-# plausible values that keep the model stable at 2 ms.  Tune against hardware.
-MJ_DAMPING, MJ_ARMATURE, MJ_FRICTIONLOSS, MJ_KP = 0.5, 0.01, 0.05, 20.0
+# MuJoCo joint feel lives in mini_dog.py section 4, next to the servo's stall
+# torque, and is read - not copied - by this exporter and by the ROS 2 one.  Two
+# private copies is exactly how they came to disagree.
+MJ_DAMPING      = md.MJ_DAMPING
+MJ_ARMATURE     = md.MJ_ARMATURE
+MJ_FRICTIONLOSS = md.MJ_FRICTIONLOSS
+MJ_KP           = md.MJ_KP
+MJ_DAMPRATIO    = md.MJ_DAMPRATIO
 
 
 # =====================================================================================
@@ -410,7 +415,8 @@ def mjcf(base_mp, legmp, rom, meshes, hf=None):
          '    <geom solref="0.005 1" friction="0.9 0.02 0.001"/>',
          f'    <joint damping="{MJ_DAMPING}" armature="{MJ_ARMATURE}"'
          f' frictionloss="{MJ_FRICTIONLOSS}"/>',
-         f'    <position kp="{MJ_KP}" forcerange="{-md.SERVO_STALL_NM:.6g}'
+         f'    <position kp="{MJ_KP}" dampratio="{MJ_DAMPRATIO}"'
+         f' forcerange="{-md.SERVO_STALL_NM:.6g}'
          f' {md.SERVO_STALL_NM:.6g}"/>',
          '    <default class="viz">',
          '      <geom type="mesh" contype="0" conaffinity="0" group="2"'

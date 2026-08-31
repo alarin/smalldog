@@ -509,6 +509,29 @@ TPU_PARTS         = ("foot",)     # printed in TPU_RHO, everything else in PRINT
 SERVO_STALL_NM    = 2.94          # 30 kg*cm at 12 V
 SERVO_NOLOAD_RADS = 4.71          # 0.222 s / 60 deg at 12 V
 
+# MuJoCo joint feel.  NOT measured - the ST3215 gearbox is a black box and these
+# are plausible values that keep the model stable at 2 ms.  They live here and
+# nowhere else: both sim exporters (export_sim.py and the ROS 2
+# generate_model.py) read them from this block, because they used to each carry
+# their own literals and silently diverged - 0.5/0.01/0.05/20 against
+# 0.12/0.008/0.02/25 - which is the servo-mass failure this file's mass block
+# already records, repeated one section down.  rl/checks/check_model.py is what
+# caught it.
+#
+# The surviving values are the ROS 2 set, deliberately: every gait baseline in
+# CLAUDE.md was measured against those, so adopting them leaves the ROS 2 model
+# byte-identical and re-baselines nothing.  When rl/ fits the real actuator these
+# become its initial guess, not a second opinion - see rl/actuator.py, whose
+# Params.J_m is already this same 0.008.
+MJ_DAMPING        = 0.12          # N*m*s/rad at the joint
+MJ_ARMATURE       = 0.008         # kg*m2, reflected rotor+gearbox inertia
+MJ_FRICTIONLOSS   = 0.02          # N*m
+MJ_KP             = 25.0          # position-actuator gain
+MJ_DAMPRATIO      = 1.0           # critically damped.  export_sim.py carried no
+                                  # dampratio at all, which is what made its kp
+                                  # incomparable with the ROS 2 one rather than
+                                  # merely different.
+
 # =====================================================================================
 # helpers
 # =====================================================================================

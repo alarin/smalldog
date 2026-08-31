@@ -468,8 +468,8 @@ def write_mjcf():
 DEFAULTS = f'''<mujoco>
   <default>
     <default class="mujoco">
-      <joint frictionloss="0.02" armature="0.008" damping="0.12"/>
-      <position kp="25" dampratio="1" forcerange="-{J_EFF} {J_EFF}"/>
+      <joint frictionloss="{md.MJ_FRICTIONLOSS}" armature="{md.MJ_ARMATURE}" damping="{md.MJ_DAMPING}"/>
+      <position kp="{md.MJ_KP:g}" dampratio="{md.MJ_DAMPRATIO:g}" forcerange="-{J_EFF} {J_EFF}"/>
       <default class="visual">
         <geom type="mesh" contype="0" conaffinity="0" group="2" rgba="0.55 0.58 0.62 1"/>
       </default>
