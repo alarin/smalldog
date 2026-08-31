@@ -81,11 +81,107 @@ and the reasoning are in `rl/README.md`, "Environments"; they are not repeated h
 Training is a long job: start it in the background and let the session keep working, do
 not sit inside a foreground run for an hour.
 
+## Host RAM is the other binding constraint, and it takes the distro with it
+
+The VRAM paragraph above is true and incomplete. 8 GB of VRAM bounds what trains; the
+box's **16 GB of host RAM** bounds what can be built at all, and host RAM is the one
+that has actually killed this machine.
+
+WSL2 with no `.wslconfig` takes half the host — 7.7 GB — with 2 GB of swap. On
+2026-08-31 `replay.py --robots 100` reached 9.4 GB of virtual memory inside that and
+the OOM killer fired twice. The second time it took WSL down with it: an OOM in WSL2
+lands in `init.scope`, systemd does not survive it, and the distro, the run and the
+Claude Code session end together. There is no traceback afterwards. The evidence is
+`/var/log/kern.log`, and only if you read it before the next boot rotates it:
+
+```bash
+grep -iE "oom|killed process" /var/log/kern.log
+```
+
+`C:\Users\tony\.wslconfig` now says:
+
+```ini
+[wsl2]
+memory=11GB
+swap=16GB
+processors=12
+```
+
+It lives on the Windows side and needs `wsl --shutdown` before it takes effect. The
+large swap is the load-bearing half: it makes nothing faster, it turns a kill into
+thrashing, and thrashing can be interrupted where an OOM cannot.
+
+Two habits follow.
+
+**Check for orphans before a heavy run** — `pgrep -a python`. The second crash was not
+one run exhausting the box. A python from the first crash was still alive holding
+1.7 GB in swap, and the two together were what did it.
+
+**Cap a measurement rather than trusting it.**
+
+```bash
+systemd-run --user --scope -p MemoryMax=4G -p MemorySwapMax=512M <cmd>
+```
+
+bounds a suspect run to a cgroup, so a blowup kills the process and leaves the distro
+standing. `ulimit -v` / `RLIMIT_AS` is cheaper and works for pure-MuJoCo and NumPy work,
+but **it breaks EGL and CUDA**: both map large regions up front, and a capped address
+space makes `mujoco.Renderer` fail with an `EGLError` that reads like a missing GL
+backend rather than like a limit you set on yourself.
+
+### Where the memory went, that time
+
+`build_grid()` in `replay.py` assembles the herd with `MjSpec.attach(prefix=...)`, and
+attach prefixes ASSET names along with body and joint names. A hundred copies therefore
+arrived as a hundred private sets of the robot's 25 meshes — 2500 copies of the same
+62k vertices, which MuJoCo has no way to know are identical. Measured here:
+
+| copies | as attached | sharing the meshes |
+|---|---|---|
+| 16 | 1545 MB | 475 MB |
+| 100 | ~9 GB, never finishes | 1322 MB |
+
+`replay.py` now points each copy's geoms back at the original asset and deletes the
+duplicates, which renders a pixel-for-pixel identical frame — verified at n=4. The mesh
+geoms are visual only (group 2, contype 0), so nothing about collision changes, and this
+scene never collides anything anyway.
+
+Anything else in this tree that replicates a body through `attach()` has the same
+problem waiting in it.
+
 ## Rendering, viewers, and what counts as looking at it
 
-- Headless frames — `--shot`, `render.py` — need a GL backend: `MUJOCO_GL=egl` uses the
-  WSL NVIDIA libraries and is the fast path. `MUJOCO_GL=osmesa` (`sudo apt install
-  libosmesa6`) is the software fallback when EGL will not initialise.
+- Headless frames — `--shot`, `render.py`, `replay.py` — need a GL backend, and
+  `MUJOCO_GL=egl` **is not by itself the fast path on this box.** It initialises, it
+  renders correct frames, and it renders them on the CPU: there is no NVIDIA EGL vendor
+  in WSL (`/usr/share/glvnd/egl_vendor.d/` holds only `50_mesa.json`, and
+  `/usr/lib/wsl/lib` ships CUDA and D3D12 but no EGL), so Mesa answers and Mesa picks
+  `llvmpipe`. Ask it for the card instead:
+
+  ```bash
+  export MUJOCO_GL=egl
+  export GALLIUM_DRIVER=d3d12 MESA_LOADER_DRIVER_OVERRIDE=d3d12
+  ```
+
+  Mesa then goes through WSL's `libd3d12.so` and `glGetString(GL_RENDERER)` says
+  `D3D12 (NVIDIA GeForce RTX 3070)` rather than `llvmpipe`. That one line is worth
+  checking before believing any render timing from this machine. Measured on
+  `replay.py --robots 100`, 1280x960, 4601 geoms:
+
+  | | ms/frame | peak RSS |
+  |---|---|---|
+  | `llvmpipe` (what you get by default) | 7740 | 3845 MB |
+  | `d3d12` | 1802 | 1377 MB |
+
+  The memory is the part worth noticing: llvmpipe's tile and per-thread buffers across
+  16 threads cost 2.5 GB of **host** RAM that the GPU path does not spend at all — and
+  host RAM is what kills this distro (above). It is 4x slower as well, but a 12-minute
+  render that finishes beats a 52-minute one that takes systemd with it.
+
+- `MUJOCO_GL=osmesa` is the documented software fallback for when EGL will not
+  initialise at all. It is **not installed** here (`sudo apt install libosmesa6`), and
+  since EGL does initialise and merely lands on a software rasteriser, reaching for
+  osmesa would swap one CPU renderer for another. Fix the driver, not the backend.
 - `mujoco.viewer` works under WSLg. `mjpython` does not exist on this platform and
   `ros2/tools/view.sh` is a mac wrapper — neither is a bug here.
 - In a non-interactive session a viewer window verifies nothing. Write a png and read it.
