@@ -72,13 +72,16 @@ the already-generated description.
   actuator's dominant inertia is a guess, the contact parameters the solver
   applies are not the ones the model asked for, and the limit ladders disagree.
   A non-zero exit is a failure, not a warning.
-- **Collision coverage in MJX is a real constraint, not a detail.** The robot is
-  MJX-clean by construction — all meshes are `contype="0" conaffinity="0"`, and
-  the collision set is 4 capsules, 4 spheres and 11 boxes. The scenes are not:
-  `scene_terrain.xml` grounds on `type="hfield"` and the obstacle course uses
-  `type="cylinder"` logs. Check with `mjx.put_model` rather than assuming; if it
-  raises, train on flat plus procedural boxes and keep the heightfield for the
-  sim-to-sim pass in vanilla MuJoCo. See README, "What MJX can collide".
+- **MJX takes the heightfield; it does not take the logs.** Measured against the
+  locked resolution, not assumed: the robot is MJX-clean by construction (all
+  meshes `contype="0" conaffinity="0"`, collision set 4 capsules + 4 spheres + 11
+  boxes), `scene.xml` and `type="hfield"` both go to the GPU, and the single
+  unsupported thing is `(mjGEOM_CYLINDER, mjGEOM_BOX)` — the two obstacle-course
+  logs against the robot's collision boxes. So the heightfield is a legitimate
+  training surface, the course is `eval.py`-only, and the default stays flat plus
+  procedural boxes because only those randomise per environment. `mjx.put_model`
+  is the arbiter if the lock moves; never resolve a raise by editing the scene.
+  See README, "What MJX can collide".
 - **8 GB of VRAM sets `num_envs`, and JAX preallocates 75% of it by default.**
   Budget 1024–2048 environments and set `XLA_PYTHON_CLIENT_MEM_FRACTION`. An OOM
   here surfaces as an XLA allocation error, not as anything about the model.

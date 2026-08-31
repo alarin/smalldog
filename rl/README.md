@@ -54,28 +54,40 @@ on mesh loads and checkpoint writes.
 
 ## What MJX can collide, and what it cannot
 
-The robot is MJX-clean by construction, and this is worth not breaking: every
-mesh in the generated `robot.xml` is `contype="0" conaffinity="0"` — visual only
-— and the whole collision set is 4 capsules (shins), 4 spheres (feet) and 11
-boxes. The LiDAR and camera cylinders are visual too.
+Measured on the WSL2 box against the locked resolution (mujoco 3.12.0, jax
+0.11.1), not assumed:
 
-The *scenes* are a different question. `scene_terrain.xml` grounds on
-`type="hfield"`, and the obstacle course lays two `type="cylinder"` logs across
-the path. Whether MJX supports those depends on the version in the lock file —
-check, do not assume; `put_model` raises on an unsupported geom pair:
+| scene | `mjx.put_model` |
+|---|---|
+| `mujoco/scene.xml` (flat) | ok |
+| `mujoco/scene_terrain.xml` | `NotImplementedError: (mjGEOM_CYLINDER, mjGEOM_BOX) collisions not implemented` |
 
-```bash
-python -c "
-import mujoco, mujoco.mjx as mjx
-m = mujoco.MjModel.from_xml_path('../ros2/smalldog_description/mujoco/scene_terrain.xml')
-mjx.put_model(m); print('terrain ok in mjx')
-"
-```
+**The heightfield is not the problem — it is supported.** The exception names a
+geom *pair*, not a geom, and isolating it (load the scene through `MjSpec`, set
+`contype = conaffinity = 0` on the two course logs, recompile, `put_model` → ok)
+puts the blame on `type="cylinder"`: the two logs of the obstacle course against
+the robot's 11 collision boxes. Everything else in that scene, `type="hfield"`
+included, goes to the GPU fine.
 
-If it raises, train on flat ground plus procedural box terrain generated in
-`model.py`, and keep `scene_terrain.xml` for the sim-to-sim pass in vanilla
-MuJoCo — which is what `eval.py` is for regardless. Do not "fix" it by editing
-the generated scene; that file is output of `3d/terrain.py`.
+The robot itself is MJX-clean by construction, and this is worth not breaking:
+every mesh in the generated `robot.xml` is `contype="0" conaffinity="0"` — visual
+only — and the whole collision set is 4 capsules (shins), 4 spheres (feet) and 11
+boxes. The LiDAR and camera cylinders are visual, so they cost nothing.
+
+So there are three surfaces, and the split is deliberate:
+
+- **flat + procedural boxes**, generated in `model.py` — the default training
+  surface, because it randomises per environment, which a baked heightfield
+  cannot.
+- **`scene_terrain.xml`** — available as a second training surface. Fixed
+  geometry, but it is the same ground `ros2/tools/standalone_sim.py --terrain`
+  reports on, which makes the two comparable.
+- **the obstacle course** — vanilla MuJoCo only, in `eval.py`'s sim-to-sim pass.
+  The logs are exactly what MJX will not take.
+
+Re-run the check if the lock moves; `put_model` is the arbiter. And never "fix" a
+raise by editing the scene — `scene_terrain.xml` and the course are output of
+`3d/terrain.py`.
 
 ## Checks
 
