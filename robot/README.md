@@ -104,7 +104,11 @@ Non-printed, and the bench does not work without them:
   Coulomb linear in time, viscous exponential — so the fit has nowhere to put it
   except into the servo. One chunk, or a stack pulled hard together through the M8
   on big washers. The offset it stands off the face is harmless: 350 g at 28 mm is
-  0.094 N·m out of plane, 7 N per bolt pair on the ⌀14 circle. Steel box section
+  0.094 N·m out of plane, 7 N per bolt pair on the ⌀14 circle — so **gain the mass
+  along the bolt, never in the swing plane**. `I_zz` is set by the in-plane extent
+  and does not care how tall the stack is, which makes 3 mm sheet the easiest of
+  the lot: nine 40×40 squares are 339 g, 26 % share, 27 mm of stack, and they
+  drill in one pass clamped together. Steel box section
   is the awkward case, because a hollow one has to be *long* to weigh anything:
   **50×50×3 is the smallest that works** — 350 g is 79 mm of it, 28 % share. Below
   that it fails both ways at once, and 25×25×2 is the illustration: 242 mm of it
