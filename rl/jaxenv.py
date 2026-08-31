@@ -105,6 +105,7 @@ unbounded and disposable instead; the one-line rm above is the eviction policy.
 from __future__ import annotations
 
 import os
+import platform
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CACHE_DIR = os.path.join(HERE, ".jax_cache")
@@ -138,11 +139,17 @@ def configure_gl(backend: str = "egl") -> str:
     Returns the backend actually in force.  See the module docstring for why
     `MUJOCO_GL=egl` alone is the slow path here and why that costs host RAM.
     """
-    os.environ.setdefault("MUJOCO_GL", backend)
-    if os.environ["MUJOCO_GL"] == "egl" and os.path.exists(D3D12_DRI):
+    # Linux only. On macOS `egl` is not merely useless, it is INVALID: mujoco
+    # validates MUJOCO_GL against a per-platform list and raises RuntimeError at
+    # import, so forcing it there breaks rendering that was working. Darwin
+    # routes every valid value -- the empty one included -- to CGL, which is
+    # headless-capable, so the right move on the mac is to set nothing.
+    if platform.system() == "Linux":
+        os.environ.setdefault("MUJOCO_GL", backend)
+    if os.environ.get("MUJOCO_GL") == "egl" and os.path.exists(D3D12_DRI):
         os.environ.setdefault("GALLIUM_DRIVER", "d3d12")
         os.environ.setdefault("MESA_LOADER_DRIVER_OVERRIDE", "d3d12")
-    return os.environ["MUJOCO_GL"]
+    return os.environ.get("MUJOCO_GL") or "(unset — mujoco picks)"
 
 
 def gl_renderer() -> str:
