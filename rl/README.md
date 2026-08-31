@@ -21,21 +21,61 @@ crosses between them.
 
 ```bash
 uv sync --extra cpu      # mac: same code on CPU JAX, for smoke tests
-uv sync --extra cuda     # WSL2 + RTX 5070 Ti: training
+uv sync --extra cuda     # WSL2 + RTX 3070: training
 uv sync --extra fit      # scipy + matplotlib, for the bench fit
 ```
 
-`jax[cuda12]` must resolve to a jaxlib built against **CUDA 12.8 or newer** —
-Blackwell is `sm_120`, and an older wheel installs cleanly and then dies at the
-first kernel launch with *no kernel image is available for execution on the
-device*. Check with `python -c "import jax; print(jax.devices())"` before
-blaming anything else.
+The training box is an **RTX 3070 — Ampere, `sm_86`, 8 GB**, under WSL2. Ampere
+is covered by every `jax[cuda12]` wheel, so there is no CUDA-version tightrope
+here; check the card is actually visible before blaming anything else:
+
+```bash
+nvidia-smi                                        # inside WSL
+python -c "import jax; print(jax.devices())"      # must list a CudaDevice
+```
+
+**8 GB of VRAM is the binding constraint, not the FLOPs.** In MJX, memory goes
+as `num_envs` × the model's contact capacity: budget 1024–2048 environments, not
+the 4096–8192 the published quadruped configs assume. PPO learns fine at that
+width, it just costs wall-clock. Two things bite specifically at 8 GB:
+
+- JAX preallocates 75% of VRAM on the first device call. Set
+  `XLA_PYTHON_CLIENT_MEM_FRACTION=0.85` (or `XLA_PYTHON_CLIENT_PREALLOCATE=false`),
+  or the first OOM will be unreadable.
+- Windows spends VRAM on the desktop and the browser — 0.5–1.5 GB gone before
+  training starts, which is a tenth of the card. Train with the browser closed
+  and hardware acceleration off in it.
 
 On WSL2 the NVIDIA driver belongs on the **Windows** side; installing a Linux
 driver inside WSL overwrites the passthrough and `nvidia-smi` stops seeing the
 card. Keep the checkout inside the WSL filesystem (`~/smalldog`), not under
 `/mnt/c` — file operations there are an order of magnitude slower, which is felt
 on mesh loads and checkpoint writes.
+
+## What MJX can collide, and what it cannot
+
+The robot is MJX-clean by construction, and this is worth not breaking: every
+mesh in the generated `robot.xml` is `contype="0" conaffinity="0"` — visual only
+— and the whole collision set is 4 capsules (shins), 4 spheres (feet) and 11
+boxes. The LiDAR and camera cylinders are visual too.
+
+The *scenes* are a different question. `scene_terrain.xml` grounds on
+`type="hfield"`, and the obstacle course lays two `type="cylinder"` logs across
+the path. Whether MJX supports those depends on the version in the lock file —
+check, do not assume; `put_model` raises on an unsupported geom pair:
+
+```bash
+python -c "
+import mujoco, mujoco.mjx as mjx
+m = mujoco.MjModel.from_xml_path('../ros2/smalldog_description/mujoco/scene_terrain.xml')
+mjx.put_model(m); print('terrain ok in mjx')
+"
+```
+
+If it raises, train on flat ground plus procedural box terrain generated in
+`model.py`, and keep `scene_terrain.xml` for the sim-to-sim pass in vanilla
+MuJoCo — which is what `eval.py` is for regardless. Do not "fix" it by editing
+the generated scene; that file is output of `3d/terrain.py`.
 
 ## Checks
 
