@@ -190,7 +190,7 @@ def check_actuators(m, d, R, P):
     R.say(WARN if worst > 3 else INFO,
           f"reflected rotor inertia is {worst:.0f}x the link inertia at the knee. "
           f"With a 1:345 gearbox that is expected — but it means the leg's dynamics "
-          f"is set by `armature`, which 3d/export_sim.py marks as not measured. "
+          f"is set by `armature`, which 3d/mini_dog.py marks as not measured. "
           f"The bench's free-swing test (torque off, let it pendulum) measures "
           f"exactly this: the period gives J_link + armature, and J_link is known.")
     R.say(INFO, "kv = 2*sqrt(kp * M_ii) from dampratio=1, so refitting armature "
@@ -311,10 +311,10 @@ def ledger(R):
         ("link mass, com, inertia", "real solids in 3d/mini_dog.py", "measured"),
         ("joint limits", "swept-boolean ROM scan", "measured"),
         ("link geometry", "CAD", "measured"),
-        ("armature", "3d/export_sim.py MJ_ARMATURE", "GUESSED — dominates the leg"),
-        ("damping", "3d/export_sim.py MJ_DAMPING", "GUESSED"),
-        ("frictionloss", "3d/export_sim.py MJ_FRICTIONLOSS", "GUESSED"),
-        ("actuator kp", "3d/export_sim.py MJ_KP", "GUESSED — and not a servo model"),
+        ("armature", "3d/mini_dog.py MJ_ARMATURE", "GUESSED — dominates the leg"),
+        ("damping", "3d/mini_dog.py MJ_DAMPING", "GUESSED"),
+        ("frictionloss", "3d/mini_dog.py MJ_FRICTIONLOSS", "GUESSED"),
+        ("actuator kp", "3d/mini_dog.py MJ_KP", "GUESSED — and not a servo model"),
         ("stall torque", "vendor spec @ 12 V", "spec, no voltage law"),
         ("foot friction", "3d/export_sim.py", "GUESSED"),
         ("foot solref/solimp", "3d/export_sim.py", "GUESSED, and diluted (above)"),
