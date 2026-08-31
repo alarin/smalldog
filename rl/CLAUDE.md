@@ -20,6 +20,9 @@ uv run python checks/check_model.py
 Scripts run in place (`package = false`) — there is no wheel to install. Run
 everything from `rl/`.
 
+On the WSL2 box, `../WSL.md` is the runbook for that machine: the venv, the card,
+USB passthrough, and which of the other trees' checks can be run there at all.
+
 `check_model.py` and `imu_placement.py` need only `mujoco` and `numpy`, which are
 base dependencies, so they run on any of the three machines including the robot.
 

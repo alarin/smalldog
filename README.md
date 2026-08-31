@@ -29,6 +29,7 @@ change workflow (rebuild → FEA → re-export sim → regenerate the ROS 2 desc
 
 - Printed parts and the servo interface: [`3d/README.md`](3d/README.md)
 - Simulation, gait and teleop: [`ros2/README.md`](ros2/README.md)
+- Working on the Windows/WSL2 training box: [`WSL.md`](WSL.md)
 
 ## Not in this repository
 
