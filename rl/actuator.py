@@ -147,6 +147,30 @@ class Params:
         return cls(**{k: v for k, v in d.items() if k in known})
 
 
+# A Params of scalars is a container of Python floats; a Params whose fields are
+# arrays is a batch of servos. The second only survives a jax transform if jax
+# knows which fields are data and which are provenance — without this, `vmap`
+# over a Params is a silent no-op that hands every environment the SAME servo,
+# and domain randomisation looks like it is working while doing nothing.
+#
+# Registered behind a try/except on purpose: the mac's check runs and the Orange
+# Pi import this file with no jax installed (rl/CLAUDE.md), and that has to keep
+# working. source/servo_ids/fitted are str/tuple/bool and cannot be traced;
+# rms_* are how well a fit went, not state.
+try:
+    import jax as _jax
+
+    _jax.tree_util.register_dataclass(
+        Params,
+        data_fields=["R", "k_e", "k_u", "J_m", "J_l", "tau_c", "b_v", "kp", "kd",
+                     "deadband", "punch", "duty_max", "loop_hz",
+                     "theta_bl", "k_bl", "c_bl", "v_eps"],
+        meta_fields=["enc_after_backlash", "fitted", "source", "servo_ids",
+                     "rms_pos_deg", "rms_current_a"])
+except ImportError:                       # numpy-only machine; nothing to register
+    pass
+
+
 DEFAULT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                             "params", "st3215.json")
 
@@ -162,13 +186,13 @@ def load(path: str = DEFAULT_PATH, quiet: bool = False) -> Params:
 
 
 # ======================================================================= law
-def _sign(w, v_eps):
+def _sign(w, v_eps, xp=np):
     """tanh in place of sign(): least_squares needs a derivative, and a true
     sign() makes the Coulomb term a wall the optimiser cannot see across."""
-    return np.tanh(w / v_eps)
+    return xp.tanh(w / v_eps)
 
 
-def duty(p: Params, err: float, w: float) -> float:
+def duty(p: Params, err: float, w: float, xp=np) -> float:
     """The servo's inner loop, on a quantised error, in [-duty_max, duty_max].
 
     The dead zone and the punch are real registers (26/27 and 24) and they are
@@ -176,24 +200,27 @@ def duty(p: Params, err: float, w: float) -> float:
     dead zone there is no drive at all, and the first drive outside it is not
     infinitesimal but `punch`.
     """
-    e = np.round(err / ENC_STEP_RAD) * ENC_STEP_RAD          # the encoder's view
-    e = np.where(np.abs(e) <= p.deadband, 0.0, e)
+    # NOTE: round() has zero gradient almost everywhere. PPO never
+    # differentiates through the sim so this costs nothing here, but it does
+    # make this law unusable for anything that wants dynamics gradients.
+    e = xp.round(err / ENC_STEP_RAD) * ENC_STEP_RAD          # the encoder's view
+    e = xp.where(xp.abs(e) <= p.deadband, 0.0, e)
     u = p.kp * e - p.kd * w
-    u = np.where((u != 0.0) & (np.abs(u) < p.punch), np.sign(u) * p.punch, u)
-    return np.clip(u, -p.duty_max, p.duty_max)
+    u = xp.where((u != 0.0) & (xp.abs(u) < p.punch), xp.sign(u) * p.punch, u)
+    return xp.clip(u, -p.duty_max, p.duty_max)
 
 
-def current(p: Params, u_volt: float, w: float, driven=True) -> float:
+def current(p: Params, u_volt: float, w: float, driven=True, xp=np) -> float:
     """Motor current, A. i = (U - back-EMF) / R — the channel that separates the
     electrical damping from the mechanical, and the only reason the fit closes.
 
     `driven=False` is Torque Enable = 0: the bridge is off, the winding is open,
     and there is no current at all whatever the shaft is doing.
     """
-    return np.where(driven, (u_volt - p.k_e * w) / p.R, 0.0)
+    return xp.where(driven, (u_volt - p.k_e * w) / p.R, 0.0)
 
 
-def motor_torque(p: Params, u_volt: float, w: float, driven=True) -> float:
+def motor_torque(p: Params, u_volt: float, w: float, driven=True, xp=np) -> float:
     """Torque at the joint before the transmission.
 
     The back-EMF term is gated by `driven`, and the distinction is not
@@ -209,11 +236,11 @@ def motor_torque(p: Params, u_volt: float, w: float, driven=True) -> float:
     fit reads the electrical damping as mechanical friction — thirty times too
     much of it — and every later trajectory inherits the error.
     """
-    return (p.k_u * u_volt - np.where(driven, p.k_w * w, 0.0)
-            - p.tau_c * _sign(w, p.v_eps) - p.b_v * w)
+    return (p.k_u * u_volt - xp.where(driven, p.k_w * w, 0.0)
+            - p.tau_c * _sign(w, p.v_eps, xp) - p.b_v * w)
 
 
-def transmitted(p: Params, delta: float, dw: float) -> float:
+def transmitted(p: Params, delta: float, dw: float, xp=np) -> float:
     """Torque across the gearbox play. Zero inside +-theta_bl/2, spring outside.
 
     This is what makes the encoder useless as a backlash sensor in the direction
@@ -223,10 +250,10 @@ def transmitted(p: Params, delta: float, dw: float) -> float:
     not from the measurement.
     """
     half = 0.5 * p.theta_bl
-    engaged = np.abs(delta) > half
-    x = np.where(delta > half, delta - half,
-                 np.where(delta < -half, delta + half, 0.0))
-    return p.k_bl * x + np.where(engaged, p.c_bl * dw, 0.0)
+    engaged = xp.abs(delta) > half
+    x = xp.where(delta > half, delta - half,
+                 xp.where(delta < -half, delta + half, 0.0))
+    return p.k_bl * x + xp.where(engaged, p.c_bl * dw, 0.0)
 
 
 # ================================================================= dynamics
@@ -238,7 +265,19 @@ def simulate(p: Params, target, dt, q0=0.0, w0=0.0, u_bat=12.0, load_torque=None
     load_torque   f(q) -> N*m acting ON the load, e.g. a pendulum arm's gravity
     u_bat         supply volts, scalar or per-sample
     sag           ohms of supply resistance: U_bat drops by sag*|i| under load,
-                  which is the pack sagging and is a real randomisation axis
+                  which is the pack sagging and is a real randomisation axis.
+                  NOTE the convention, and the factor between the two uses of
+                  it. Here |i| is THIS servo's current, because this function
+                  simulates one servo. rl/env/walk.py applies the same law to
+                  the SUM over all twelve, because there the load case is one
+                  pack and one harness feeding the whole robot. Both are ohms,
+                  but they are not the same ohms: the same numeric value drops
+                  TWELVE TIMES more voltage in walk.py than it does here, so a
+                  value fitted against this function must be divided by the
+                  number of servos drawing at once before it means anything
+                  there, and vice versa. rl/params/domain_rand.json's 0-0.06 is
+                  the summed-current convention. Do not copy a number across
+                  without doing that arithmetic.
     torque_on     per-sample bool; False drives the duty to zero AND opens the
                   winding, which is what Torque Enable = 0 does. The bench's
                   free-swing run is exactly this, and it is the only run that
@@ -302,7 +341,17 @@ def simulate(p: Params, target, dt, q0=0.0, w0=0.0, u_bat=12.0, load_torque=None
             volt = volt0
             i = (d * volt - k_e * w_m) / R_ if driven else 0.0
             if sag and driven:
-                volt = volt0 - sag * abs(i)
+                # Floored at zero. A pack under load delivers LESS voltage; it
+                # never delivers negative voltage, and if it did the torque term
+                # k_u*d*volt would flip sign and drive the shaft harder in the
+                # direction it was already turning — positive feedback that
+                # destroys the integration rather than modelling anything.
+                # Unreachable at bench currents (one servo off a lab PSU cannot
+                # sag its own supply past zero), which is exactly why the floor
+                # has to be written down instead of relied on: rl/env/walk.py
+                # applies the same law to the SUMMED current of twelve servos,
+                # where it is reachable, and did reach it.
+                volt = max(volt0 - sag * abs(i), 0.0)
                 i = (d * volt - k_e * w_m) / R_
             tau_m = k_u * d * volt - tau_c * math.tanh(w_m / v_eps) - b_v * w_m
             if driven:
