@@ -93,7 +93,18 @@ Non-printed, and the bench does not work without them:
   same 500 g as a ⌀130 cast-iron plate is 5.2e-3 and **39 %** — over the line on
   shape alone. Keep the weight under ~50 mm across and it never comes up. A
   kitchen scale is accurate enough: 2 g on 350 g is 0.6 %, against the 6.5 % the
-  fit recovers `k_u` to on noise-free data;
+  fit recovers `k_u` to on noise-free data. Scrap metal is fine and the material
+  barely matters — 350 g is a 51 mm aluminium cube at 27 % share against 31 mm of
+  lead at 27 %; it was only ever the *shape*. Two rules for whatever you bolt on:
+  it goes **outboard of the arm's face and nowhere else** (a 51 mm cube straddling
+  the plate shares 18 cm³ with the stand somewhere in the sweep — that face is the
+  z = 20.3 line the whole layout is built on), and it has to be **one rigid body**.
+  A rattling stack of offcuts brings its own friction and its own damping, and the
+  free swing's decay envelope is precisely where `tau_c` and `b_v` are separated —
+  Coulomb linear in time, viscous exponential — so the fit has nowhere to put it
+  except into the servo. One chunk, or a stack pulled hard together through the M8
+  on big washers. The offset it stands off the face is harmless: 350 g at 28 mm is
+  0.094 N·m out of plane, 7 N per bolt pair on the ⌀14 circle;
 - **a clamp.** The stand only holds itself down by 1.4× with the heavy arm out
   horizontal — the two slots in the base take an M6 or a G-clamp, and
   `bench_rig.py` prints that ratio on every run;
