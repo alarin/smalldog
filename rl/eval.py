@@ -47,6 +47,27 @@ NOT evidence that rough ground is sensitive to the servo: a594d57 swept seeds
 a terrain number only against the same seed, and never as a measurement of the
 model.
 
+One run of this file is not a measurement either, and the spread is worth
+carrying. The same checkpoint, the same seed, the same flags, run twice as
+separate processes on this box (--seconds 2, 64 rollouts):
+
+    up, v>lim   identical
+    vx, vy      +-0.002 m/s
+    |err|       +-0.003
+    x           +-0.004 m
+    yaw         +-0.027 rad/s
+
+XLA does not promise a fixed reduction order across processes and MJX contacts
+amplify whatever order it picks. Two runs that differ by less than the spread
+above have not disagreed about anything. The row that matters is the last one:
+achieved yaw is printed to three decimals and the third is noise, so on a policy
+that turns at 0.07 rad/s the turn column is noise-dominated outright.
+
+Measured 2026-08-31 in both directions, before and after the battery's loop
+became a lax.scan: the same-code pairs and the across-rewrite pairs have the
+SAME spread, column for column. That is what says the rewrite changed nothing —
+not the fact that the numbers looked close.
+
 And the standing caveat, until the bench runs: `params/st3215.json` is the vendor
 datasheet, not a fit. Every number below is this policy's score against the
 datasheet servo. `actuator.load()` says so at the top of every run and it is not
@@ -79,6 +100,14 @@ def parse():
     ap.add_argument("--json", default=None)
     return ap.parse_args()
 
+
+# The analytic trot's baseline on THIS box, from
+# `ros2/tools/standalone_sim.py --headless [--terrain]`.  The duration is part of
+# the number and travels with it: the trot has a start-up transient, so 781.6 mm
+# in 5 s is not 1563 mm in 10 s, and a rollout at any other --seconds cannot be
+# divided into it or held against it.
+BASELINE_SECONDS = 5.0
+BASELINE_MM = {"flat": 781.6, "heightfield": 617.9}
 
 # The battery. Each is (label, vx, vy, yaw): what we ask, in the body frame.
 BATTERY = [
@@ -143,24 +172,45 @@ def main():
           f"{'|err|':>8}{'x':>9}{'v>lim':>9}")
 
     n_steps = int(a.seconds * 50)
-    reset = jax.jit(jax.vmap(env.reset))
-    step = jax.jit(jax.vmap(env.step))
-    results = {}
 
-    for label, vx, vy, yaw in BATTERY:
-        keys = jax.random.split(jax.random.PRNGKey(0), a.episodes)
-        st = reset(keys)
-        cmd = jnp.tile(jnp.array([vx, vy, yaw]), (a.episodes, 1))
-        st = st.replace(info={**st.info, "command": cmd})
+    @jax.jit
+    def battery_rollout(cmd):
+        """One command, `episodes` rollouts, the whole step loop on the device.
 
-        alive = jnp.ones(a.episodes)
-        vsum = jnp.zeros((a.episodes, 3))
-        tau_sq = jnp.zeros(a.episodes)
-        over = jnp.zeros(a.episodes)
-        for _ in range(n_steps):
-            act, _ = policy_jit(st.obs, jax.random.PRNGKey(0))
-            st = step(st, act)
+        The loop is a lax.scan and not a Python `for`.  Both compile the same MJX
+        step; the difference is that the Python version hands control back to the
+        host once per step and pays a dispatch on each, and at 50 Hz that is 500
+        round trips per command with nothing to overlap them.
+
+        That dispatch is NOT what the battery costs, which is worth writing down
+        because it looks like it should be.  Measured here on the RTX 3070, 64
+        rollouts x 10 s, mean over the 7 intervals between printed rows:
+
+            Python for      197 s per command
+            lax.scan        182 s per command      about 8 %
+
+        The MJX step is the bottleneck, not the host.  The cross-check is that
+        this box trains the same model at ~1.9 batch-steps/s and evaluates it at
+        ~2.8, which is the same number twice, and the GPU reads 71 % busy during
+        both — that was work, not a starved queue.  The scan stays for the two
+        reasons that survive the measurement: it is one call instead of 500, and
+        per-step data (frames, traces) becomes a scan output rather than 500 host
+        round trips.  It did not make the battery fast.
+
+        The command is re-stamped inside the loop rather than once before it.
+        Nothing in Walk.step touches info["command"] today, so the two are
+        equivalent — but the battery's premise is that the command is HELD, and an
+        env that resampled it mid-episode would otherwise quietly be scored on a
+        command nobody asked for.
+        """
+        st = jax.vmap(env.reset)(
+            jax.random.split(jax.random.PRNGKey(0), a.episodes))
+
+        def one_step(carry, _):
+            st, alive, vsum, over = carry
             st = st.replace(info={**st.info, "command": cmd})
+            act, _ = policy_jit(st.obs, jax.random.PRNGKey(0))
+            st = jax.vmap(env.step)(st, act)
             live = 1.0 - st.done
             alive = alive * live
             q = st.pipeline_state
@@ -174,12 +224,25 @@ def main():
             over = over + jnp.sum(
                 jnp.clip(jnp.abs(q.qvel[:, env._vadr]) - env._vel_limit, 0.0, None) > 0,
                 axis=1) * alive
+            return (st, alive, vsum, over), None
+
+        init = (st, jnp.ones(a.episodes), jnp.zeros((a.episodes, 3)),
+                jnp.zeros(a.episodes))
+        (st, alive, vsum, over), _ = jax.lax.scan(
+            one_step, init, None, length=n_steps)
+        return alive, vsum, over, st.pipeline_state.qpos[:, 0]
+
+    results = {}
+
+    for label, vx, vy, yaw in BATTERY:
+        cmd = jnp.tile(jnp.array([vx, vy, yaw]), (a.episodes, 1))
+        alive, vsum, over, x_end = battery_rollout(cmd)
 
         n_alive = float(jnp.mean(alive))
         v = np.asarray(vsum) / max(n_steps, 1)
         v = v / max(n_alive, 1e-6)
         err = float(np.mean(np.linalg.norm(v[:, :2] - np.array([vx, vy]), axis=1)))
-        x = float(jnp.mean(st.pipeline_state.qpos[:, 0]))
+        x = float(jnp.mean(x_end))
         results[label] = dict(upright_fraction=n_alive, vx=float(v[:, 0].mean()),
                               vy=float(v[:, 1].mean()), yaw=float(v[:, 2].mean()),
                               track_err=err, x_m=x,
@@ -207,12 +270,18 @@ def main():
         out = rollout_mujoco(mj, policy_jit, env, p, cmd=(0.4, 0.0, 0.0),
                              seconds=a.seconds, shot=a.shot if name == "flat" else None)
         sim[name] = out
-        print(f"  {name:<16} travelled {out['x_m']*1000:7.1f} mm, "
+        print(f"  {name:<16} travelled {out['x_m']*1000:7.1f} mm in {a.seconds:g} s, "
               f"y {out['y_m']*1000:+7.1f} mm, upright {out['upright']:+.3f}, "
               f"{'FELL at %.1f s' % out['fell_at'] if out['fell'] else 'stayed up'}")
-    print("  commanded 0.4 m/s forward. The analytic trot's baseline on this box is\n"
-          "  781.6 mm in 5 s on flat and 617.9 mm on the committed heightfield "
-          "(ros2/tools/standalone_sim.py).")
+    print(f"  commanded 0.4 m/s forward. The analytic trot's baseline on this box is "
+          f"{BASELINE_MM['flat']:.1f} mm\n  on flat and {BASELINE_MM['heightfield']:.1f} mm "
+          f"on the committed heightfield (ros2/tools/standalone_sim.py),\n"
+          f"  both over {BASELINE_SECONDS:g} s.")
+    if abs(a.seconds - BASELINE_SECONDS) > 1e-9:
+        print(f"  NOT comparable as printed: the rollout above ran {a.seconds:g} s against a "
+              f"{BASELINE_SECONDS:g} s baseline,\n  and the trot does not hold one velocity, "
+              f"so the two do not scale into each other.\n"
+              f"  Re-run with --seconds {BASELINE_SECONDS:g} to put them side by side.")
 
     if not p.fitted:
         print(f"\n!! Every number above is against the DATASHEET servo, not a fit.")
