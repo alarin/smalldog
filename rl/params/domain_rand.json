@@ -1,0 +1,86 @@
+{
+  "_comment": [
+    "Randomisation ranges for step 4. Every entry carries `evidence`, and the",
+    "only three values it may take are:",
+    "",
+    "  measured  a number this repository actually produced — a CAD mass, a ROM",
+    "            scan limit, a bench fit.",
+    "  spec      a vendor number. Real, but it describes the datasheet servo, not",
+    "            the twelve in the box.",
+    "  guessed   nobody has measured this. The range is wide ON PURPOSE: a policy",
+    "            that survives a wide guess survives the measurement, and a policy",
+    "            trained on a narrow guess is trained on a fiction.",
+    "",
+    "Ranges are multiplicative on the nominal unless the key ends in _abs, which",
+    "means the range is the value itself in SI. Sampled once per environment at",
+    "reset, held for the episode: these are manufacturing and assembly spreads,",
+    "not noise, and a policy that sees them resampled every step learns to average",
+    "them away instead of being robust to them.",
+    "",
+    "params/st3215.json is NOT a fit (actuator.load() says so out loud). Until",
+    "robot/bench/fit_bam.py has run, the actuator entries below are the width of",
+    "our ignorance about the servo, and they are deliberately wider than a fit",
+    "would justify. Narrow them when there is a fit, and not before."
+  ],
+
+  "actuator": {
+    "k_u": {"range": [0.65, 1.35], "evidence": "guessed",
+            "why": "torque per volt. eta = k_u*R/k_e = 0.43 from the three vendor numbers, which is low even for a 1:345 spur stack — either the gearbox really is that lossy or a spec is optimistic. Both mean the true value is somewhere inside a band this wide."},
+    "k_e": {"range": [0.80, 1.20], "evidence": "spec",
+            "why": "back-EMF, hence the no-load speed. Pinned by 4.71 rad/s @ 12 V, which is the vendor number most likely to be honest — it is measured with no load, where there is nothing to be optimistic about."},
+    "R": {"range": [0.75, 1.30], "evidence": "spec",
+          "why": "4.44 ohm from the 2.7 A locked-rotor spec, at the terminals. Wiring, connector and the bus daisy-chain add series resistance the spec does not include, so the spread is asymmetric upward."},
+    "J_m": {"range": [0.60, 1.60], "evidence": "guessed",
+            "why": "reflected rotor inertia, and check_model.py reports it dominates the leg at ~73x the knee link's own. The single most consequential guess in the model: it sets how fast the joint can change direction at all."},
+    "tau_c": {"range": [0.40, 2.20], "evidence": "guessed",
+              "why": "Coulomb friction. Varies servo to servo with grease and preload more than any other term, and it is what makes a leg stick near a reversal."},
+    "b_v": {"range": [0.40, 2.20], "evidence": "guessed",
+            "why": "viscous friction. Not separable from the back-EMF damping k_w without current measurement at several supply voltages (actuator.py, 'Identifiability'), so it is guessed wide and will stay guessed until the bench runs both."},
+    "kp": {"range": [0.70, 1.40], "evidence": "guessed",
+           "why": "the servo's own inner-loop gain after register scaling. We do not own this loop and have never read the registers back off a real unit."},
+    "deadband_abs": {"range": [0.0, 0.0061359], "evidence": "spec",
+                     "why": "registers 26/27, in encoder steps of 0.088 deg. 0 to 4 steps. Zero is a servo configured tight; 4 steps is the factory default region and is what makes a bus servo buzz around its target."},
+    "punch_abs": {"range": [0.0, 0.06], "evidence": "guessed",
+                  "why": "register 24, the minimum drive applied once outside the dead zone. Never read off a real servo."}
+  },
+
+  "supply": {
+    "u_bat_abs": {"range": [9.9, 12.6], "evidence": "spec",
+                  "why": "a 3S LiPo from 3.3 to 4.2 V per cell. This is the whole reason actuator.py is a voltage law: stall torque and no-load speed fall TOGETHER as the pack drains, and a policy that only ever saw 12 V has never met the robot it will run on at the end of a session."},
+    "sag_ohm_abs": {"range": [0.0, 0.06], "evidence": "guessed",
+                    "why": "series resistance of pack, harness and the bus daisy-chain, in ohms. The load case is all twelve pulling together, and the model applies it to the SUMMED current, so the number is smaller than it looks: twelve servos at 3.6 A each into 0.06 ohm is a 2.6 V sag, which is already at the top of what a healthy 3S pack does. The first range here was 0.18, which is 7.8 V and not a battery. Nobody has put a scope on it."}
+  },
+
+  "bus": {
+    "delay_s_abs": {"range": [0.0, 0.020], "evidence": "guessed",
+                    "why": "command latency from the policy writing a target to the servo acting on it, quantised to the 20 ms control tick. params/bus_timing.json does not exist yet — robot/bench/bus_probe.py writes it — so this is one whole control period of ignorance, which is the honest width. robot/README.md 'The 50 Hz budget' shows the FTDI latency timer alone ships at 16 ms."}
+  },
+
+  "body": {
+    "mass_scale": {"range": [0.95, 1.05], "evidence": "measured",
+                   "why": "link masses are real solids in 3d/mini_dog.py, so this is print-density and hardware spread, not ignorance. Tight on purpose — widening a measured number to be safe throws away the measurement."},
+    "com_offset_m_abs": {"range": [-0.010, 0.010], "evidence": "guessed",
+                         "why": "where the battery, the Pi and the harness actually end up. The CAD knows the structure's centre of mass; it does not know how the wiring was dressed."},
+    "payload_kg_abs": {"range": [0.0, 0.30], "evidence": "guessed",
+                       "why": "a mass added at the payload bay, up to 12 % of the robot. What the bay is for."}
+  },
+
+  "contact": {
+    "friction": {"range": [0.55, 1.45], "evidence": "guessed",
+                 "why": "tangential friction of a printed foot on whatever it is standing on. check_model.py names it a guess and says a tilt test measures it in an afternoon; until then the range spans lino to carpet."}
+  },
+
+  "terrain": {
+    "box_height_m_abs": {"range": [0.0, 0.022], "evidence": "guessed",
+                         "why": "procedural boxes scattered under the robot, in metres. The top of the range is a quarter of the shin, which is roughly where a trot stops coping and a policy has to."},
+    "box_density": {"range": [0.0, 0.55], "evidence": "guessed",
+                    "why": "fraction of the tiles under the robot that are raised at all. Zero is flat ground, and every environment gets it some of the time on purpose."}
+  },
+
+  "push": {
+    "interval_s_abs": {"range": [3.0, 9.0], "evidence": "guessed",
+                       "why": "seconds between shoves. Not a model of anything — a way to keep the policy from learning a gait that only survives from a standing start."},
+    "vel_m_s_abs": {"range": [0.0, 0.7], "evidence": "guessed",
+                    "why": "instantaneous velocity added to the base, m/s, in a random horizontal direction."}
+  }
+}
