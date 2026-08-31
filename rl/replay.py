@@ -255,8 +255,9 @@ def render(m, nq, offsets, qpos, out, fps, w, h, elevation, azimuth, spacing):
 
 def main():
     a = parse()
-    os.environ.setdefault("XLA_PYTHON_CLIENT_MEM_FRACTION", str(a.mem_fraction))
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import jaxenv
+    jaxenv.configure(a.mem_fraction)
 
     cmd = [float(x) for x in a.command.split(",")]
     n_ckpt = len(a.runs)

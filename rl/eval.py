@@ -95,8 +95,9 @@ BATTERY = [
 
 def main():
     a = parse()
-    os.environ.setdefault("XLA_PYTHON_CLIENT_MEM_FRACTION", str(a.mem_fraction))
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import jaxenv
+    jaxenv.configure(a.mem_fraction)
 
     import jax
     import jax.numpy as jnp

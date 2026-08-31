@@ -35,6 +35,10 @@ ros2/smalldog_description/meshes/sweep_terrain_*.png
 # a pinned resolution is the point when three machines share one tree.
 rl/runs/
 rl/.venv/
+# XLA's compiled executables and its per-fusion autotuning, keyed on the HLO and
+# the jax/jaxlib versions.  Machine-local by construction, and disposable: see
+# rl/jaxenv.py, which has the rm and why there is no size cap.
+rl/.jax_cache/
 
 # --- bench ---
 # raw servo logs: hundreds of MB, and the fit's output (rl/params/st3215.json)

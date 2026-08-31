@@ -75,14 +75,15 @@ def main():
         a.num_evals, a.batch_size, a.num_minibatches = 2, 64, 8
 
     # BEFORE jax is imported. Nothing below this line may import jax earlier.
-    os.environ.setdefault("XLA_PYTHON_CLIENT_MEM_FRACTION", str(a.mem_fraction))
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import jaxenv
+    cache = jaxenv.configure(a.mem_fraction)
 
     import jax
     from brax.io import model as brax_io_model
     from brax.training.agents.ppo import train as ppo
     from brax.training.agents.ppo import networks as ppo_networks
 
-    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     import actuator
     from env import Walk, domain_randomize
 
@@ -91,8 +92,10 @@ def main():
     os.makedirs(out, exist_ok=True)
 
     p = actuator.load()          # the un-quiet load: it says what it is, every run
+    cache0 = jaxenv.cache_size(cache)
     print(f"\ndevices     {jax.devices()}")
     print(f"run         {out}")
+    print(f"cache       {jaxenv.cache_line(cache)}")
 
     env = Walk(terrain=a.terrain, n_boxes=a.boxes)
     eval_env = Walk(terrain=a.terrain, n_boxes=a.boxes)
@@ -164,6 +167,7 @@ def main():
     meta = dict(
         args=vars(a), history=history,
         wall_clock_min=(time.time() - t0) / 60.0,
+        cache_entries_added=jaxenv.cache_size(cache)[0] - cache0[0],
         actuator=dict(fitted=p.fitted, source=p.source),
         note=("params/st3215.json is NOT a fit — this policy is trained against "
               "the datasheet servo. Run robot/bench/sweep.py and fit_bam.py, then "
@@ -174,6 +178,7 @@ def main():
         json.dump(meta, f, indent=2)
 
     print(f"\nwrote {out}/params and run.json  ({meta['wall_clock_min']:.1f} min)")
+    print(f"cache {jaxenv.cache_line(cache, before=cache0)}")
     print("runs/ is gitignored. eval.py is the honest number — the line above is "
           "the training environment reporting on itself.")
     return 0
