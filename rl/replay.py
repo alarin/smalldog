@@ -222,8 +222,8 @@ def render(m, nq, offsets, qpos, out, fps, w, h, elevation, azimuth, spacing):
     """Write qpos in, mj_forward, one frame. Never mj_step."""
     import mujoco
     import imageio
+    import jaxenv
 
-    os.environ.setdefault("MUJOCO_GL", "egl")
     n = offsets.shape[0]
     T = qpos.shape[0]
 
@@ -237,6 +237,15 @@ def render(m, nq, offsets, qpos, out, fps, w, h, elevation, azimuth, spacing):
     cam.azimuth = azimuth
 
     renderer = mujoco.Renderer(m, h, w)
+    # Asked of the live context, not inferred from the environment: that the
+    # override is SET is not that it took, and the two paths differ in nothing
+    # else visible until the clock has already been spent.
+    gl = jaxenv.gl_renderer()
+    print(f"  GL_RENDERER {gl}")
+    if "llvmpipe" in gl:
+        print("  !! software rasteriser — ~4x slower, and ~2.5 GB of HOST RAM in "
+              "tile buffers, which is the thing that takes this box down. "
+              "See WSL.md, 'Rendering, viewers'; ^C now.")
     t0 = time.time()
     with imageio.get_writer(out, fps=fps, macro_block_size=1) as vid:
         for t in range(T):
@@ -258,6 +267,7 @@ def main():
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     import jaxenv
     jaxenv.configure(a.mem_fraction)
+    jaxenv.configure_gl()          # before mujoco builds a context, not after
 
     cmd = [float(x) for x in a.command.split(",")]
     n_ckpt = len(a.runs)

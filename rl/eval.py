@@ -403,11 +403,13 @@ def _write_shot(mj, d, path, w=1280, h=960):
     """One offscreen frame. In a non-interactive session a viewer window verifies
     nothing (WSL.md); a png does."""
     import mujoco
-    os.environ.setdefault("MUJOCO_GL", "egl")
+    import jaxenv
+    jaxenv.configure_gl()
     try:
         r = mujoco.Renderer(mj, h, w)
         r.update_scene(d)
         px = r.render()
+        print(f"  GL_RENDERER {jaxenv.gl_renderer()}")
     except Exception as e:
         print(f"  (no frame: {type(e).__name__}: {e}; try MUJOCO_GL=osmesa)")
         return

@@ -22,6 +22,18 @@ plainly and this file is where it becomes numbers:
     you touch anything else — an OOM here surfaces as an allocation failure deep
     in a compiled kernel and says nothing about the model.
 
+A checkpoint per eval, and why it is not optional
+------------------------------------------------
+Every eval writes runs/<name>/ckpt/<step>/, each a directory replay.py takes as
+it stands -- `params` beside a `run.json` naming the surface it was trained on.
+That is the whole input to replay.py's row-per-checkpoint form: front row step 0
+face-planting, back row the policy that finished.
+
+It has to happen DURING the run. The intermediate policies exist only while
+brax holds them; when train() returns there is one set of weights left, and the
+progression is not recoverable from it at any price short of training again.
+Twelve evals cost twelve files of ~750 kB, so the trade is not close.
+
 The run writes to runs/, which is gitignored and stays that way. A result worth
 keeping is a number in a commit message or a file in params/ (rl/CLAUDE.md), so
 this script prints the numbers and eval.py produces the honest ones.
@@ -61,6 +73,10 @@ def parse():
     ap.add_argument("--mem-fraction", type=float, default=0.60,
                     help="XLA_PYTHON_CLIENT_MEM_FRACTION. Low on purpose: the "
                          "Windows desktop owns some of this card.")
+    ap.add_argument("--no-checkpoints", action="store_true",
+                    help="only keep the final weights. The row-per-checkpoint "
+                         "video needs the intermediate ones and they cannot be "
+                         "recovered afterwards.")
     ap.add_argument("--name", default=None)
     ap.add_argument("--smoke", action="store_true",
                     help="a two-minute run that proves the loop closes and "
@@ -106,6 +122,28 @@ def main():
     print(f"budget      {a.num_envs} envs x {a.episode_length} steps "
           f"({a.episode_length/50:.0f} s), {a.num_timesteps/1e6:.1f} M steps, "
           f"mem_fraction {a.mem_fraction}")
+
+    # brax hands the callback the same 3-tuple it returns at the end
+    # (normalizer, policy, value), so a checkpoint and the final params are the
+    # same kind of file and replay.py needs no special case for either.
+    ckpt_dir = os.path.join(out, "ckpt")
+    saved = []
+
+    def save_checkpoint(step, make_policy, params):
+        # Zero-padded because the consumer is a shell glob: `ckpt/*/` has to
+        # come out oldest-first, and 9000000 sorts before 10000 unpadded.
+        d = os.path.join(ckpt_dir, f"{int(step):012d}")
+        os.makedirs(d, exist_ok=True)
+        brax_io_model.save_params(os.path.join(d, "params"), params)
+        # replay.py reads run.json for the surface (terrain, boxes) — it has to
+        # rebuild the same env to roll the policy out. Each checkpoint carries
+        # its own copy so the directory stands alone.
+        with open(os.path.join(d, "run.json"), "w") as f:
+            json.dump(dict(args=vars(a), step=int(step), run=name,
+                           note="intermediate checkpoint; the run's own "
+                                "run.json has the history and the actuator note"),
+                      f, indent=2)
+        saved.append(d)
 
     randomization = None
     if not a.no_randomize:
@@ -157,6 +195,7 @@ def main():
         max_grad_norm=1.0,
         network_factory=networks,
         randomization_fn=randomization,
+        policy_params_fn=(lambda *_: None) if a.no_checkpoints else save_checkpoint,
         seed=a.seed)
 
     print("\n  step        reward      ep_len   tracking       vx       elapsed")
@@ -168,6 +207,7 @@ def main():
         args=vars(a), history=history,
         wall_clock_min=(time.time() - t0) / 60.0,
         cache_entries_added=jaxenv.cache_size(cache)[0] - cache0[0],
+        checkpoints=[os.path.relpath(d, out) for d in saved],
         actuator=dict(fitted=p.fitted, source=p.source),
         note=("params/st3215.json is NOT a fit — this policy is trained against "
               "the datasheet servo. Run robot/bench/sweep.py and fit_bam.py, then "
@@ -178,6 +218,11 @@ def main():
         json.dump(meta, f, indent=2)
 
     print(f"\nwrote {out}/params and run.json  ({meta['wall_clock_min']:.1f} min)")
+    if saved:
+        print(f"      {len(saved)} checkpoints in {out}/ckpt")
+        print(f"\n  python replay.py {os.path.relpath(ckpt_dir)}/*/ --robots 96")
+        print("      a row per checkpoint, oldest at the front — that is the "
+              "one worth watching, and it is why they were written.")
     print(f"cache {jaxenv.cache_line(cache, before=cache0)}")
     print("runs/ is gitignored. eval.py is the honest number — the line above is "
           "the training environment reporting on itself.")

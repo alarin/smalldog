@@ -1,16 +1,27 @@
 #!/usr/bin/env python
 """
-jaxenv.py — the JAX settings this box needs, applied before jax is imported.
+jaxenv.py — the environment variables this box needs, each set before the
+library that reads it is imported.
 
     import jaxenv
     cache = jaxenv.configure(mem_fraction=0.60)   # BEFORE `import jax`
     import jax
 
-Both settings live here rather than in each script because train_ppo.py, eval.py
-and replay.py all need them, and all three had the first one written out
-separately.  Everything below is `setdefault`, so a variable exported in the
-shell wins over this file -- including `JAX_COMPILATION_CACHE_DIR=""`, which
-turns the cache off without editing anything.
+    jaxenv.configure_gl()                         # BEFORE any GL context
+    import mujoco
+
+Two functions, one discipline, and it is the reason they share a file rather
+than sitting at the top of three scripts: XLA reads the memory fraction once, at
+the first device call, and Mesa reads the driver override once, when the first
+GL context is created.  Set either one late and it is ignored in silence — the
+run does not fail, it just runs the slow way.  The module name is older than its
+second half.
+
+They live here rather than in each script because train_ppo.py, eval.py and
+replay.py all need them, and all three had the first one written out separately.
+Everything below is `setdefault`, so a variable exported in the shell wins over
+this file -- including `JAX_COMPILATION_CACHE_DIR=""`, which turns the cache off
+without editing anything.
 
 XLA_PYTHON_CLIENT_MEM_FRACTION
 ------------------------------
@@ -66,6 +77,25 @@ directory is always safe:
 
     rm -rf rl/.jax_cache
 
+MUJOCO_GL, GALLIUM_DRIVER, MESA_LOADER_DRIVER_OVERRIDE
+------------------------------------------------------
+`MUJOCO_GL=egl` initialises here and renders correct frames -- on the CPU.  WSL
+ships no NVIDIA EGL vendor (`/usr/share/glvnd/egl_vendor.d/` holds only
+`50_mesa.json`), so Mesa answers and Mesa picks `llvmpipe`.  Measured on
+`replay.py --robots 100` at 1280x960: 7740 ms/frame and 3845 MB peak RSS against
+1802 ms/frame and 1377 MB through `d3d12`.
+
+The memory is the half that matters.  llvmpipe spends ~2.5 GB of **host** RAM on
+tile and per-thread buffers, and host RAM is what takes this distro down -- so
+the driver override is not a performance nicety, it is the difference between a
+12-minute render and a 52-minute one that may not finish.  WSL.md, "Rendering,
+viewers", carries the table.
+
+The override is applied only where the Gallium driver is actually on disk, so it
+is inert on the mac and on the robot.  `gl_renderer()` asks the live context what
+answered, which is the only way to know: the fast path and the slow one differ in
+nothing else you can see from outside.
+
 There is deliberately no size cap.  `jax_compilation_cache_max_size` turns on
 LRU eviction, but jax raises RuntimeError from that path unless `filelock` is
 installed, and it is not in this lock -- a cap set here would fail at the first
@@ -93,6 +123,41 @@ def configure(mem_fraction: float = 0.60, cache_dir: str | None = None) -> str:
     # caching them would bury the handful that cost minutes.
     os.environ.setdefault("JAX_PERSISTENT_CACHE_MIN_COMPILE_TIME_SECS", "1.0")
     return os.environ["JAX_COMPILATION_CACHE_DIR"]
+
+
+# Mesa's D3D12 Gallium driver.  Its presence on disk is the test for "this box
+# can render on the card": /usr/lib/wsl/lib/libd3d12.so is WSL's passthrough and
+# this .so is the Mesa driver that goes through it.  Absent, we are on a machine
+# where forcing the override would break a GL stack that was already fine.
+D3D12_DRI = "/usr/lib/x86_64-linux-gnu/dri/d3d12_dri.so"
+
+
+def configure_gl(backend: str = "egl") -> str:
+    """Pick a MuJoCo GL backend and point Mesa at the card.  Before any context.
+
+    Returns the backend actually in force.  See the module docstring for why
+    `MUJOCO_GL=egl` alone is the slow path here and why that costs host RAM.
+    """
+    os.environ.setdefault("MUJOCO_GL", backend)
+    if os.environ["MUJOCO_GL"] == "egl" and os.path.exists(D3D12_DRI):
+        os.environ.setdefault("GALLIUM_DRIVER", "d3d12")
+        os.environ.setdefault("MESA_LOADER_DRIVER_OVERRIDE", "d3d12")
+    return os.environ["MUJOCO_GL"]
+
+
+def gl_renderer() -> str:
+    """What actually rendered, asked of the live context.
+
+    Call AFTER the first Renderer exists: glGetString needs a current context,
+    and before there is one the honest answer is not available.  Never infer it
+    from the environment variables -- that they are set is not that they took.
+    """
+    try:
+        from OpenGL import GL
+        s = GL.glGetString(GL.GL_RENDERER)
+        return s.decode() if isinstance(s, bytes) else str(s)
+    except Exception as e:            # no context, no PyOpenGL — either way, unknown
+        return f"unknown ({type(e).__name__}: {e})"
 
 
 def cache_size(cache_dir: str | None = None) -> tuple[int, int]:
@@ -124,3 +189,5 @@ def cache_line(cache_dir: str | None = None, before: tuple[int, int] | None = No
 
 if __name__ == "__main__":
     print(cache_line(configure()))
+    print(f"MUJOCO_GL={configure_gl()} "
+          f"GALLIUM_DRIVER={os.environ.get('GALLIUM_DRIVER', '(unset)')}")

@@ -89,6 +89,30 @@ Re-run the check if the lock moves; `put_model` is the arbiter. And never "fix" 
 raise by editing the scene — `scene_terrain.xml` and the course are output of
 `3d/terrain.py`.
 
+## Watching it learn
+
+Training writes `runs/<name>/ckpt/<step>/` at every eval, and `replay.py` reads
+one of those directories the same way it reads a finished run. So the progress
+video is two commands:
+
+```bash
+python train_ppo.py                                  # 12 evals, 12 checkpoints
+python replay.py runs/<name>/ckpt/*/ --robots 96     # a row per checkpoint
+```
+
+Front row is step 0 face-planting, back row is the policy that finished, and a
+regression between two checkpoints is visible in one frame instead of being a
+wobble in a reward curve.
+
+The checkpoints have to be written *during* the run. When `train()` returns there
+is one set of weights left and the progression is gone — `--no-checkpoints` exists
+but buys nothing worth the loss. Twelve of them cost ~9 MB, in `runs/`, ignored.
+
+Rendering goes through `jaxenv.configure_gl()`, which is the difference between
+the card and a software rasteriser on the WSL2 box; `replay.py` prints
+`GL_RENDERER` before it starts spending the clock. `../WSL.md`, "Rendering,
+viewers", has the measurement and the reason host RAM is the part that matters.
+
 ## Checks
 
 Both need only `mujoco` and `numpy`, so they run on any of the three machines.
@@ -134,7 +158,9 @@ ladders mean three different things.
 | `params/domain_rand.json` | randomisation ranges, each marked measured or guessed — step 4 |
 | `model.py` | training model = generated MJCF + MjSpec edits — step 4 |
 | `env/` | observations, actions, rewards, commands, randomisation — step 4 |
-| `train_ppo.py` | MJX + Brax PPO — step 5 |
+| `jaxenv.py` | the env vars this box needs, each set before the library that reads it |
+| `train_ppo.py` | MJX + Brax PPO, a checkpoint per eval — step 5 |
 | `eval.py` | deterministic rollouts, metrics, sim-to-sim in vanilla MuJoCo — step 5 |
+| `replay.py` | a herd of checkpoints replayed kinematically, to mp4 — step 5 |
 | `export_onnx.py` | policy + observation normaliser in one graph — step 6 |
 | `runs/` | ignored |
