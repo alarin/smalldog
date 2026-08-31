@@ -51,7 +51,8 @@ def rho(part):                          # g/cm3 -> kg/mm3, per part
 
 # collision primitives - deliberately a little proud of the real part
 R_THIGH, R_SHIN = 0.014, 0.011         # capsule radii, m
-IMU_XYZ = (0.0, 0.0, md.BODY_Z1 / 1000.0)
+IMU_XYZ = tuple(v/1000.0 for v in md.imu_xyz())   # the BMI088's package, from the
+                                                 # CAD - never a literal here
 
 # MuJoCo joint feel lives in mini_dog.py section 4, next to the servo's stall
 # torque, and is read - not copied - by this exporter and by the ROS 2 one.  Two
@@ -263,6 +264,9 @@ def link_masses(parts):
             # guess: 90 x 15 mm of board with the lens block on the optical axis.
             + box_mp(md.CAMERA_KG, (md.CAM_LENS_H, md.CAM_BOARD[0], md.CAM_BOARD[1]),
                      md.camera_com())
+            + box_mp(md.IMU_KG, (md.IMU_BOARD[0], md.IMU_BOARD[1],
+                                 md.IMU_BOARD[2]+md.IMU_STACK),
+                     (md.IMU_X, md.IMU_Y, md.IMU_Z0-(md.IMU_BOARD[2]+md.IMU_STACK)/2.0))
             # The L2, at the pose mini_dog.py holds for it.  Envelope and mass are the
             # sensor's own drawing; the box stays axis-aligned while the real one leans
             # LIDAR_TILT forward, which is exact in mass and centroid and ~7 % out on one

@@ -31,7 +31,7 @@
   <worldbody>
     <body name="base_link" pos="0 0 0.1807" childclass="mujoco">
       <freejoint name="base_freejoint"/>
-      <inertial pos="0.006458 -0.000041 0.021964" mass="1.55920" fullinertia="0.00311178 0.00653010 0.00611987 0.00000662 -0.00077087 0.00000053"/>
+      <inertial pos="0.006444 -0.000041 0.021968" mass="1.56250" fullinertia="0.00311185 0.00653040 0.00612021 0.00000662 -0.00077083 0.00000053"/>
       <geom class="visual" type="mesh" mesh="base_link"/>
       <geom class="servo" type="mesh" mesh="fl_roll_servo"/>
       <geom class="servo" type="mesh" mesh="fr_roll_servo"/>
@@ -39,7 +39,7 @@
       <geom class="servo" type="mesh" mesh="rr_roll_servo"/>
       <geom class="collision" type="box" size="0.06300 0.04600 0.02700" pos="0.00000 0.00000 0.00200"/>
       <geom class="collision" type="box" size="0.10650 0.04911 0.01536" pos="0.00000 0.00000 0.00000"/>
-      <site name="imu" pos="0 0 0" size="0.005"/>
+      <site name="imu" pos="0 0 0.0234" size="0.005"/>
       <site name="lidar" pos="0.0734663 0 0.0914663" quat="0.92388 0 0.382683 0" size="0.004" rgba="0.9 0.4 0.1 1"/>
       <geom name="lidar_body" type="cylinder" group="2" contype="0" conaffinity="0" size="0.0375 0.0325" pos="0.064981 0 0.082981" quat="0.92388 0 0.382683 0" rgba="0.15 0.15 0.17 1"/>
       <camera name="camera" pos="0.0787343 0 0.0257543" quat="-0.473147 -0.525483 0.525483 0.473147" fovy="52.23" resolution="3840 2160"/>

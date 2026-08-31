@@ -143,6 +143,16 @@ with a monotone cubic and lofted. Things that bite:
   deck. It was a literal 67 mm wide until 2026-08-28, which left a 19.5 mm channel for a
   21.3 mm cell: the pack it was drawn for did not exist. Do not put the width back.
 - 3S BMS: bay in the front, ESP32 + Feetech URT-1 bay in the rear.
+- IMU (BMI088 breakout, 20 × 15 mm): under the deck on the centreline, bolted up against
+  two tabs that bridge the deck's own window, component face down. The position is not a
+  packaging choice — it is `imu_xyz()`, and both simulators emit their `imu` site there, so
+  the board and the model agree by construction. `rl/checks/imu_placement.py` is what forces
+  that: an accelerometer offset by r from the site the model calls `imu` reads
+  ω × (ω × r) + α × r on top of gravity, which on the existing 0.2 m/s trot is 9.0 m/s² —
+  42° of apparent tilt — for a board out on the deck beside the Pi, against 25° here. The
+  slot is 3.6 mm (pack top at z = 21.4, deck underside at 25) and the board is 2.8 of it,
+  so **the header has to come off and the wires get soldered to the pads** — see
+  `ref/imu/README.md`. Everything about this is **verify**: no BMI088 has been measured.
 - Rear connector panel, around the bus window: **XT60** (master disconnect / bench supply,
   on the fused P+), **XT30** (charge) and a pass-through for the 3S JST-XH balance lead.
   The two XT shells are different sizes on purpose — a charger cannot be plugged into the
@@ -463,7 +473,12 @@ FAQ says stalls and burns the servo.
    pass-through (all three are trapped by the deck afterwards) →
    battery + BMS in the tray, servo bus routed out through the side ports →
    4 M3 nuts into the pedestal legs' lower slots and bolt the pedestal to the deck **from
-   underneath, with the deck still off the tray** → deck onto the tray →
+   underneath, with the deck still off the tray** →
+   2 M2.5 nuts into the IMU tabs' slots and the BMI088 up under them, **also with the deck
+   off** — the channels open toward x = 0 into the deck window, which is open air only
+   while the deck is in your hand, and once the Orange Pi is on there is no reaching the
+   board at all →
+   deck onto the tray →
    4 M2.5 nuts into the standoff slots, Orange Pi, ESP32/URT-1 →
    GPS mast onto the rear pair of deck screws, swapping them for M3 × 24, then the
    receiver into its rails and two ties (it arches over the Pi, so the Pi goes in first
@@ -659,7 +674,7 @@ frame above.
   for tipping — crouch harder in the gait, or shorten `L_THIGH` / `L_SHIN`.
 - The thigh is still a plain constant-section box between its two joints. That matches
   what the reference legs do there, but its corners are unblended, unlike the shin's.
-- No IMU mount, no shell/covers, no connector strain reliefs yet.
+- No shell/covers, no connector strain reliefs yet.
 - The ROM scan is a 10° sweep; refine with `step=2` before committing to joint limits.
 - The Waveshare `ROBOTIC DOG.step` supplies the **shape** of the shin and nothing else.
   Its joint spacing does not transfer — it is an aluminium-plate design with a single-shear

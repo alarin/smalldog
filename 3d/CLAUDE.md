@@ -130,6 +130,27 @@ name → (workplane, qty, note) and drives both the export loop and the BOM;
   different servo strength** — and which sim you loaded decided how strong the servo
   was. Fixed 2026-08-31 with the re-baseline in the same commit; `rl/` loads the ROS 2
   model, so that was the one that mattered.
+- **The IMU's mounting point is a model constant, not a mount detail** — `IMU_*` in
+  section 3, reached through `imu_xyz()`, and both sim exporters read the `imu` site from
+  there. This was the same defect a **fourth** time and it had been shipping: the ROS 2
+  generator wrote `pos="0 0 0"` while `export_sim.py` wrote `BODY_Z1`, so the two files
+  described robots whose accelerometers sat 25 mm apart — and `rl/` loads the ROS 2 one, so
+  that offset went straight into the observation the policy trains on. What makes this one
+  worse than the three above it is that no check could have caught it from inside `3d/`:
+  it took `rl/checks/imu_placement.py`, which adds real accelerometers at candidate mounts
+  through `MjSpec` and compares them against the site the model ships. Its number is the
+  argument for the position, not a warning to note: ω × (ω × r) + α × r reaches 9.0 m/s²
+  — 42° of apparent tilt — on the existing trot for a board out by the Pi, against 25° on
+  the centreline. Re-run it whenever the mount or the gait moves, and never let the site
+  and the board be chosen in different files again.
+- **The IMU board's slot is 3.6 mm and interference() cannot see either wall.** Above it is
+  the deck's underside at `BODY_Z1`; below it is the battery pack's top at
+  `BODY_Z0 + BATT_H` = 21.4, and the pack is a payload, so `imu_clear()` exists for it the
+  way `gps_clear()` exists for `OPI_BOX`. The board and its components are 2.8 mm of the
+  3.6, which is why `IMU_STACK` says headerless and why `ref/imu/README.md` says solder to
+  the pads. Moving `DECK_T`, `BATT_H`, the deck window or `IMU_TAB_T` moves one of those
+  two walls; the build prints the remaining gap on every run, and it is allowed to be
+  small but never negative.
 - `build()` checks `shape.isValid()` per part; an `!! INVALID` line in the output is a
   failure, not a warning.
 - **Every model change is re-checked for strength.** Any edit to `mini_dog.py` — a constant

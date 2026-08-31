@@ -208,6 +208,45 @@ OPI_NUT_DZ   = 1.5                    # ... its floor, above the deck's top face
 # 62 x 20 at z 29..49 in export_sim.py against 100 x 62 x 18 at z 28..46 in the ROS 2
 # generator.  **verify** with the hole pattern, off a real board.
 OPI_BOX      = (100.0, 62.0, 20.0)
+
+# The IMU, as a payload: a BMI088 breakout, and WHERE it is bolted is a model constant.
+# Both sim exporters emit an `imu` site at it, and rl/checks/imu_placement.py measures what
+# the choice costs.  An accelerometer rigidly offset by r from the site the model calls
+# `imu` reads omega x (omega x r) + alpha x r on top of gravity, and on the 0.2 m/s trot
+# that already exists that term reaches 9.0 m/s2 - 42 deg of apparent tilt - for a board
+# out on the deck beside the Pi.  Once the site and the board agree it is not an error at
+# all; what is left is that the swing the policy observes, and every residual mounting
+# error with it, scale with |r|.  So the board goes as close to the body origin as the bay
+# allows.  It lives here rather than in either exporter for the same reason the servo mass
+# and the MJ_* block do: generate_model.py emitted a literal (0, 0, 0) against
+# export_sim.py's BODY_Z1, so the two files described robots whose IMUs were 25 mm apart -
+# the same defect a fourth time, and the one rl/ was reading.
+#
+# The bay decides the rest, and it is tight.  On the centreline the only opening is the
+# deck's own window at x +-16, |y| <= 34; under it the pack's top is at BODY_Z0+BATT_H =
+# 21.4 and the deck's underside is at BODY_Z1 = 25.  That is 3.6 mm; the board and its
+# components are 2.8 of it; and the deck's 4 mm above is not free space either - it is
+# OPI_BOX's floor.  So the board bolts up under two tabs that bridge the window, component
+# face DOWN, and the 0.8 mm left over is the whole margin.  This is the camera's slot
+# again: treat every number here as load-bearing.  imu_clear() is what checks the pack,
+# because the pack is a payload and interference() cannot see one.
+IMU_BOARD    = (20.0, 15.0, 1.6)      # PCB: x, y, thickness          **verify** ref/imu/
+IMU_STACK    = 1.2                    # components over the PCB, and HEADERLESS: a 2.54 mm
+                                      # pin header is 8.5 mm and misses this bay by 3x.
+                                      # Solder to the pads.           **verify** ref/imu/
+IMU_HOLE_P   = 15.0                   # M2.5 mounting holes, on x     **verify** ref/imu/
+IMU_X, IMU_Y = 0.0, 0.0               # the centreline - as near the body origin as the
+                                      # bay goes, which is what the whole block is for
+IMU_TAB      = (9.0, 10.0)            # the tabs that carry it: reach in x from the window
+                                      # wall, width in y.  The reach is set by IMU_HOLE_P:
+                                      # the hole at x = 7.5 has to land on solid tab.
+IMU_TAB_T    = DECK_T - M25_NUT_H - NUT_CLR    # 1.75.  The tab takes the deck's bottom,
+                                      # the nut channel takes exactly the rest of DECK_T
+                                      # and comes out flush with the top face, so nothing
+                                      # here reaches into OPI_BOX.
+IMU_Z0       = BODY_Z1                # ... and so the PCB's top face IS the deck's own
+                                      # underside plane.  Not a coincidence: it is what
+                                      # the line above leaves.
 # LiDAR pedestal.  LIDAR_X is shared: chassis_top drills the bolt circle at it and
 # lidar_mount is built on it, and they used to be two independent literals.
 # LIDAR_BASE_R is set by the Orange Pi standoffs, not by the pedestal: at the old 30.0 the
@@ -514,6 +553,11 @@ CAMERA_KG         = 0.012         # IMX415 module: PCB, M12 holder, lens, connec
                                   # **verify** - vendor gives no mass; weigh one.  It
                                   # sits at the very nose, which is the worst place on
                                   # this robot for mass - see README, "Terrain feedback".
+IMU_KG            = 0.003         # BMI088 breakout, headerless, with its six wires.
+                                  # **verify** - ref/imu/README.md is a transcription and
+                                  # this is the least certain line in it.  It is also the
+                                  # smallest mass here, and 3 g is enough to move the flat
+                                  # trot: see CLAUDE.md step 6 before reading a distance.
 GPS_KG            = 0.025         # GY-NEO6MV2 + its 25x25 active patch + the lead.
                                   # 22 g is the vendor figure for the pair - **verify**,
                                   # like every other number on this module: it is a bazaar
@@ -862,6 +906,20 @@ def chassis_top():
         s = s.cut(cyl(M3_CLR, 20, (LIDAR_X+LIDAR_BC/2*math.cos(a), LIDAR_BC/2*math.sin(a), z0-1)))
     s = s.cut(cyl(LIDAR_CORE_R, 20, (LIDAR_X, 0, z0-1)))   # the LiDAR cable, into the tray
     s = s.cut(bxc(-16, 16, -34, 34, z0-1, z1+1)).cut(bxc(58, 60, -26, 26, z0-1, z1+1))
+    # IMU tabs, bridging the window just cut, on the centreline - see the IMU_* block.  The
+    # board bolts UP against their underside, so its component face looks down at the pack
+    # and nothing it carries reaches into OPI_BOX.  The M2.5 nut sits in the deck's own top
+    # 2.25 mm in a channel opening toward x = 0 - open air inside the window, and the only
+    # face still reachable at the moment it goes in, which is with the deck off the tray
+    # and before the board.  That fixes its place in the assembly order in README.md.
+    for sx in (-1.0, 1.0):
+        xa, xb = sx*(16.0-IMU_TAB[0]), sx*16.0
+        s = s.union(bxc(min(xa, xb), max(xa, xb), -IMU_TAB[1]/2, IMU_TAB[1]/2,
+                        IMU_Z0, IMU_Z0+IMU_TAB_T))
+        hx = sx*IMU_HOLE_P/2
+        s = s.cut(cyl(M25_CLR, DECK_T+4.0, (hx, IMU_Y, IMU_Z0-1.0)))
+        s = s.cut(nut_slot((hx, IMU_Y, IMU_Z0+IMU_TAB_T), (-sx, 0.0, 0.0),
+                           af=M25_NUT_AF, h=M25_NUT_H, back=3.2, run=12.0))
     for y in (-BODY_W/2, BODY_W/2-3.0):                       # stiffening lips
         s = s.union(bxc(-BODY_L/2, BODY_L/2, y, y+3.0, z1, z1+6.0))
     for x, ay in DECK_SCREWS:                                 # ... notched at the mid pair:
@@ -996,6 +1054,36 @@ def opi_com():
     """Centroid of the Orange Pi stack's envelope - the keep-out gps_mount arches over and
     the point every exporter hangs ELECTRONICS_KG on."""
     return (OPI_X, 0.0, BODY_Z1+DECK_T+OPI_BOX[2]/2.0)
+
+def imu_xyz():
+    """The `imu` site in robot coordinates (mm): the BMI088's own package, at the centre of
+    the board's component face - which looks down, so it is one PCB thickness below the
+    tabs the board hangs from.
+
+    Same contract as lidar_pose() and gps_pose(): export_sim.py and
+    ../ros2/.../generate_model.py both read the site from here.  They did not, once - the
+    ROS 2 generator wrote pos="0 0 0" while export_sim.py wrote BODY_Z1 - and rl/ loads the
+    ROS 2 model, so the 25 mm went straight into the observation the policy trains on."""
+    return (IMU_X, IMU_Y, IMU_Z0 - IMU_BOARD[2])
+
+def imu_module():
+    """The breakout itself, not a printed part - here for the same reason camera_module()
+    is: interference() and the assembly have to see the thing that is actually bolted on,
+    and neither can see a number in a table.  Component face down, per ref/imu/."""
+    L, W_, T = IMU_BOARD
+    return bxc(IMU_X-L/2, IMU_X+L/2, IMU_Y-W_/2, IMU_Y+W_/2,
+               IMU_Z0-T-IMU_STACK, IMU_Z0)
+
+def imu_clear():
+    """mm3 of the IMU board inside the battery pack's envelope, plus the mm of air under
+    it - the board's own binding constraint and the one thing interference() cannot see,
+    because the pack is a payload and not a part (gps_clear() exists for the same reason
+    against OPI_BOX).  Returns (overlap_mm3, gap_mm); the gap is what is actually thin."""
+    top = BODY_Z0 + BATT_H
+    pack = bxc(-BATT_L/2, BATT_L/2, -BATT_W/2, BATT_W/2, BODY_Z0+3.0, top)
+    try:    v = imu_module().val().intersect(pack.val()).Volume()
+    except Exception: v = 0.0
+    return v, (IMU_Z0 - IMU_BOARD[2] - IMU_STACK) - top
 
 def gps_pose():
     """The patch antenna's phase centre in robot coordinates.
@@ -1523,16 +1611,25 @@ def main():
     # The camera module is not a printed part and so is not in PARTS, but it is bolted to
     # the same rigid body and it is the thing with 1 mm of clearance on four sides - it
     # has to be in this check, not just its channel.
-    cm = camera_module().val()
-    for nm in BODY_PARTS:
-        try:    v = cm.intersect(PARTS[nm][0].val()).Volume()
-        except Exception: v = 0.0
-        if v > INTERF_TOL:
-            bad.append(("camera", nm, v))
+    # The camera module and the IMU board are not printed parts and so are not in PARTS,
+    # but both are bolted to the same rigid body and both are the thing with ~1 mm of
+    # clearance rather than the bracket that holds it - they have to be in this check.
+    for pname, psolid in (("camera", camera_module().val()), ("imu", imu_module().val())):
+        for nm in BODY_PARTS:
+            try:    v = psolid.intersect(PARTS[nm][0].val()).Volume()
+            except Exception: v = 0.0
+            if v > INTERF_TOL:
+                bad.append((pname, nm, v))
     for na, nb, v in bad:
         print(f"  !! INTERFERENCE  {na} x {nb}  {v:.1f} mm3")
     if not bad:
-        print(f"  body clear: {' / '.join(BODY_PARTS)} + camera share no solid")
+        print(f"  body clear: {' / '.join(BODY_PARTS)} + camera + imu share no solid")
+    # ... and the IMU against the battery pack, which interference() cannot see at all.
+    iv, igap = imu_clear()
+    if iv > INTERF_TOL:
+        print(f"  !! INTERFERENCE  imu x battery pack  {iv:.1f} mm3")
+    else:
+        print(f"  imu clear: {igap:+.2f} mm of air between the board and the pack")
     # The LiDAR's own field of view is a geometric invariant like the interference check:
     # the L2 sees nothing below its base plane, so any static bodywork above that plane is
     # a permanent blind wedge in the direction that matters.  isValid() cannot see this and
@@ -1583,12 +1680,12 @@ def main():
     a.save(os.path.join(OUT, "mini_dog_assembly.step"))
     tm = sum(r["est_mass_g"]*r["qty"] for r in rows)
     carried = (N_SERVO*SERVO_KG + BATTERY_KG + ELECTRONICS_KG + LIDAR_KG + GPS_KG
-               + CAMERA_KG)*1000.0
+               + CAMERA_KG + IMU_KG)*1000.0
     print(f"\n  printed mass  ~{tm:.0f} g   + {N_SERVO} servos {N_SERVO*SERVO_KG*1000:.0f} g"
           f" + 3S2P pack ~{BATTERY_KG*1000:.0f} g"
           f" + Orange Pi/BMS/wiring ~{ELECTRONICS_KG*1000:.0f} g"
           f" + LiDAR ~{LIDAR_KG*1000:.0f} g + GPS ~{GPS_KG*1000:.0f} g"
-          f" + camera ~{CAMERA_KG*1000:.0f} g"
+          f" + camera ~{CAMERA_KG*1000:.0f} g + IMU ~{IMU_KG*1000:.0f} g"
           f"  ->  ~{(tm+carried)/1000:.2f} kg")
     print("  ROM scan (coarse, 10 deg steps, real solids):")
     rom = {}

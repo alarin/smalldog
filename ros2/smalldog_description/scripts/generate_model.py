@@ -64,6 +64,7 @@ M_ELECTR  = md.ELECTRONICS_KG
 M_LIDAR   = md.LIDAR_KG
 M_GPS     = md.GPS_KG
 M_CAMERA  = md.CAMERA_KG
+M_IMU     = md.IMU_KG
 
 def tri_inertia(verts, tris, density_g_mm3):
     """Exact mass properties of a closed triangle mesh (mm, g/mm^3).
@@ -181,6 +182,9 @@ base.add_box(M_BATTERY, (0, 0, R.BODY_Z0 + 3 + R.BATT_H / 2), (R.BATT_L, R.BATT_
 base.add_box(M_ELECTR,  md.opi_com(), md.OPI_BOX)
 # the NEO-6M and its active patch, sitting on gps_mount's platform
 base.add_box(M_GPS,     md.gps_com(), md.GPS_STACK)
+base.add_box(M_IMU, (md.IMU_X, md.IMU_Y,
+                     md.IMU_Z0-(md.IMU_BOARD[2]+md.IMU_STACK)/2.0),
+             (md.IMU_BOARD[0], md.IMU_BOARD[1], md.IMU_BOARD[2]+md.IMU_STACK))
 # Unitree L2, at the pose mini_dog.py holds for it (md.lidar_com(), md.LIDAR_L2_BOX -
 # envelope and mass both off the sensor's own drawing).  This used to be a 42.0 literal
 # and a guessed 70x70x60, which is exactly the divergence mini_dog's mass block exists to
@@ -412,7 +416,13 @@ def write_mjcf():
           '      <freejoint name="base_freejoint"/>',
           mj_inertial(links["base_link"]["body"], 6)]
     o += mj_geoms("base_link", None, 6)
-    o += ['      <site name="imu" pos="0 0 0" size="0.005"/>']
+    # The IMU site comes out of the CAD like every other sensor pose.  It was a literal
+    # "0 0 0" here against export_sim.py's BODY_Z1, so the two exporters shipped robots
+    # whose accelerometers were 25 mm apart - and rl/ loads THIS one, so that offset was
+    # what the policy's observation actually contained.  Same defect, and the same fix, as
+    # the servo mass, the MJ_* block and SERVO_STALL_NM above it.
+    o += ['      <site name="imu" pos="%s" size="0.005"/>'
+          % " ".join("%.6g" % (v/1000.0) for v in md.imu_xyz())]
     o += lidar_gen.site_xml("      ")     # the L2: its frame, and the sensor drawn on it
     o += camera_gen.camera_xml("      ")  # ... and the camera MuJoCo can actually render
     _g = tuple(v * MM for v in md.gps_pose())        # the GPS patch, and its receiver drawn
