@@ -47,6 +47,38 @@ NOT evidence that rough ground is sensitive to the servo: a594d57 swept seeds
 a terrain number only against the same seed, and never as a measurement of the
 model.
 
+Both moved again with 7f66997/1046e06, which reshaped the shins and the base and
+put total mass at 2.4994 kg, +3.1 g. Re-measured here on both scenes, same
+machine, same seed, `ros2/tools/standalone_sim.py --headless [--terrain]`:
+
+    flat          781.6 -> 781.7 mm     the deterministic same answer
+    heightfield   617.9 -> 552.3 mm     on seed 7 alone
+
+The second line is a seed-7 observation and NOT a measurement of the model.
+a594d57's sweep put the seed-to-seed spread at ~32 mm sd, so -66 mm is about two
+of those, and a single seed cannot tell a real shift from its own noise -- which
+is exactly the trap a594d57 recorded the pair to keep anyone out of. Settling it
+needs the s7..s12 sweep, which needs `generate_model.py --terrain-seed`, which
+needs cadquery; this box has none. Until it runs somewhere that does, the
+heightfield baseline is something to score a policy against on seed 7, not
+evidence about what the reshaped shins did to rough ground.
+
+The battery could not see that change and the sim-to-sim pass could, which is
+worth knowing before reaching for either. Same checkpoint, same policy, 10 s:
+the MJX rows moved by at most 14 mm of x, against 13 mm between two runs of the
+SAME model, so nothing there is distinguishable. The vanilla-MuJoCo rollout went
+369.5 -> 324.1 mm forward and +233.1 -> +318.3 mm sideways, and that path
+reproduces bit for bit across processes -- it returned the same 369.5/+233.1
+twice before the model changed. On this box the CPU pass is the sharp instrument
+for a change in the MODEL, and the noisy GPU battery is the sharp one for a
+change in the POLICY, because only the battery averages 64 of them.
+
+Worth keeping next to it: a594d57 measured 11 g of mass moving the flat trot
+778 -> 597 mm while 2 % of servo torque moved it 0.2 mm, so mass is the axis this
+gait is sensitive on. This change was 3.1 g along that axis and flat did not move
+at all. The bifurcation is a threshold, not a slope, and neither 11 g nor 3 g is
+a rate.
+
 One run of this file is not a measurement either, and the spread is worth
 carrying. The same checkpoint, the same seed, the same flags, run twice as
 separate processes on this box (--seconds 2, 64 rollouts):
@@ -107,7 +139,7 @@ def parse():
 # in 5 s is not 1563 mm in 10 s, and a rollout at any other --seconds cannot be
 # divided into it or held against it.
 BASELINE_SECONDS = 5.0
-BASELINE_MM = {"flat": 781.6, "heightfield": 617.9}
+BASELINE_MM = {"flat": 781.7, "heightfield": 552.3}   # 1046e06's model, seed 7
 
 # The battery. Each is (label, vx, vy, yaw): what we ask, in the body frame.
 BATTERY = [
