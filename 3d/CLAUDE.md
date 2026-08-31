@@ -100,6 +100,24 @@ name → (workplane, qty, note) and drives both the export loop and the BOM;
   used to, and the servo mass silently diverged (55 g here, 60 g in the ROS 2 model — 60 g
   of robot). Anything the robot carries belongs in that block, including payload that has
   no printed part: the ground load cases in `fea.py` scale with the total.
+- **The MuJoCo joint feel lives there too** — `MJ_DAMPING`, `MJ_ARMATURE`,
+  `MJ_FRICTIONLOSS`, `MJ_KP`, `MJ_DAMPRATIO`, in the same section 4 block, read by
+  both sim exporters. They were duplicated once and diverged, exactly like the servo
+  mass above; `rl/checks/check_model.py` is what caught it. Three of the five are
+  estimates and say so, but `MJ_ARMATURE` = 0.008 is not: it is the ST3215's
+  reflected rotor inertia, the same number as `rl/actuator.py`'s `Params.J_m`. When
+  the bench fits the real actuator, these become its initial guess — never a second
+  opinion sitting beside it.
+- **Known, deliberately deferred: `generate_model.py` still keeps its own `J_EFF = 3.0`
+  and `J_VEL = 4.7`,** rounded copies of `SERVO_STALL_NM = 2.94` and
+  `SERVO_NOLOAD_RADS = 4.71`. Same defect class as the two above and it should be
+  fixed the same way — but it is −2 % of servo torque, and at this operating point
+  the trot is chaotic in far less than that (see step 6: 11 g moves the flat run
+  778 → 597 mm). So the fix costs a full re-baseline — flat, a terrain seed sweep,
+  and the course — and it was deferred on 2026-08-31 rather than land under an RL
+  training run that needs stable ground. **Do it when training is done**, in its own
+  commit, with the re-baseline in the same pass. Until then, do not "tidy" these two
+  literals: an unannounced 2 % torque change is worse than the duplication.
 - `build()` checks `shape.isValid()` per part; an `!! INVALID` line in the output is a
   failure, not a warning.
 - **Every model change is re-checked for strength.** Any edit to `mini_dog.py` — a constant
