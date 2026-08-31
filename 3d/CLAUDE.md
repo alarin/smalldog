@@ -31,6 +31,7 @@ their own location (`out/…`).
 | `terrain.py` | procedural MuJoCo heightfield ground **and the ramp/wall/log obstacle course bedded into it**. Imported by *both* sim exporters; no CAD in it. |
 | `lidar.py` | the Unitree L2 as a *sensor*: the MJCF site and `<custom>` numerics both sim exporters emit, and the `mj_multiRay` scanner that turns them into a point cloud. No CAD in it either. |
 | `render.py` | offscreen VTK renders of `out/stl/*.stl`. |
+| `bench_rig.py` | the printed fixture `robot/bench` runs on: a stand that holds **one** ST3215 with its axis horizontal, and two arms for its driven hub. Imports `mini_dog` one way only - the sleeve, the thrust clamp, the hub pattern, the densities - and writes `out/bench/`. **Not part of the robot**: no `PARTS` entry, no mass in the budget, no `fea.py` or sim consumer, so a change here needs none of steps 4-6 below. |
 | `tools/` | one-off measurement/diagnostic scripts, not part of the build (see `tools/README.md`). |
 | `ref/` | vendor downloads: ST3215 STEP/PDF/wiki, Waveshare ROBOTIC DOG STEP, and `camera/` - the IMX415 module's dimensions, transcribed, with the two uncertain readings flagged. Read-only inputs. |
 | `out/` | **generated — never edit by hand, never treat as source.** |
@@ -317,6 +318,11 @@ name → (workplane, qty, note) and drives both the export loop and the BOM;
 
 - FEA meshes in `out/fea/` are cached on the STEP content hash; stale entries accumulate
   and are safe to delete (they just re-mesh).
+- **`bench_rig.py` is the one file here that is allowed to be outside the ritual**, and
+  the reason is that the arrow only points one way: it reads `mini_dog`'s servo interface
+  so the bench holds the servo exactly the way the robot does, and `mini_dog` has never
+  heard of it. Keep it that way - the moment a bench part acquires a mass in the robot's
+  budget or a `PARTS` entry, it is a robot part and steps 4-6 apply to it.
 - `mini_dog.py` runs take a couple of minutes — the ROM scan is swept boolean interference
   against real solids, not a cheap approximation. Don't add `--fast` paths that fake it.
 - `README.md` marks several dimensions **verify** (Orange Pi hole pattern, Unitree L2 bolt

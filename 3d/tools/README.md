@@ -24,7 +24,7 @@ All paths inside are relative to the repo root, so run them from there:
 | `ref_calf_profile.py` | same profile for Unitree A1/Go1/Go2/B2, MIT mini cheetah and Spot, off their own URDF meshes — a cross-check on `ref_ws_shin.py` |
 | `orient_scan.py` | unsupported area, print height and bed contact per build direction, off `out/stl/*.stl` — the screen behind `PRINT_ORIENT`; settle it by slicing, and by `fea.py --all --orient` for the load-bearing parts |
 | `section_check.py` | area second moments and bending stress along the shin, sliced off the real solid — the cheap half of `fea.py` |
-| `slice_orca.py` | slices `out/stl/*.stl` with the OrcaSlicer CLI and the presets set up in the GUI → `out/gcode/<name>.{gcode,3mf}`. Default run is the test leg (`hip_bracket_A`, `thigh_A`, `shin_A`) on `TOP Neptune4` / `0.2-0.8 Neptune 4` / `TOP НИТ petg черный (scaled)` |
+| `slice_orca.py` | slices with the OrcaSlicer CLI and the presets set up in the GUI → `out/gcode/<name>.{gcode,3mf}`. Part names resolve against `out/stl/` then `out/bench/stl/` (`--stl-dir` overrides), so a plate may mix robot and `bench_rig.py` parts. Default run is the test leg (`hip_bracket_A`, `thigh_A`, `shin_A`) on `TOP Neptune4` / `0.2-0.8 Neptune 4` / `TOP НИТ petg черный (scaled)` |
 
 The `diag*.py` scripts import `mini_dog` and are the manual version of `rom_scan()`;
 use them when a ROM number in the build output looks wrong and you need to know

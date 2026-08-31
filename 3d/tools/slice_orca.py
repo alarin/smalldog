@@ -24,6 +24,7 @@ RES  = "/Applications/OrcaSlicer.app/Contents/Resources/profiles"
 USER = os.path.expanduser("~/Library/Application Support/OrcaSlicer/user/default")
 HERE = os.path.dirname(os.path.abspath(__file__))
 STL  = os.path.join(HERE, "..", "out", "stl")
+STL2 = os.path.join(HERE, "..", "out", "bench", "stl")   # bench_rig.py, not the robot
 GOUT = os.path.join(HERE, "..", "out", "gcode")
 
 # what the printed BOM in README.md asks for on the leg parts
@@ -101,13 +102,19 @@ def main():
     ap.add_argument("--walls", type=int, default=5)
     ap.add_argument("--copies", type=int, default=1, help="copies of every part")
     ap.add_argument("--no-support", action="store_true")
+    ap.add_argument("--stl-dir", action="append", default=None,
+                    help="where to look for <part>.stl; repeatable, searched in order "
+                         "(default: out/stl then out/bench/stl)")
     a = ap.parse_args()
 
+    dirs = a.stl_dir or [STL, STL2]
     stls = []
     for p in a.parts:
-        f = os.path.join(STL, p + ".stl")
-        if not os.path.exists(f):
-            sys.exit(f"no {f} - run mini_dog.py first")
+        f = next((os.path.join(d, p + ".stl") for d in dirs
+                  if os.path.exists(os.path.join(d, p + ".stl"))), None)
+        if f is None:
+            sys.exit(f"no {p}.stl in " + " or ".join(os.path.relpath(d) for d in dirs)
+                     + " - run mini_dog.py (or bench_rig.py) first")
         stls += [f] * a.copies
 
     machine = flatten("machine", a.machine, "machine",

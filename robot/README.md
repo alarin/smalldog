@@ -52,9 +52,55 @@ protocol the runtime will not use.
 
 ## The bench, in order
 
-**Build it first.** The parts list is in the project notes; the two things that
-decide the quality of the result are a supply whose voltage you can *set* and
-two different arms.
+**Build it first.** The fixture is `3d/bench_rig.py` — it imports the same
+`mini_dog.sleeve()` and hub pattern the robot uses, so the bench holds the servo
+the way the robot will:
+
+```bash
+cd 3d && .venv/bin/python bench_rig.py       # -> out/bench/{step,stl} + the numbers
+.venv/bin/python tools/slice_orca.py --machine "Qidi Q2 0.4 nozzle - Copy" \
+    --process "0.20mm Standard @Qidi Q2 - Copy" --filament "QIDI НИТ petg черный" \
+    --name bench_rig --walls 4 --infill 30% \
+    servo_gauge bench_stand bench_arm_s bench_arm_l
+```
+
+| part | g | why |
+|---|---|---|
+| `servo_gauge` | 11.8 | **print this one alone first and stop.** It is half a sleeve with a hub arm: check that a real ST3215 drops into the bore, and that the arm's four M2.5 land on the hub, before spending five hours on a stand built out of the same measured numbers. |
+| `bench_stand` | 140 | sleeve + the two M3 thrust bolts + a column; axis 150 mm above the base |
+| `bench_arm_s` | 6.0 | light arm, reach 45 mm — the direct `J_m` measurement |
+| `bench_arm_l` | 9.5 | heavy arm, reach 90 mm — the holds, and the second free swing |
+
+One plate, **167 g, 6 h 04** on a Q2 at 0.2 mm / 0.4 nozzle / 4 walls / 30 %.
+5.8 g of that is support and it is only in two places — inside the gauge (3.5 g)
+and the base's two clamp slots (2.3 g). Everything else is a prism through the
+build direction: the case bore prints vertical and unsupported, which is the
+whole reason the parts are modelled in the servo's own frame and exported with no
+rotation at all.
+
+Non-printed, and the bench does not work without them:
+
+- a supply whose voltage you can **set** (three points: 12.6 / 11.1 / 9.9 V);
+- **two weighed tip masses** — ~250 g for the short arm, ~350 g for the long one,
+  bolted through the ⌀5.3 and ⌀8.4 tip holes. Anything rigid and weighable; the
+  numbers that matter are `m` and `r`, not what the metal is. A mass that swings
+  on its own is a second pendulum and ruins every trajectory here;
+- **a clamp.** The stand only holds itself down by 1.4× with the heavy arm out
+  horizontal — the two slots in the base take an M6 or a G-clamp, and
+  `bench_rig.py` prints that ratio on every run;
+- 4 × M2.5 × 6 into the driven hub, 2 × M3 × 10 + nuts for the thrust clamp.
+
+Bolt the arm on so it **hangs straight down** at the servo's centre position.
+That is not a preference: `fit_bam.py` regresses against `m·g·r·sin(q)`, so q = 0
+has to be the hanging position or every gravity term in the fit is wrong.
+
+`bench_rig.py` ends by printing the exact `sweep.py` line for each arm — mass,
+radius and the arm's own inertia off the real solid. Weigh the printed arm and
+correct `--arm-inertia` if it disagrees: the free swing *subtracts* that number
+rather than fitting it.
+
+The two things that decide the quality of the result are a supply whose voltage
+you can *set* and two different arms.
 
 1. **`--check`** — preflight. Prints every control register. Nothing moves.
 

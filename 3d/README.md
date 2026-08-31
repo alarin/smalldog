@@ -373,6 +373,28 @@ OV5693 module for the sensor, not the megapixels: 1/2.8" is ~3× the area of the
 
 `_A` = FL + RR, `_B` = FR + RL (the two chiralities; front/rear are the same part rotated).
 
+### The bench fixture — not part of the robot
+
+`bench_rig.py` is a separate, one-way consumer of this CAD: it imports `sleeve()`, the
+thrust clamp and the hub bolt pattern so that `robot/bench` holds the ST3215 exactly the
+way the robot does, and writes `out/bench/`. Nothing here is in `PARTS`, nothing has a
+mass in the robot's budget, and `fea.py` / `export_sim.py` / the ROS 2 generator never
+see it.
+
+| part | qty | g |
+|---|---|---|
+| `bench_stand` | 1 | 140 — sleeve + column, servo axis 150 mm above the base |
+| `bench_arm_s` | 1 | 6.0 — light arm, reach 45 mm |
+| `bench_arm_l` | 1 | 9.5 — heavy arm, reach 90 mm |
+| `servo_gauge` | 1 | 11.8 — the same gauge as above, and still the thing to print first |
+
+One plate, 167 g, 6 h 04 on a Qidi Q2 (0.4 nozzle, 0.2 mm, 4 walls, 30 %). The layout's
+one load-bearing idea is that the arm lives in the 4 mm slab `HUB_TOP_Z` … `+ARM_T` and
+every part of the stand stays below `SLEEVE_LEN/2` — 3.8 mm of axial gap, which is what
+lets the arm swing a full circle over a stand of any shape. `bench_rig.py` asserts that
+against the real solids on every run, along with the bore and the hubs, and prints the
+`sweep.py` command line for each arm. See `robot/README.md`, "The bench, in order".
+
 Sliced in OrcaSlicer 2.4.2 for an Elegoo Neptune 4 Max (0.4 nozzle, 0.2 mm layer, 0.8 mm
 line, gyroid) at the settings above — G-code and the per-part figures are in
 `out/gcode/` (`summary.json`), the projects are `smalldog_{body,legs,feet_tpu}.3mf`:
