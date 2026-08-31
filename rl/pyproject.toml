@@ -25,9 +25,20 @@ dependencies = [
     "numpy>=1.26",
 ]
 
+# The jax ceiling is not caution, it is a measured incompatibility.  brax's PPO
+# (brax/training/pmap.py, and the ppo/sac/apg trainers) calls
+# jax.device_put_replicated, which jax deprecated and then REMOVED in 0.11:
+#
+#   AttributeError: jax.device_put_replicated is deprecated; use jax.device_put
+#
+# brax 0.14.2 is the newest release there is, so there is no brax that fixes it
+# and the ceiling has to go here.  0.10.2 still has the symbol.  Both extras
+# carry it because the mac's smoke tests run the same trainer.  Revisit when
+# brax ships a release that has moved off pmap; until then, raising this pin
+# breaks training on every machine at once.
 [project.optional-dependencies]
-cuda = ["jax[cuda12]>=0.5.3", "mujoco-mjx>=3.2", "brax>=0.12"]
-cpu  = ["jax>=0.5.3",         "mujoco-mjx>=3.2", "brax>=0.12"]
+cuda = ["jax[cuda12]>=0.5.3,<0.10", "mujoco-mjx>=3.2", "brax>=0.12"]
+cpu  = ["jax>=0.5.3,<0.10",         "mujoco-mjx>=3.2", "brax>=0.12"]
 fit  = ["scipy>=1.13", "matplotlib>=3.8"]
 onnx = ["onnx>=1.16", "onnxruntime>=1.18"]
 
