@@ -324,12 +324,6 @@ def ledger(R):
         ("bus delay", "not in the model at all", "ABSENT — measure with bus_probe"),
     ):
         R.say(INFO, f"{what:<24} {status:<34} {where}")
-    R.say(INFO, "")
-    R.say(INFO, "Note the two exporters currently disagree with each other: "
-                "3d/export_sim.py has MJ_(DAMPING, ARMATURE, FRICTIONLOSS, KP) = "
-                "0.5, 0.01, 0.05, 20 and generate_model.py writes 0.12, 0.008, 0.02, 25. "
-                "Both are guesses, so neither is wrong today — but after step 3 there "
-                "is a right answer, and it belongs in one file both exporters read.")
 
 
 # -------------------------------------------------------------- viewing

@@ -23,7 +23,7 @@ What gets changed, and why each one is a training concern rather than a model fi
    inner loop, whose torque ceiling and speed limit both fall as the pack drains.
    `actuator.py` is that law. So the actuators here are plain motors and the
    torque they receive is computed by `actuator.py` at every control step.
-   The kp=25 in the MJCF is not wrong — it is `3d/export_sim.py`'s stand-in for a
+   The kp=25 in the MJCF is not wrong — it is `3d/mini_dog.py`'s stand-in for a
    servo, good enough for the analytic trot in `ros2/`, and check_model.py lists
    it under "GUESSED — and not a servo model".
 

@@ -33,8 +33,19 @@ the mac, and `WSL.md` says plainly that MuJoCo is deterministic for a given
 model, seed and version but not across platforms — and that the flat trot sits
 near a bifurcation where 11 g moves it by 180 mm. The comparison that means
 something is this box against this box: the analytic trot's baseline here is
-781.4 mm in a 5 s trot on flat and 595.5 mm on the heightfield, measured on the
-unchanged tree with `ros2/tools/standalone_sim.py`.
+781.6 mm in a 5 s trot on flat and 617.9 mm on the committed heightfield,
+measured with `ros2/tools/standalone_sim.py --headless [--terrain]`.
+
+Both numbers moved with a594d57, which gave the ROS 2 model the 2.94 N*m the CAD
+specifies instead of a rounded 3.0, and the two axes did not move alike. Flat
+went 781.4 -> 781.6 mm, which is the deterministic same answer. The heightfield
+went 595.5 -> 617.9 mm on this one seed — measured here on both trees, so it is
+the servo and not the platform. That is +22 mm from -2 % of torque, and it is
+NOT evidence that rough ground is sensitive to the servo: a594d57 swept seeds
+7-12 and got 622 +-27 -> 618 +-37 mm, so a single terrain seed cannot tell a
+22 mm shift from its own spread. Quote the flat number against a policy; quote
+a terrain number only against the same seed, and never as a measurement of the
+model.
 
 And the standing caveat, until the bench runs: `params/st3215.json` is the vendor
 datasheet, not a fit. Every number below is this policy's score against the
@@ -199,7 +210,7 @@ def main():
               f"y {out['y_m']*1000:+7.1f} mm, upright {out['upright']:+.3f}, "
               f"{'FELL at %.1f s' % out['fell_at'] if out['fell'] else 'stayed up'}")
     print("  commanded 0.4 m/s forward. The analytic trot's baseline on this box is\n"
-          "  781.4 mm in 5 s on flat and 595.5 mm on the heightfield "
+          "  781.6 mm in 5 s on flat and 617.9 mm on the committed heightfield "
           "(ros2/tools/standalone_sim.py).")
 
     if not p.fitted:

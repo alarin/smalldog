@@ -5,13 +5,13 @@ Every term here is either a thing we want (velocity tracking) or a thing the
 robot cannot afford (torque, joint speed past the servo's limit, a foot skidding
 under load). The weights are the part of this tree with the least evidence behind
 them: they are the published quadruped defaults, rescaled for a 2.5 kg robot on a
-4.7 rad/s servo. They are guesses, they are labelled as guesses, and unlike the
+4.71 rad/s servo. They are guesses, they are labelled as guesses, and unlike the
 model parameters there is no bench that can ever measure them — the only honest
 way to change one is to run eval.py before and after and read the numbers.
 
 Two of them are NOT free choices and must not be tuned away:
 
-  joint_vel     the CAD reports joint_velocity_limit = 4.7 rad/s, which is the
+  joint_vel     the CAD reports joint_velocity_limit = 4.71 rad/s, which is the
                 servo's no-load speed at 12 V. A policy that commands past it is
                 writing cheques the hardware cannot cash, and in sim it simply
                 gets them — actuator.py's back-EMF makes the torque fall off but
