@@ -81,10 +81,19 @@ rotation at all.
 Non-printed, and the bench does not work without them:
 
 - a supply whose voltage you can **set** (three points: 12.6 / 11.1 / 9.9 V);
-- **two weighed tip masses** — ~250 g for the short arm, ~350 g for the long one,
-  bolted through the ⌀5.3 and ⌀8.4 tip holes. Anything rigid and weighable; the
-  numbers that matter are `m` and `r`, not what the metal is. A mass that swings
-  on its own is a second pendulum and ruins every trajectory here;
+- **two weighed tip masses** — ~250 g for the short arm, ~350-450 g for the long
+  one, bolted through the ⌀5.3 and ⌀8.4 tip holes. A mass that swings on its own
+  is a second pendulum and ruins every trajectory here. Two bands, both from
+  `fit_bam.py`'s own thresholds: the short arm needs **≥ 227 g** or `m·g·r` does
+  not clear twice the `tau_c` prior and the release is unreadable, and the long
+  arm needs **≤ 530 g** or `J_load` passes the 35 % share it warns at.
+  **Buy compact, not a dumbbell disc.** `J_load` is `m·r²` *plus the mass's own
+  moment about the axis*, and on a flat disc bolted in the swing plane that second
+  term is not small: 500 g of lead or a calibration weight is 4.2e-3 and 34 %, the
+  same 500 g as a ⌀130 cast-iron plate is 5.2e-3 and **39 %** — over the line on
+  shape alone. Keep the weight under ~50 mm across and it never comes up. A
+  kitchen scale is accurate enough: 2 g on 350 g is 0.6 %, against the 6.5 % the
+  fit recovers `k_u` to on noise-free data;
 - **a clamp.** The stand only holds itself down by 1.4× with the heavy arm out
   horizontal — the two slots in the base take an M6 or a G-clamp, and
   `bench_rig.py` prints that ratio on every run;
