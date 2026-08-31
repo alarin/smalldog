@@ -108,16 +108,14 @@ name → (workplane, qty, note) and drives both the export loop and the BOM;
   reflected rotor inertia, the same number as `rl/actuator.py`'s `Params.J_m`. When
   the bench fits the real actuator, these become its initial guess — never a second
   opinion sitting beside it.
-- **Known, deliberately deferred: `generate_model.py` still keeps its own `J_EFF = 3.0`
-  and `J_VEL = 4.7`,** rounded copies of `SERVO_STALL_NM = 2.94` and
-  `SERVO_NOLOAD_RADS = 4.71`. Same defect class as the two above and it should be
-  fixed the same way — but it is −2 % of servo torque, and at this operating point
-  the trot is chaotic in far less than that (see step 6: 11 g moves the flat run
-  778 → 597 mm). So the fix costs a full re-baseline — flat, a terrain seed sweep,
-  and the course — and it was deferred on 2026-08-31 rather than land under an RL
-  training run that needs stable ground. **Do it when training is done**, in its own
-  commit, with the re-baseline in the same pass. Until then, do not "tidy" these two
-  literals: an unannounced 2 % torque change is worse than the duplication.
+- **The servo's stall torque and no-load speed are read from here too**, by both
+  exporters — `SERVO_STALL_NM` = 2.94 and `SERVO_NOLOAD_RADS` = 4.71. This was the
+  same defect a third time and the worst-stated of the three: `export_sim.py` read
+  them, `generate_model.py` kept rounded copies (`J_EFF = 3.0`, `J_VEL = 4.7`), so
+  the two exporters were not duplicating a constant, they were emitting **robots with
+  different servo strength** — and which sim you loaded decided how strong the servo
+  was. Fixed 2026-08-31 with the re-baseline in the same commit; `rl/` loads the ROS 2
+  model, so that was the one that mattered.
 - `build()` checks `shape.isValid()` per part; an `!! INVALID` line in the output is a
   failure, not a warning.
 - **Every model change is re-checked for strength.** Any edit to `mini_dog.py` — a constant
@@ -223,7 +221,7 @@ name → (workplane, qty, note) and drives both the export loop and the BOM;
    or limit change than the flat one. Judge it on the travelled distance and the end-of-run
    pitch together; the terrain is seeded, so both are repeatable.
 
-   **The flat trot is hypersensitive to total mass at this operating point, so never read a
+   **The flat trot is hypersensitive to total MASS at this operating point, so never read a
    distance drop as a geometry regression without a control beside it.** Measured, same
    seed, fully deterministic to 0.1 mm across runs: 2.448 kg travels 778 mm; add 11 g
    *anywhere* and it is 597 mm (that number is 11 g parked in `ELECTRONICS_KG` — nothing to
@@ -232,17 +230,33 @@ name → (workplane, qty, note) and drives both the export loop and the BOM;
    near a bifurcation rather than simply working harder. That is a gait-tuning problem, not
    a CAD one, but it means every mass change wants the *unchanged* model re-run next to it.
 
+   **Read that as mass specifically, not as "this gait is fragile to everything".** It was
+   read the broad way once and it cost a change being held for no reason: −2 % of servo
+   torque, which is a far larger relative perturbation than 4 ‰ of mass, moved the flat
+   trot 781.4 → 781.6 mm — 0.2 mm, both sides deterministic — and left the terrain sweep
+   and the course indistinguishable (below). So the cliff is under the mass axis and the
+   torque axis is flat, which is worth knowing before deferring anything else on
+   "it might move the operating point". The control run is still the answer either way:
+   it is cheap, and it is the only thing that tells you which axis you are on.
+
    That figure *is* the bare heightfield: `terrain.py` also beds a ramp/wall/log course
    into the field, but it starts at x = 0.95 m and the 5 s trot only reaches 0.66 m, so the
    course is outside this measurement by construction — checked, both arms give 652 +-56 mm
-   over the same six seeds. Keep it that way. An obstacle inside the regression run turns a
+   over the same six seeds. The current pair, seeds 7..12 at 2.496 kg, is **622 +-27 mm
+   before the torque fix and 618 +-37 mm after** — a 5 mm difference of means against a
+   ~32 mm spread, i.e. the same distribution, which is what "indistinguishable" has to
+   look like before a terrain number means anything. Keep it that way. An obstacle inside the regression run turns a
    mass-and-limits signal into an obstacle-interaction signal: with the course at x = 0.55
    the same trot read 486 +-93 mm, so a real regression would have to beat the noise the
    course adds. The fourth command is the course, and it is a *report*, not a pass/fail:
-   deterministic at the default seed (at 2.499 kg: cleared 5/7, corridor reach 2790 mm,
-   upright at 2790 mm; at 2.495 kg it was 5/7, 2883 mm and 2864 mm, and 5/7, 2896 mm and
-   2891 mm at 2.459 kg), 2713 +-291 mm and 0/6
-   down across seeds. Fully blind it is 1353 +-755 mm and
+   deterministic at the default seed — **currently cleared 4/7, corridor reach 2606 mm,
+   upright at x = 2606 mm at 2.496 kg** (the control beside it, on the pre-2.94-torque
+   model at the same mass, was 4/7 and 2512 mm). Older readings, kept because they show
+   the spread rather than a trend: 5/7 / 2790 mm at 2.499 kg, 5/7 / 2883 mm at 2.495 kg,
+   5/7 / 2896 mm at 2.459 kg, and 2713 +-291 mm with 0/6
+   down across seeds. Those three do **not** reproduce on the current tree — the same
+   unchanged model now reads 4/7 — so treat them as history, not as a target to get back
+   to, and re-baseline rather than chase them. Fully blind it is 1353 +-755 mm and
    3/6 down, so this is the test the terrain feedback actually shows up in — mostly the
    heading hold, which went in on 2026-08-28 and took the default seed from 1 obstacle
    cleared to 5. When `terrain.py` changes,

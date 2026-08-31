@@ -243,8 +243,12 @@ J_LIM  = {"roll": 0.90, "pitch": 1.30, "knee": 1.85}     # rad, from the CAD ROM
 MJ_MARGIN = 0.03    # MuJoCo hard stops sit INSIDE the URDF limits, so the measured
                     # position can never trip ros2_control's joint limiter
 SOFT_MARGIN = 0.12  # the gait must stay this far inside the mechanical limit
-J_EFF  = 3.0        # N*m, ST3215 stall 30 kg*cm
-J_VEL  = 4.7        # rad/s, 0.222 s / 60 deg
+J_EFF  = md.SERVO_STALL_NM      # N*m, ST3215 stall 30 kg*cm = 2.94
+J_VEL  = md.SERVO_NOLOAD_RADS   # rad/s, 0.222 s / 60 deg = 4.71
+#                   Read, not copied.  These were 3.0 and 4.7 here - rounded
+#                   duplicates of the same two vendor numbers mini_dog.py already
+#                   held - which is the servo-mass and the MJ_* divergence a third
+#                   time.  The rounding was worth 2 % of servo torque.
 STANCE = {"pitch": -0.42, "knee": 1.05}                  # nominal standing angles
 
 def joints_of(leg):

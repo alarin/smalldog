@@ -243,84 +243,84 @@
     <child link="fl_hip"/>
     <origin xyz="0.09000 0.03600 0.00000" rpy="0 0 0"/>
     <axis xyz="1 0 0"/>
-    <limit lower="-0.9000" upper="0.9000" effort="3.0" velocity="4.7"/>
+    <limit lower="-0.9000" upper="0.9000" effort="2.94" velocity="4.71"/>
   </joint>
   <joint name="fl_pitch" type="revolute">
     <parent link="fl_hip"/>
     <child link="fl_thigh"/>
     <origin xyz="0.00000 0.04000 -0.03000" rpy="0 0 0"/>
     <axis xyz="0 1 0"/>
-    <limit lower="-1.3000" upper="1.3000" effort="3.0" velocity="4.7"/>
+    <limit lower="-1.3000" upper="1.3000" effort="2.94" velocity="4.71"/>
   </joint>
   <joint name="fl_knee" type="revolute">
     <parent link="fl_thigh"/>
     <child link="fl_shin"/>
     <origin xyz="0.00000 0.00000 -0.07500" rpy="0 0 0"/>
     <axis xyz="0 1 0"/>
-    <limit lower="-1.8500" upper="1.8500" effort="3.0" velocity="4.7"/>
+    <limit lower="-1.8500" upper="1.8500" effort="2.94" velocity="4.71"/>
   </joint>
   <joint name="fr_roll" type="revolute">
     <parent link="base_link"/>
     <child link="fr_hip"/>
     <origin xyz="0.09000 -0.03600 0.00000" rpy="0 0 0"/>
     <axis xyz="1 0 0"/>
-    <limit lower="-0.9000" upper="0.9000" effort="3.0" velocity="4.7"/>
+    <limit lower="-0.9000" upper="0.9000" effort="2.94" velocity="4.71"/>
   </joint>
   <joint name="fr_pitch" type="revolute">
     <parent link="fr_hip"/>
     <child link="fr_thigh"/>
     <origin xyz="0.00000 -0.04000 -0.03000" rpy="0 0 0"/>
     <axis xyz="0 1 0"/>
-    <limit lower="-1.3000" upper="1.3000" effort="3.0" velocity="4.7"/>
+    <limit lower="-1.3000" upper="1.3000" effort="2.94" velocity="4.71"/>
   </joint>
   <joint name="fr_knee" type="revolute">
     <parent link="fr_thigh"/>
     <child link="fr_shin"/>
     <origin xyz="0.00000 0.00000 -0.07500" rpy="0 0 0"/>
     <axis xyz="0 1 0"/>
-    <limit lower="-1.8500" upper="1.8500" effort="3.0" velocity="4.7"/>
+    <limit lower="-1.8500" upper="1.8500" effort="2.94" velocity="4.71"/>
   </joint>
   <joint name="rl_roll" type="revolute">
     <parent link="base_link"/>
     <child link="rl_hip"/>
     <origin xyz="-0.09000 0.03600 0.00000" rpy="0 0 0"/>
     <axis xyz="1 0 0"/>
-    <limit lower="-0.9000" upper="0.9000" effort="3.0" velocity="4.7"/>
+    <limit lower="-0.9000" upper="0.9000" effort="2.94" velocity="4.71"/>
   </joint>
   <joint name="rl_pitch" type="revolute">
     <parent link="rl_hip"/>
     <child link="rl_thigh"/>
     <origin xyz="0.00000 0.04000 -0.03000" rpy="0 0 0"/>
     <axis xyz="0 1 0"/>
-    <limit lower="-1.3000" upper="1.3000" effort="3.0" velocity="4.7"/>
+    <limit lower="-1.3000" upper="1.3000" effort="2.94" velocity="4.71"/>
   </joint>
   <joint name="rl_knee" type="revolute">
     <parent link="rl_thigh"/>
     <child link="rl_shin"/>
     <origin xyz="0.00000 0.00000 -0.07500" rpy="0 0 0"/>
     <axis xyz="0 1 0"/>
-    <limit lower="-1.8500" upper="1.8500" effort="3.0" velocity="4.7"/>
+    <limit lower="-1.8500" upper="1.8500" effort="2.94" velocity="4.71"/>
   </joint>
   <joint name="rr_roll" type="revolute">
     <parent link="base_link"/>
     <child link="rr_hip"/>
     <origin xyz="-0.09000 -0.03600 0.00000" rpy="0 0 0"/>
     <axis xyz="1 0 0"/>
-    <limit lower="-0.9000" upper="0.9000" effort="3.0" velocity="4.7"/>
+    <limit lower="-0.9000" upper="0.9000" effort="2.94" velocity="4.71"/>
   </joint>
   <joint name="rr_pitch" type="revolute">
     <parent link="rr_hip"/>
     <child link="rr_thigh"/>
     <origin xyz="0.00000 -0.04000 -0.03000" rpy="0 0 0"/>
     <axis xyz="0 1 0"/>
-    <limit lower="-1.3000" upper="1.3000" effort="3.0" velocity="4.7"/>
+    <limit lower="-1.3000" upper="1.3000" effort="2.94" velocity="4.71"/>
   </joint>
   <joint name="rr_knee" type="revolute">
     <parent link="rr_thigh"/>
     <child link="rr_shin"/>
     <origin xyz="0.00000 0.00000 -0.07500" rpy="0 0 0"/>
     <axis xyz="0 1 0"/>
-    <limit lower="-1.8500" upper="1.8500" effort="3.0" velocity="4.7"/>
+    <limit lower="-1.8500" upper="1.8500" effort="2.94" velocity="4.71"/>
   </joint>
   <link name="lidar_link"/>
   <joint name="lidar_link_joint" type="fixed">
