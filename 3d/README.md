@@ -422,7 +422,7 @@ splittable at all: the fork is what puts the servo shaft in double shear.
 | M3 × 24 (LiDAR guard + deck → tray boss, replaces the front two deck screws) | 2 |
 | M3 × 24 (GPS mast + deck → tray boss, replaces the rear two deck screws) | 2 |
 | cable tie, 2.5 mm (GPS receiver → platform) | 2 |
-| M3 × 16 + M3 nut (foot → shin ankle) | 4 |
+| M3 × 30 socket head + M3 nut (foot → shin ankle) | 4 |
 | M2.5 × 10 + M2.5 nut (Orange Pi) | 4 |
 
 **Nothing threads into plastic anywhere on the robot.** Every screw above that is not going
@@ -451,6 +451,11 @@ FAQ says stalls and burns the servo.
 4. Legs: hip bracket → thigh → shin → press the TPU foot onto the ⌀18 spigot, then the M3
    up through the foot into the nut in the ankle slot. The slot sits above the foot's top
    face, so the nut goes in with the foot already fitted, and the foot stays removable.
+   The bolt is **M3 × 30, and the length is not a preference**: the head seats
+   `FOOT_CB_Z` = 8 mm below `FOOT_Z` in the sole's ⌀6.4 pocket, and the nut's far face is
+   17.7 mm above `FOOT_Z`, so nothing shorter is fully engaged. It was specified as
+   M3 × 16 until 2026-08-31, which no position of the head can reach — see the foot-bolt
+   invariant in `CLAUDE.md`. The head ends up ~2 mm inside the sole, clear of the ground.
 5. Chassis, and the order matters because half these nuts stop being reachable later:
    8 M3 nuts into the tray bosses' slots (the corner pair's open toward the middle of the
    tray, the mid pair's along +x — inboard of those two is the battery bay) →

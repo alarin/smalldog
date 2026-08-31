@@ -104,6 +104,19 @@ FOOT_FIT   = 0.15                     # TPU bore over the spigot
 FOOT_NUT_Z = 15.0                     # foot-bolt nut slot, floor this far above FOOT_Z:
                                       # clear of the foot's top face, so the nut goes in
                                       # (and comes out) with the foot fitted
+# The foot bolt spans FOOT_D/2 below FOOT_Z (the sole) to the nut FOOT_NUT_Z above it, so
+# it is ~28 mm of span before the head is even seated - the length is geometry, not taste,
+# and foot_bolt_check() below recomputes it.  It used to be specified as M3 x 16, which no
+# placement of the head can reach: the head pocket and the clearance hole were both cut
+# from zf-6/zf-1 as if the dome's radius were 6, not FOOT_D/2 = 13, so the hole opened
+# 7 mm INSIDE the solid and never broke through the sole at all.
+FOOT_CB_R  = 3.2                      # head pocket in the sole, D6.4 over an M3 socket
+                                      # head's D5.5 - TPU prints holes tight
+FOOT_CB_Z  = 8.0                      # pocket ceiling this far BELOW FOOT_Z.  That annulus
+                                      # is the head's bearing face, and the 5 mm of pocket
+                                      # under it recesses the head ~2 mm above the sole so
+                                      # the metal never reaches the ground.
+FOOT_BOLT_L = 30.0                    # M3 x 30, the next standard length over the span
 # Shin profile, after the Waveshare DOG PRO lower leg in ref/ROBOTIC_DOG_-STEP - the one
 # real quadruped link this repo actually owns.  Measured by tools/ref_ws_shin.py:
 # 101.8 mm between joint centres, a CONSTANT 12 mm plate thickness, an in-plane depth that
@@ -1302,8 +1315,19 @@ def foot():
             .cut(bxc(PITCH_X-20, PITCH_X+20, LEG_Y-20, LEG_Y+20, zf, zf+20)))
     s = cyl(FOOT_D/2, 12.0, (PITCH_X, LEG_Y, zf)).union(dome)
     s = s.cut(cyl(SPIGOT_R+FOOT_FIT, SPIGOT_H, (PITCH_X, LEG_Y, zf+SPIGOT_Z0)))
-    s = s.cut(cyl(M3_CLR, 24, (PITCH_X, LEG_Y, zf-6)))   # M3x16 -> the shin's nut slot
-    s = s.cut(cyl(3.4, 3.6, (PITCH_X, LEG_Y, zf-1)))
+    # The foot bolt, M3 x FOOT_BOLT_L, driven up from the sole into the shin's nut slot.
+    # Both cuts start BELOW the sole (-1) so they break the dome's surface cleanly instead
+    # of leaving a skin over the entry - the bug this replaces was exactly a hole that
+    # started inside the solid.  The clearance hole stops at the 2 mm pad the spigot lands
+    # on; above that it is the shin's own bore that carries the shank.
+    sole = zf - FOOT_D/2
+    s = s.cut(cyl(M3_CLR, (zf+SPIGOT_Z0) - (sole-1.0), (PITCH_X, LEG_Y, sole-1.0)))
+    # Head pocket.  Its ceiling at zf-FOOT_CB_Z is the only downward-facing face in the
+    # part, and it is what the head pulls against when the nut above takes up - the old
+    # pocket's one annulus faced UP, so even a bolt that could reach would have pulled
+    # straight through.  Bearing on TPU is soft by nature: this is a retention bolt, snug,
+    # not a preloaded joint.
+    s = s.cut(cyl(FOOT_CB_R, (zf-FOOT_CB_Z) - (sole-1.0), (PITCH_X, LEG_Y, sole-1.0)))
     return s
 
 def servo_gauge():
@@ -1385,6 +1409,29 @@ def gps_clear():
         return PARTS["gps_mount"][0].val().intersect(box.val()).Volume()
     except Exception:
         return 0.0
+
+def foot_bolt_check():
+    """The foot bolt's path, checked against the real solid instead of against the numbers
+    that were supposed to produce it.  Returns (blocked, reach, spare), all mm.
+
+    blocked  how much of the on-axis run from the sole up to the pad the spigot lands on
+             is still solid TPU.  It has to be 0.  A bolt hole that starts INSIDE the dome
+             is what isValid() cannot see and what interference() does not cover - the
+             foot shipped that way, with 7 mm of material under the entry and no way in.
+    reach    how far the tip passes the nut's far face, from the head's bearing shoulder.
+    spare    how much of the shin's own clearance hole is left beyond the tip.
+    Both of the last two have to stay positive, and they are what fixes FOOT_BOLT_L."""
+    from OCP.BRepClass3d import BRepClass3d_SolidClassifier
+    from OCP.gp import gp_Pnt
+    from OCP.TopAbs import TopAbs_IN
+    sol = PARTS["foot"][0].val().wrapped
+    z0, z1 = FOOT_Z - FOOT_D/2, FOOT_Z + SPIGOT_Z0
+    n = max(2, int((z1 - z0) / 0.25)); dz = (z1 - z0) / n
+    blocked = sum(dz for i in range(n)
+                  if BRepClass3d_SolidClassifier(
+                      sol, gp_Pnt(PITCH_X, LEG_Y, z0 + (i+0.5)*dz), 1e-7).State() == TopAbs_IN)
+    tip = FOOT_BOLT_L - FOOT_CB_Z                     # above FOOT_Z, from the shoulder
+    return blocked, tip - (FOOT_NUT_Z + M3_NUT_H), (FOOT_NUT_Z + M3_NUT_H + 5.0) - tip
 
 PARTS, REPORT = {}, {}
 def build():
@@ -1499,6 +1546,13 @@ def main():
               f" {LIDAR_TILT:.0f} deg tilt ({LIDAR_SEAT_Z-need:+.1f} mm margin)")
     # ... and the same invariant per part, against the real 96 deg cone.  camera_mount is
     # the one that can go wrong quietly: it is the closest thing to the rim now.
+    blocked, reach, spare = foot_bolt_check()
+    if blocked > 0.05 or reach < 0 or spare < 0:
+        print(f"  !! FOOT BOLT  {blocked:.1f} mm of the sole-to-pad run is solid,"
+              f" tip {reach:+.1f} mm past the nut, {spare:+.1f} mm of shin bore left")
+    else:
+        print(f"  foot bolt:   M3 x {FOOT_BOLT_L:.0f} clears the sole, {reach:+.1f} mm past"
+              f" the nut, {spare:+.1f} mm of shin bore to spare")
     v = gps_clear()
     if v > INTERF_TOL:
         print(f"  !! GPS MAST  {v:.1f} mm3 of gps_mount is inside the Orange Pi envelope")

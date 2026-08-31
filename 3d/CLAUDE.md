@@ -70,6 +70,20 @@ name → (workplane, qty, note) and drives both the export loop and the BOM;
   servo hubs the screw threads into the stock aluminium plate (both are tapped M2.5) —
   there is no room for a nut there, and a hex pocket would eat over half the fork arm
   right under the screw head.
+- **A blind fastener path is invisible to every check in this repo, so the foot bolt has
+  its own.** `isValid()` sees nothing wrong with a bolt hole that never breaks the
+  surface, `interference()` only looks at the static body parts, and `rom_scan` only
+  looks at what moves — so `foot()` shipped from the start with its ⌀3.4 hole cut from
+  `zf-6` and its head pocket from `zf-1`, both written as if the dome's radius were 6
+  rather than `FOOT_D/2` = 13. The result was **7 mm of solid TPU under the entry**: the
+  hole opened inside the part, and the pocket's one annulus faced *up*, so even a bolt
+  that could get in had nothing to pull against. It was specified as M3 × 16, and the
+  span from the sole to the nut's far face is 28 mm — no head position could ever have
+  reached, which is the tell that the number was never checked against the solid.
+  `foot_bolt_check()` now probes the real solid along the axis and `build()` prints a
+  `foot bolt:` line; treat `!! FOOT BOLT` as a failure like `!! INTERFERENCE`. The
+  length follows from `FOOT_CB_Z`, `FOOT_NUT_Z` and `M3_NUT_H` — if you move any of
+  those, `FOOT_BOLT_L` and the BOM line in `README.md` move with them. Fixed 2026-08-31.
 - **Nothing goes into 23 < r < 34 of a joint axis over the sleeve's length.** The distal
   fork's spine sweeps that annulus, and the hip bracket's inboard web already comes to
   r = 22.0. It is the binding constraint on the sleeve thrust clamp — the lug corner sits
