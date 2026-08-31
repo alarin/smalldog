@@ -40,6 +40,10 @@ dependencies = [
 cuda = ["jax[cuda12]>=0.5.3,<0.10", "mujoco-mjx>=3.2", "brax>=0.12"]
 cpu  = ["jax>=0.5.3,<0.10",         "mujoco-mjx>=3.2", "brax>=0.12"]
 fit  = ["scipy>=1.13", "matplotlib>=3.8"]
+# replay.py only. Separate extra because an encoder has no business in the
+# training environment: the render is an offline pass that must not compete with
+# PPO for the card, and the robot and the mac never render at all.
+video = ["imageio>=2.34", "imageio-ffmpeg>=0.5"]
 onnx = ["onnx>=1.16", "onnxruntime>=1.18"]
 
 # Nothing here is a distributable package; scripts are run in place
