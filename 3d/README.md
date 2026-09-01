@@ -228,7 +228,7 @@ with a monotone cubic and lofted. Things that bite:
 ### Camera — IMX415 USB module (`camera_mount`)
 
 A Weinan **WN-L2101.K203L**: Sony **IMX415** (1/2.8", 8 MP) behind a fixed-focus M12 lens,
-USB 2.0 UVC, digital mic on the board. It is here to put a *name* on what the L2 already
+USB 2.0 UVC, a stereo digital mic on the board. It is here to put a *name* on what the L2 already
 puts a *shape* on — the lidar returns geometry and no identity, and recognising a face is
 the one job on this robot that wants pixels instead of points. It was chosen over a 5 MP
 OV5693 module for the sensor, not the megapixels: 1/2.8" is ~3× the area of the OV5693's

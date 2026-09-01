@@ -18,13 +18,14 @@ else under `ref/`: **read-only**, and nothing here is generated.
 | sensor | Sony IMX415, **1/2.8"**, 8 MP | OmniVision OV5693, 1/4", 5 MP |
 | max mode | 4K | 2K |
 | lens | FF, 90 / 120 / 135° offered — **90° fitted** | AF/FF, 90° |
-| interface | USB 2.0 UVC, MJPEG / YUV2, + digital mic on board | USB 2.0 UVC, MJPEG / YUV2 |
+| interface | USB 2.0 UVC, MJPEG / YUV2, + **stereo** digital mic on board | USB 2.0 UVC, MJPEG / YUV2 |
 | brand / origin | Weinan Electronics, China | Weinan Electronics, China |
 | certification | CE, FCC, RoHS | CE (Eurotest), FCC, RoHS |
 
 Chosen for the **sensor area**, not the megapixels: 1/2.8" is ~3× the area of the OV5693's
 1/4", and a walking robot needs a short exposure or a face smears. The mic is a free
-extra. Why 90° rather than 120/135: a wider lens shrinks pixels-on-face by 1.4–1.8× and
+extra, and it is a **pair** rather than one capsule — which makes it a possible bearing
+sensor and not only an input; see *The mic* below for what that does and does not buy. Why 90° rather than 120/135: a wider lens shrinks pixels-on-face by 1.4–1.8× and
 adds barrel distortion at the edges, which is where the 5-point warp before an embedding
 is most sensitive — and this robot has an L2 for the wide view.
 
@@ -72,6 +73,32 @@ this, not the pixel count, is what shaped `camera_mount`.
 assumed; the vendor gives no mass). All three are marked `**verify**` in `mini_dog.py`.
 Weigh the module and read the real UVC mode list off the device — `v4l2-ctl --list-formats-ext`
 on the Orange Pi — before trusting the last two.
+
+## The mic
+
+Two capsules, not one — and the three-view does not show the mic at all, so **the one number
+that matters, the spacing between them, is not transcribed here**. It decides what the second
+channel is worth:
+
+| spacing | what the second channel buys |
+|---|---|
+| ≥ 50 mm | real two-mic work: delay-and-sum, a GCC-PHAT bearing, a null steered at a servo. At 60 mm the largest inter-channel delay is 175 µs — 2.8 samples at 16 kHz, 8.4 at 48 kHz. |
+| ~10 mm | 0.5 samples at 16 kHz. No usable bearing; coherence-based noise suppression only. |
+
+The geometry is in its favour if they are spread along the strip: the board's long axis lies
+along the robot's **y** (`CAM_TAIL = -1`), so a pair separated along the board is separated
+*laterally*, and lateral is the useful axis — it gives azimuth to whoever spoke, which is
+what a walking robot can act on. Elevation it would not get, and does not need.
+
+Two checks on the real module, in this order, before anything is designed around it:
+
+```bash
+arecord -l                                              # does it enumerate as 2-channel at all
+arecord -D plughw:1,0 -c 2 -f S16_LE -r 48000 two.wav   # and are the two channels different?
+```
+
+Plenty of modules sold as stereo duplicate one capsule into both channels, and that is a
+thirty-second test. Then caliper the spacing, the same way `CAM_LENS_U` wants a caliper.
 
 ## How it is used
 

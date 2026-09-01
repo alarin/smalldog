@@ -440,7 +440,7 @@ GPS_PHASE    = 6.0                    # patch phase centre, up from the patch's 
 GPS_STACK    = (GPS_BOARD[0], GPS_BOARD[1], GPS_BOARD[2]+GPS_ANT[2]+2.5)   # mass envelope
 
 # Camera.  Weinan WN-L2101.K203L: a Sony IMX415 (1/2.8", 8 MP) behind a fixed-focus M12
-# lens, USB 2.0 UVC, digital mic on the board.  It is here to put a NAME on what the L2
+# lens, USB 2.0 UVC, a STEREO digital mic on the board.  It is here to put a NAME on what the L2
 # already puts a SHAPE on: the lidar returns geometry and no identity, and recognising a
 # face is the one job on this robot that wants pixels instead of points.
 #
