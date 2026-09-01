@@ -94,7 +94,7 @@ def record(run_dirs, n_each, seconds, command, mem_fraction):
     from brax.training.acme import running_statistics
     from brax.training.agents.ppo import networks as ppo_networks
 
-    from env import Walk
+    from env import Walk, check_obs_width
 
     env = None
     tracks, labels = [], []
@@ -114,6 +114,7 @@ def record(run_dirs, n_each, seconds, command, mem_fraction):
             policy_hidden_layer_sizes=(128, 128, 128),
             value_hidden_layer_sizes=(256, 256, 256))
         params = brax_io_model.load_params(os.path.join(run_dir, "params"))
+        check_obs_width(params, env.observation_size, run_dir)
         if len(params) > 2:
             params = params[:2]
         policy = jax.jit(ppo_networks.make_inference_fn(networks)(

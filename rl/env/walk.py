@@ -17,27 +17,57 @@ over its own bus and off one IMU. Every entry below exists on the hardware:
                             learns to use absolute yaw learns something that will
                             be a slow drift on the real robot.
     gyro                3   angular velocity, straight off the BMI088
+    accelerometer       3   proper acceleration, the BMI088's other half
     joint position     12   relative to the CAD stance, as the bus reports it
     joint velocity     12   differenced on the bus, hence the scaling below
     last action        12   what we asked for last tick; the robot knows this
     command             3   vx, vy, yaw rate — what we are asking of it
                        --
-                       45
+                       48   x OBS_HIST frames = the observation
 
-Deliberately absent: base linear velocity (a quadruped cannot measure it without
-a state estimator we have not written), foot contact booleans (the touch sensors
-exist in sim and the robot has none), absolute height, and anything about the
-terrain. The rewards may use all of those — the reward is computed in the
-simulator, at training time, where privileged information is free. The
-observation may not.
+Why the accelerometer, and why a stack of frames
+------------------------------------------------
+Both exist to answer one question the policy could not previously ask: how fast
+is the body moving? Linear velocity is not measurable on this robot and so is
+not in the frame -- but it is not unknowable either, and the first policy that
+walked showed the cost of pretending otherwise. Measured on that policy: a
+persistent +0.088 m/s of body-frame lateral velocity under a straight-ahead
+command, 72 % of a 1229 mm sideways excursion over 10 s. A drift the controller
+has no signal for is a drift it cannot correct, however hard the reward pushes;
+all PPO can do without one is find a feed-forward gait that happens to average
+out, and it did not.
 
-One thing here is NOT frozen. `checks/imu_placement.py` measured that the MJCF's
-`imu` site sits at the base_link origin, where no board physically fits, and that
-an accelerometer 49 mm away reads up to 9.0 m/s^2 of extra acceleration on this
-robot's own trot — 42 degrees of apparent tilt, correlated with the policy's own
-actions. rl/CLAUDE.md is explicit that the mount goes into the CAD before the
-observation is frozen. This env reads whatever site the generated model calls
-`imu`; when that site moves, the policy is retrained, not patched.
+The accelerometer is the direct signal and the robot already carries it -- the
+BMI088 is six axes, and only three of them were being read. It is not clean:
+`checks/imu_placement.py` measures that a board offset by r from the site reads
+w x (w x r) + a x r on top of gravity, which is 25 degrees of apparent tilt at
+the mount 1046e06 put in the CAD, correlated with the policy's own actions. That
+is an argument for handing the network the raw channel and a history to
+difference it against, not for integrating it by hand into a number that would
+then have to be reproduced on the robot.
+
+OBS_HIST frames at 50 Hz span 100 ms, which is one full cycle of the gait the
+first policy learned. Leg odometry lives in that window: a stance leg's joint
+velocities carry the body's, and the frame stack is what lets a feed-forward MLP
+see which legs those are.
+
+Deliberately still absent: base linear velocity itself (privileged -- no
+estimator exists, and one would have to be written twice, here and on the
+robot), foot contact booleans (the touch sensors exist in sim and the robot has
+none; `smalldog_walker/contact.py` infers it from servo load and that inference
+is not free), absolute height, and anything about the terrain. The rewards may
+use all of those — the reward is computed in the simulator, at training time,
+where privileged information is free. The observation may not.
+
+The mount is no longer the open question it was. `checks/imu_placement.py`
+measured the old `imu` site at the base_link origin, where no board physically
+fits, and rl/CLAUDE.md required the mount to reach the CAD before the observation
+was frozen; 1046e06 put it there and both exporters read it, so the site is now
+at [0, 0, 0.0234] — between the pack top at 21.4 mm and the deck underside at 25,
+where the BMI088 actually sits. This env still reads whatever site the generated
+model calls `imu`; when that site moves, the policy is retrained, not patched.
+That matters more now than it did, because the accelerometer is in the
+observation and it is the channel the offset corrupts.
 
 The servo is in the loop, not around it
 ---------------------------------------
@@ -70,6 +100,21 @@ ACTION_SCALE = 0.35            # rad per unit action, before the soft-limit clip
 # running normaliser starts from something sane rather than learning the scale.
 OBS_SCALE_GYRO = 0.25
 OBS_SCALE_QVEL = 0.10
+# Gravity alone is 9.81 and imu_placement.py's artefact adds up to 9 more, so
+# 0.1 puts the channel in the same O(1) band as the rest of the frame.
+OBS_SCALE_ACCEL = 0.10
+
+# Frames of history in the observation, newest first. 5 at 50 Hz is 100 ms.
+OBS_HIST = 5
+
+# The frame, term by term, in assemble_obs's own order. Written as a sum and not
+# as a number because the number was hardcoded once and outlived the observation
+# it described: `observation_size` said 45 while reset returned 240, which builds
+# a network with the wrong input width and loses whatever the run cost. The
+# assert in assemble_obs is the other half — this constant may not drift from the
+# concatenate below without the first frame of the first episode saying so.
+OBS_FRAME = 3 + 3 + 3 + 12 + 12 + 12 + 3
+OBS_SIZE = OBS_FRAME * OBS_HIST
 
 
 def rotate_inv(q, v, xp=jnp):
@@ -80,9 +125,13 @@ def rotate_inv(q, v, xp=jnp):
     return v + qw * t + xp.cross(ax, t)
 
 
-def assemble_obs(*, quat, gyro, qpos_j, qvel_j, stance_j, last_action, command,
-                 xp=jnp):
-    """The observation vector, from arrays either engine can produce.
+def assemble_obs(*, quat, gyro, accel, qpos_j, qvel_j, stance_j, last_action,
+                 command, xp=jnp):
+    """ONE FRAME of the observation, from arrays either engine can produce.
+
+    One frame, not the observation: the policy is fed OBS_HIST of these, and
+    stacking them is the caller's job because only the caller has the buffer.
+    `stack_obs` below is that stacking, stated once so the two callers agree.
 
     This exists as one function and not two because eval.py's sim-to-sim pass
     steps VANILLA MuJoCo rather than MJX, and an observation that is assembled
@@ -91,14 +140,75 @@ def assemble_obs(*, quat, gyro, qpos_j, qvel_j, stance_j, last_action, command,
     thing, two backends.
     """
     gravity_b = rotate_inv(quat, xp.asarray([0.0, 0.0, -1.0]), xp)
-    return xp.concatenate([
+    obs = xp.concatenate([
         gravity_b,
         gyro * OBS_SCALE_GYRO,
+        accel * OBS_SCALE_ACCEL,
         qpos_j - stance_j,
         qvel_j * OBS_SCALE_QVEL,
         last_action,
         command,
-    ]), gravity_b
+    ])
+    assert obs.shape[-1] == OBS_FRAME, (
+        f"frame is {obs.shape[-1]}, OBS_FRAME says {OBS_FRAME} — one of the two "
+        f"moved without the other")
+    return obs, gravity_b
+
+
+def stack_obs(hist, frame, xp=jnp):
+    """Push one frame into the history and flatten it into an observation.
+
+    Newest first, so index 0 is always now and the network never has to learn
+    which end is which. Returns (observation, new history) — the history is the
+    thing the caller has to carry, in `info` under MJX and in a local under
+    vanilla MuJoCo.
+
+    On the first frame of an episode there is no past, and the buffer is filled
+    with copies of the present rather than with zeros: a zero frame is a robot
+    reporting no gravity, which is a state that never occurs and which the
+    normaliser would then have to make room for.
+    """
+    hist = xp.concatenate([frame[None], hist[:-1]])
+    return hist.reshape(-1), hist
+
+
+def init_hist(frame, xp=jnp):
+    """The history at reset: OBS_HIST copies of the first frame."""
+    return xp.repeat(frame[None], OBS_HIST, axis=0)
+
+
+def params_obs_width(params):
+    """The observation width a saved policy was trained for, or None.
+
+    brax's observation normaliser carries one running mean per element, so the
+    shape of that mean IS the width the network expects. Worth reading before
+    the first forward pass: a checkpoint from before an observation change
+    otherwise fails as a contracting-dimension mismatch several frames deep in
+    XLA, which does not say `this policy is older than this observation`.
+
+    Returns None rather than raising if the structure is not what we expect —
+    a width check has no business being the thing that breaks a rollout.
+    """
+    try:
+        import numpy as _np
+        return int(_np.asarray(params[0].mean).shape[-1])
+    except Exception:
+        return None
+
+
+def check_obs_width(params, expected, where=""):
+    """Raise with a sentence if a checkpoint predates the current observation."""
+    got = params_obs_width(params)
+    if got is not None and got != expected:
+        raise SystemExit(
+            f"\n!! {where}: this checkpoint was trained on a {got}-element "
+            f"observation and\n"
+            f"!! the environment now builds {expected}. It cannot be loaded, and "
+            f"resizing it\n"
+            f"!! would not be the same policy. Check out the commit the run "
+            f"belongs to, or\n"
+            f"!! retrain. rl/env/walk.py's docstring lists what the frame "
+            f"contains now.")
 
 
 def _rotate_inv(q, v):
@@ -171,6 +281,10 @@ class Walk(PipelineEnv):
 
         self._s_quat = sensor_adr("imu_quat")
         self._s_gyro = sensor_adr("imu_gyro")
+        # Verified to agree with vanilla MuJoCo to 6e-4 on an identical state:
+        # MJX implements this sensor, and the sim-to-sim pass stays a test of
+        # the physics rather than of two different observations.
+        self._s_accel = sensor_adr("imu_accel")
         self._s_touch = [sensor_adr(f"{leg}_contact") for leg in P["legs"]]
         self._foot_site = jnp.array([
             mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_SITE, f"{leg}_foot_site")
@@ -186,15 +300,19 @@ class Walk(PipelineEnv):
         adr, dim = adr_dim
         return jax.lax.dynamic_slice(ps.sensordata, (adr,), (dim,))
 
-    def _observe(self, ps, info, rng):
+    def _frame(self, ps, info, rng):
+        """One noised frame. The noise goes on the FRAME, before it enters the
+        history, because that is where it is on the robot: a stored reading is a
+        reading that was already noisy, not one that gets noisy later."""
         quat = self._sensor(ps, self._s_quat)
         gyro = self._sensor(ps, self._s_gyro)
-        obs, gravity_b = assemble_obs(
-            quat=quat, gyro=gyro, qpos_j=ps.qpos[self._qadr],
+        accel = self._sensor(ps, self._s_accel)
+        frame, gravity_b = assemble_obs(
+            quat=quat, gyro=gyro, accel=accel, qpos_j=ps.qpos[self._qadr],
             qvel_j=ps.qvel[self._vadr], stance_j=self._stance_j,
             last_action=info["last_action"], command=info["command"], xp=jnp)
-        noise = jax.random.uniform(rng, obs.shape, minval=-1.0, maxval=1.0)
-        return obs + noise * self._obs_noise, gravity_b, gyro
+        noise = jax.random.uniform(rng, frame.shape, minval=-1.0, maxval=1.0)
+        return frame + noise * self._obs_noise, gravity_b, gyro
 
     # --------------------------------------------------------------- torque
     def _params(self, info):
@@ -253,7 +371,10 @@ class Walk(PipelineEnv):
                 maxval=self._ranges["push"]["interval_s_abs"]["range"][1]),
             **draw,
         }
-        obs, _, _ = self._observe(ps, info, k_obs)
+        frame, _, _ = self._frame(ps, info, k_obs)
+        hist = init_hist(frame, xp=jnp)
+        obs = hist.reshape(-1)
+        info["obs_hist"] = hist
         metrics = {k: jnp.zeros(()) for k in self._w.asdict()}
         metrics.update({"vx_body_per_step": jnp.zeros(()),
                         "track_err_xy_per_step": jnp.zeros(())})
@@ -372,8 +493,9 @@ class Walk(PipelineEnv):
 
         info["last_action"] = action
         info["step"] = info["step"] + 1
-        obs, _, _ = self._observe(ps, info, k_obs)
-        obs = jnp.nan_to_num(obs)
+        frame, _, _ = self._frame(ps, info, k_obs)
+        obs, hist = stack_obs(info["obs_hist"], jnp.nan_to_num(frame), xp=jnp)
+        info["obs_hist"] = hist
 
         # Start from what is already there, not from a fresh dict: brax's episode
         # wrappers add their own keys (`reward`) to state.metrics, and lax.scan
@@ -401,7 +523,10 @@ class Walk(PipelineEnv):
 
     @property
     def observation_size(self) -> int:
-        return 45
+        # Derived, not asserted from memory. brax's own implementation calls
+        # reset() to find this out; that is correct but costs a pipeline_init
+        # every time a network is built, and three scripts build one.
+        return OBS_SIZE
 
     @property
     def action_size(self) -> int:

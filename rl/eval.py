@@ -169,7 +169,7 @@ def main():
 
     import actuator
     import model as model_mod
-    from env import Walk, assemble_obs, rotate_inv
+    from env import Walk, assemble_obs, rotate_inv, check_obs_width
 
     run_dir = a.run.rstrip("/")
     with open(os.path.join(run_dir, "run.json")) as f:
@@ -192,6 +192,7 @@ def main():
         policy_hidden_layer_sizes=(128, 128, 128),
         value_hidden_layer_sizes=(256, 256, 256))
     params = brax_io_model.load_params(os.path.join(run_dir, "params"))
+    check_obs_width(params, env.observation_size, run_dir)
     if len(params) > 2:
         params = params[:2]
     policy = ppo_networks.make_inference_fn(networks)(params, deterministic=True)
@@ -330,16 +331,16 @@ def main():
 def rollout_mujoco(mj, policy_jit, env, p, cmd, seconds, shot=None):
     """Step the policy through the CPU engine.
 
-    The observation is built by env.assemble_obs with xp=np and the torque by
-    actuator.py with xp=np — the same two functions MJX calls, on the other
-    backend. That is the point: if this disagrees with the MJX rollout, the
+    The observation is built by env.assemble_obs and env.stack_obs with xp=np,
+    and the torque by actuator.py with xp=np — the same three functions MJX
+    calls, on the other backend. That is the point: if this disagrees with the MJX rollout, the
     disagreement is the physics, not two different policies.
     """
     import jax
     import mujoco
     import numpy as np
 
-    from env import assemble_obs
+    from env import assemble_obs, stack_obs, init_hist
     import actuator
     import model as model_mod
 
@@ -359,19 +360,30 @@ def rollout_mujoco(mj, policy_jit, env, p, cmd, seconds, shot=None):
 
     aq, _ = sadr("imu_quat")
     ag, _ = sadr("imu_gyro")
+    aa, _ = sadr("imu_accel")
 
     dt_ctrl = 1.0 / 50.0
     n_sub = int(round(dt_ctrl / mj.opt.timestep))
     last_action = np.zeros(12)
+    hist = None                       # filled from the first frame, not from zeros
     command = np.array(cmd, float)
     u_bat = 12.0                      # nominal pack; the battery test is elsewhere
     fell, fell_at = False, float("nan")
 
     for k in range(int(seconds / dt_ctrl)):
-        obs, gravity_b = assemble_obs(
+        frame, gravity_b = assemble_obs(
             quat=d.sensordata[aq:aq + 4], gyro=d.sensordata[ag:ag + 3],
+            accel=d.sensordata[aa:aa + 3],
             qpos_j=d.qpos[qadr], qvel_j=d.qvel[vadr], stance_j=stance_j,
             last_action=last_action, command=command, xp=np)
+        # Same stacking function the env uses, for the same reason assemble_obs
+        # is one function: a history assembled differently here would make this
+        # a test of two policies rather than of two engines.
+        if hist is None:
+            hist = init_hist(frame, xp=np)
+            obs = hist.reshape(-1)
+        else:
+            obs, hist = stack_obs(hist, frame, xp=np)
         action, _ = policy_jit(obs, jax.random.PRNGKey(0))
         action = np.asarray(action)
         last_action = action
