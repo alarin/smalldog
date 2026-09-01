@@ -22,4 +22,4 @@
 # Policy weights: brax msgpack, and the filename carries no extension to key on.
 # Auto-detection gets it right, but these are the files that cross to another
 # machine, and a normalised checkout would be silently corrupt weights.
-rl/runs/*/ckpt/*/params binary
+rl/runs/**/params binary
