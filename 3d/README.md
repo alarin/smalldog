@@ -142,7 +142,8 @@ with a monotone cubic and lofted. Things that bite:
   `BATT_TAB` = 4 mm at each cell end for the welded nickel and 3.6 mm over the pack to the
   deck. It was a literal 67 mm wide until 2026-08-28, which left a 19.5 mm channel for a
   21.3 mm cell: the pack it was drawn for did not exist. Do not put the width back.
-- 3S BMS: bay in the front, ESP32 + Feetech URT-1 bay in the rear.
+- 3S BMS: bay in the front, Feetech URT-1 bay in the rear — still wide enough for an ESP32
+  beside it, though V1 has none: the Pi drives the bus directly (`../robot/README.md`).
 - IMU (BMI088 breakout, 20 × 15 mm): under the deck on the centreline, bolted up against
   two tabs that bridge the deck's own window, component face down. The position is not a
   packaging choice — it is `imu_xyz()`, and both simulators emit their `imu` site there, so
@@ -501,7 +502,7 @@ FAQ says stalls and burns the servo.
    while the deck is in your hand, and once the Orange Pi is on there is no reaching the
    board at all →
    deck onto the tray →
-   4 M2.5 nuts into the standoff slots, Orange Pi, ESP32/URT-1 →
+   4 M2.5 nuts into the standoff slots, Orange Pi, URT-1 (V1 has no ESP32) →
    GPS mast onto the rear pair of deck screws, swapping them for M3 × 24, then the
    receiver into its rails and two ties (it arches over the Pi, so the Pi goes in first
    and the mast has to come off again to lift the Pi out) →

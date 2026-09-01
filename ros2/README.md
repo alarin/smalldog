@@ -678,10 +678,12 @@ look stale on the sim clock.
 
 ## Known gaps
 
-- No hardware interface yet. The real robot needs an ST3215 bus node (ESP32 + URT-1);
-  `smalldog_ros_control` currently only wires up the MuJoCo system, mirroring
-  `spider-mujoco.urdf.xacro`. The serial half is the spider's `spider_hardware_interface.cpp`
-  equivalent and is not written.
+- No hardware interface yet. The real robot drives the ST3215 bus from the Orange Pi
+  itself, through the URT-1 as a plain USB↔TTL converter — **V1 has no ESP32**, and
+  `robot/README.md` says why and what has to hold for it. `smalldog_ros_control` currently
+  only wires up the MuJoCo system, mirroring `spider-mujoco.urdf.xacro`. The serial half is
+  the spider's `spider_hardware_interface.cpp` equivalent and is not written; the control
+  table it will need is already transcribed once, in `robot/feetech/registers.py`.
 - Foot contact is not published under ROS 2. The IMU now is — `imu_sensor_broadcaster`
   puts it on `/imu_sensor_broadcaster/imu` and the walker logs `IMU is live` when the
   first message lands — but `/smalldog/foot_load` has no publisher, so the launched robot

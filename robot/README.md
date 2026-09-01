@@ -50,6 +50,46 @@ that number is an input to the training randomisation, not a diagnostic.
 and reports which path it took, so the timing is never quietly measured on a
 protocol the runtime will not use.
 
+## Where the tick lives — V1 has no ESP32
+
+The design brief (`3d/mini_dog_codex_handoff.md`) split it the other way: an ESP32 doing
+low-level servo control, the Orange Pi doing ROS 2 and navigation. **V1 does not.** The Pi
+drives the bus itself, through the URT-1 — which is a USB↔TTL half-duplex converter and
+nothing more — and every line in this tree is written against `/dev/ttyUSB0`.
+
+That buys one codebase, one protocol, and a runtime that can be exercised end to end with
+no hardware on the desk (`--dry-run`, `loopback.py`). It costs the guarantee: the 20 ms
+tick now lives on a general-purpose Linux, and the section above already says the host,
+not the wire, is what misses it.
+
+What makes that survivable is the servo, not the scheduler. The ST3215 is in position mode
+and holds its last Goal Position, so a late tick is a **stale** setpoint and not a dropped
+one — miss one at 50 Hz and the leg holds still for 20 ms longer. That is a degradation
+with a floor, and it is the whole reason Pi-direct is defensible here. It would not be if
+the servos took velocity or torque and coasted on silence.
+
+So the runtime's job is to keep the misses rare and bounded, and step 7 is not done until
+all four hold:
+
+- `bus_probe.py`'s p99 measured **on the Pi, with the adapter that is actually in the
+  bay** — not on the bench machine and not off a forum. FTDI wants `latency_timer = 1`;
+  CH340 has no such knob and its own behaviour, so which one it is changes the answer.
+- the loop thread on `SCHED_FIFO`, `mlockall` at start, and **no allocation inside a tick**.
+- a core to itself (`isolcpus` / cpuset). Nothing else on the robot — vision, SLAM, or a
+  speech stack later — may preempt it. Everything else reaches the loop through a queue it
+  reads without blocking, never the other way round.
+- a deadline watchdog with somewhere to go: n consecutive misses → the safe stance. Not a
+  stall, and not a retry loop inside the tick.
+
+The door stays open, and it costs nothing to leave it open. `mini_dog.py`'s rear bay is
+still sized for an ESP32 beside the URT-1, and `feetech/bus.py`'s transport is duck-typed
+— `--selftest` already drives a servo made of bytes through it — so a link to a
+microcontroller slots in behind the same three methods the serial port implements. The one
+thing that would *not* come for free is the timing: the command delay `bus_probe.py`
+measures is an input to the training randomisation in `rl/`, and putting a controller in
+the middle makes it a different number over a different path. Moving the tick down later
+means measuring it again, not just rewiring it.
+
 ## The bench, in order
 
 **Build it first.** The fixture is `3d/bench_rig.py` — it imports the same

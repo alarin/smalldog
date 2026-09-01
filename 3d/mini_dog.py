@@ -832,7 +832,9 @@ def chassis_bottom():
     for x in (-24.0, 24.0):                                   # battery strap slots
         for y in (-BODY_W/2-1, BODY_W/2-WALL-1):
             s = s.cut(bxc(x-1.7, x+1.7, y, y+WALL+2, BODY_Z0+3.0, BODY_Z0+6.5))
-    # BMS bay (front) and ESP32 + URT-1 bay (rear)
+    # BMS bay (front) and URT-1 bay (rear).  The rear bay stays wide enough for an ESP32
+    # beside the adapter even though V1 has no ESP32 - the Pi drives the bus itself, see
+    # robot/README.md - because leaving the room costs nothing and reclaiming it would.
     for xc in (46.0, -46.0):
         s = s.union(bxc(xc-1.5, xc+1.5, -BMS_W/2-1.5, BMS_W/2+1.5, BODY_Z0+3, BODY_Z0+16))
     # deck bosses.  The deck screw lands in a nut, not in a printed thread: the boss is

@@ -142,6 +142,12 @@ Architecture direction:
 
 The Orange Pi is the main onboard computer candidate.
 
+> **Superseded for V1**, and left here because this file is the brief as it was written.
+> The runtime drives the servo bus from the Orange Pi directly through the URT-1; there is
+> no ESP32 in V1. What that buys, what it costs and what has to hold for it to be safe is
+> in [`../robot/README.md`](../robot/README.md). The rear bay is still sized for an ESP32,
+> so this is a deferral and not a rejection.
+
 ## LiDAR / SLAM
 SLAM is a major project goal.
 
