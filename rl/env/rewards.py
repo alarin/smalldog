@@ -9,6 +9,30 @@ them: they are the published quadruped defaults, rescaled for a 2.5 kg robot on 
 model parameters there is no bench that can ever measure them — the only honest
 way to change one is to run eval.py before and after and read the numbers.
 
+Why there are two tracking shapes and not one
+---------------------------------------------
+`tracking_*` go through exp(-err^2/sigma), which is bounded, forgiving, and the
+published default.  It is also FLAT AT ZERO by construction: d/dx exp(-x^2/s) =
+-2x/s * exp(...), which vanishes as the error does, so a small persistent bias
+costs almost nothing no matter what sigma is.  Measured on b9c7a73's policy at
+its 0.055 rad/s yaw bias: 0.0096 of reward per step, 4.8 points of a ~720
+episode, 0.67 %.  Narrowing sigma does not fix the shape -- 0.25 -> 0.15 buys
+1.65x of gradient there, 0.25 -> 0.10 buys 2.5x, and both still go to zero.
+
+That is how this robot has now failed twice.  9c2d5cc crabbed at +0.088 m/s
+sideways for 3 % of return; eff9916 gave the policy a signal for that, it fixed
+it, and the bias moved to yaw where it cost 0.67 %.  A bounded reward will keep
+paying for whichever axis is cheapest.
+
+So `bias_lin` and `bias_ang` are L1 on the same two errors.  |x| has constant
+gradient everywhere including at zero, which is the whole point and the only
+property that matters here; the exp terms still do the early shaping, and these
+only bite once the error is small enough for exp to have stopped caring.  Their
+weights are guesses like everything else in this file, chosen so the cost at the
+measured bias is a few percent of the episode rather than a fraction of one, and
+small enough that early in training they do not outweigh the tracking they are
+attached to.
+
 Two of them are NOT free choices and must not be tuned away:
 
   joint_vel     the CAD reports joint_velocity_limit = 4.71 rad/s, which is the
@@ -32,7 +56,12 @@ import jax.numpy as jnp
 class Weights:
     # what we want
     tracking_lin_vel: float = 1.5
-    tracking_ang_vel: float = 0.8
+    # 0.8 -> 1.5: yaw is one of three commanded axes and was weighted half of the
+    # other two, for no reason this tree can point at.
+    tracking_ang_vel: float = 1.5
+    # the unsaturated half of tracking; see the docstring
+    bias_lin: float = -0.2
+    bias_ang: float = -0.4
     # what a trot must not do
     lin_vel_z: float = -2.0
     ang_vel_xy: float = -0.05
@@ -54,10 +83,17 @@ class Weights:
     # the reward at 1/e when the tracking error is 0.5 m/s, which on a robot
     # whose top command is 0.8 m/s is a forgiving but not meaningless target.
     tracking_sigma: float = 0.25
+    # Angular gets its own, because it was sharing a width with a quantity in
+    # different units: yaw commands span +-1.0 rad/s. 0.15 is a modest tightening
+    # and is NOT the fix — bias_ang is. Both are here because they act in
+    # different places: the width where the error is large, the L1 where it is
+    # small.
+    tracking_sigma_ang: float = 0.15
 
     def asdict(self) -> dict:
+        widths = ("tracking_sigma", "tracking_sigma_ang")
         return {f.name: getattr(self, f.name) for f in dataclasses.fields(self)
-                if f.name != "tracking_sigma"}
+                if f.name not in widths}
 
 
 def terms(*, cmd, lin_vel_b, ang_vel_b, gravity_b, base_z, stance_z,
@@ -84,6 +120,11 @@ def terms(*, cmd, lin_vel_b, ang_vel_b, gravity_b, base_z, stance_z,
     return {
         "tracking_lin_vel": lin_err,          # weighted through exp() below
         "tracking_ang_vel": ang_err,
+        # The same two errors, L1 and unsaturated. Not a duplicate: these carry
+        # gradient where the exp terms have none, which is exactly at the small
+        # persistent offsets that have twice survived a whole training run.
+        "bias_lin": jnp.sum(jnp.abs(cmd_xy - lin_vel_b[:2])),
+        "bias_ang": jnp.abs(cmd_yaw - ang_vel_b[2]),
         "lin_vel_z": lin_vel_b[2] ** 2,
         "ang_vel_xy": jnp.sum(ang_vel_b[:2] ** 2),
         "orientation": jnp.sum(gravity_b[:2] ** 2),
@@ -114,7 +155,7 @@ def total(unweighted: dict, w: Weights) -> tuple[jax.Array, dict]:
     """
     r = dict(unweighted)
     r["tracking_lin_vel"] = jnp.exp(-r["tracking_lin_vel"] / w.tracking_sigma)
-    r["tracking_ang_vel"] = jnp.exp(-r["tracking_ang_vel"] / w.tracking_sigma)
+    r["tracking_ang_vel"] = jnp.exp(-r["tracking_ang_vel"] / w.tracking_sigma_ang)
     weights = w.asdict()
     scaled = {k: weights[k] * v for k, v in r.items()}
     return sum(scaled.values()), scaled
