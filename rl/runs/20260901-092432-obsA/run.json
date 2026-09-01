@@ -1,0 +1,142 @@
+{
+  "args": {
+    "num_timesteps": 60000000,
+    "num_envs": 2048,
+    "episode_length": 500,
+    "batch_size": 256,
+    "unroll_length": 20,
+    "num_minibatches": 32,
+    "updates_per_batch": 4,
+    "learning_rate": 0.0003,
+    "entropy_cost": 0.01,
+    "discounting": 0.97,
+    "num_evals": 12,
+    "seed": 0,
+    "terrain": false,
+    "boxes": 0,
+    "no_randomize": false,
+    "mem_fraction": 0.6,
+    "no_checkpoints": false,
+    "name": "20260901-092432-obsA",
+    "smoke": false
+  },
+  "history": [
+    {
+      "step": 0,
+      "reward": -10.137601852416992,
+      "ep_len": 148.921875,
+      "track_err_xy": 0.36581638636781316,
+      "vx_body": 0.06369926142906479,
+      "seconds": 255.56910705566406
+    },
+    {
+      "step": 5570560,
+      "reward": 263.63714599609375,
+      "ep_len": 474.0625,
+      "track_err_xy": 0.34002830468904127,
+      "vx_body": 0.0012191768422225905,
+      "seconds": 4501.796600818634
+    },
+    {
+      "step": 11141120,
+      "reward": 424.84722900390625,
+      "ep_len": 467.890625,
+      "track_err_xy": 0.3161037696017865,
+      "vx_body": 0.014377842989260165,
+      "seconds": 8738.649994134903
+    },
+    {
+      "step": 16711680,
+      "reward": 502.2746887207031,
+      "ep_len": 469.1171875,
+      "track_err_xy": 0.23852711699157936,
+      "vx_body": 0.04147386037073579,
+      "seconds": 12979.569183826447
+    },
+    {
+      "step": 22282240,
+      "reward": 555.7844848632812,
+      "ep_len": 480.171875,
+      "track_err_xy": 0.2192533113255125,
+      "vx_body": 0.056420902696542145,
+      "seconds": 17207.665323734283
+    },
+    {
+      "step": 27852800,
+      "reward": 587.7767333984375,
+      "ep_len": 480.171875,
+      "track_err_xy": 0.19383250130726526,
+      "vx_body": 0.0748600025738522,
+      "seconds": 21448.950531721115
+    },
+    {
+      "step": 33423360,
+      "reward": 649.4016723632812,
+      "ep_len": 484.65625,
+      "track_err_xy": 0.18069780620055487,
+      "vx_body": 0.10786092678421609,
+      "seconds": 25687.485152244568
+    },
+    {
+      "step": 38993920,
+      "reward": 623.7847900390625,
+      "ep_len": 473.1328125,
+      "track_err_xy": 0.18171557792294585,
+      "vx_body": 0.09741319835365395,
+      "seconds": 29924.49249815941
+    },
+    {
+      "step": 44564480,
+      "reward": 686.5214233398438,
+      "ep_len": 481.5,
+      "track_err_xy": 0.15516060041856994,
+      "vx_body": 0.07633903103813544,
+      "seconds": 34154.385555028915
+    },
+    {
+      "step": 50135040,
+      "reward": 686.2256469726562,
+      "ep_len": 483.359375,
+      "track_err_xy": 0.16849427434680478,
+      "vx_body": 0.12634476043001694,
+      "seconds": 38378.25051474571
+    },
+    {
+      "step": 55705600,
+      "reward": 709.4017333984375,
+      "ep_len": 485.671875,
+      "track_err_xy": 0.14571523114169874,
+      "vx_body": 0.08470660048219147,
+      "seconds": 42605.28612494469
+    },
+    {
+      "step": 61276160,
+      "reward": 720.5418090820312,
+      "ep_len": 486.90625,
+      "track_err_xy": 0.1556940774855039,
+      "vx_body": 0.08770371278802208,
+      "seconds": 46837.07894039154
+    }
+  ],
+  "wall_clock_min": 780.62637159427,
+  "cache_entries_added": 17,
+  "checkpoints": [
+    "ckpt/000000000000",
+    "ckpt/000005570560",
+    "ckpt/000011141120",
+    "ckpt/000016711680",
+    "ckpt/000022282240",
+    "ckpt/000027852800",
+    "ckpt/000033423360",
+    "ckpt/000038993920",
+    "ckpt/000044564480",
+    "ckpt/000050135040",
+    "ckpt/000055705600",
+    "ckpt/000061276160"
+  ],
+  "actuator": {
+    "fitted": false,
+    "source": "vendor spec (2.94 N*m, 4.71 rad/s, 2.7 A stall, all @ 12 V); NOT fitted"
+  },
+  "note": "params/st3215.json is NOT a fit \u2014 this policy is trained against the datasheet servo. Run robot/bench/sweep.py and fit_bam.py, then retrain, before this goes anywhere near hardware."
+}
