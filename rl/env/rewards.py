@@ -24,14 +24,36 @@ sideways for 3 % of return; eff9916 gave the policy a signal for that, it fixed
 it, and the bias moved to yaw where it cost 0.67 %.  A bounded reward will keep
 paying for whichever axis is cheapest.
 
-So `bias_lin` and `bias_ang` are L1 on the same two errors.  |x| has constant
-gradient everywhere including at zero, which is the whole point and the only
-property that matters here; the exp terms still do the early shaping, and these
-only bite once the error is small enough for exp to have stopped caring.  Their
-weights are guesses like everything else in this file, chosen so the cost at the
-measured bias is a few percent of the episode rather than a fraction of one, and
-small enough that early in training they do not outweigh the tracking they are
-attached to.
+`bias_lin` is L1 on the linear error.  |x| has constant gradient everywhere
+including at zero, which is the property exp lacks, and it worked: body-frame
+slip went 317 -> 211 mm across the run that introduced it.
+
+`bias_ang` was the same idea on yaw and it FAILED, in a way worth keeping written
+down.  Measured on the two recorded policies, 10 s rollouts, commanded straight:
+
+    yaw drift (mean w)            obsA -0.055     bias +0.098    true ratio 1.78x
+    yaw swing (sd w)                   0.520           0.441
+    |w| instantaneous                  0.4034          0.3558         1.13x
+    |integrated heading error|         0.2933          0.5184         1.77x
+
+The instantaneous penalty is not merely insensitive to the drift.  It is
+ANTI-correlated with it: obsA drifts half as much and scores WORSE, because its
+gait swings the body harder and |w| is dominated by the swing, not the offset.
+A policy could lower that penalty by drifting more as long as it swung less, and
+that is what happened -- yaw went -0.055 -> +0.098 rad/s and the heading
+contribution to sideways travel went 1583 -> 2142 mm over 10 s.
+
+The lesson is about what the term measures, not about L1.  Drift is a
+LOW-FREQUENCY property, and a penalty on an instantaneous quantity whose swing is
+4-5x the offset spends its gradient on the swing.  `heading_drift` integrates the
+rate error instead -- which IS the heading error, exactly, with no filter to tune
+-- and reproduces the true drift ratio to 1.77x against 1.78x.  Integrating also
+removes the wrap-around a quaternion heading would need, since the reference
+heading over an episode with a turn command runs to 10 rad.
+
+Heading is privileged and that is allowed here: the reward is computed in the
+simulator.  It must never reach the observation, where yaw is not measurable --
+walk.py's docstring is the authority on that.
 
 Two of them are NOT free choices and must not be tuned away:
 
@@ -61,7 +83,11 @@ class Weights:
     tracking_ang_vel: float = 1.5
     # the unsaturated half of tracking; see the docstring
     bias_lin: float = -0.2
-    bias_ang: float = -0.4
+    # accumulated heading error. Replaces bias_ang, which was measured to point
+    # the wrong way. -0.10 puts a policy drifting like `bias` at ~3.6 % of its
+    # episode and one drifting like `obsA` at ~2 %, against ~0 for one that does
+    # not drift at all.
+    heading_drift: float = -0.10
     # what a trot must not do
     lin_vel_z: float = -2.0
     ang_vel_xy: float = -0.05
@@ -98,7 +124,8 @@ class Weights:
 
 def terms(*, cmd, lin_vel_b, ang_vel_b, gravity_b, base_z, stance_z,
           qpos_j, qvel_j, tau, action, last_action, vel_limit, soft_lo, soft_hi,
-          air_time, first_contact, foot_vel_xy, in_contact, done, dt) -> dict:
+          air_time, first_contact, foot_vel_xy, in_contact, heading_err,
+          done, dt) -> dict:
     """Every reward term, unweighted. Keys match Weights' field names.
 
     All velocities are in the BODY frame, which is the frame the command is given
@@ -124,7 +151,9 @@ def terms(*, cmd, lin_vel_b, ang_vel_b, gravity_b, base_z, stance_z,
         # gradient where the exp terms have none, which is exactly at the small
         # persistent offsets that have twice survived a whole training run.
         "bias_lin": jnp.sum(jnp.abs(cmd_xy - lin_vel_b[:2])),
-        "bias_ang": jnp.abs(cmd_yaw - ang_vel_b[2]),
+        # How far off the commanded heading the robot has got since the episode
+        # began. The env carries the integral; this only reads it.
+        "heading_drift": jnp.abs(heading_err),
         "lin_vel_z": lin_vel_b[2] ** 2,
         "ang_vel_xy": jnp.sum(ang_vel_b[:2] ** 2),
         "orientation": jnp.sum(gravity_b[:2] ** 2),

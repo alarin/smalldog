@@ -364,6 +364,9 @@ class Walk(PipelineEnv):
             "last_action": jnp.zeros(12),
             "action_buf": jnp.zeros((self._n_delay, 12)),
             "air_time": jnp.zeros(4),
+            # integral of (yaw rate - commanded yaw rate); the heading error the
+            # episode has accumulated. Reward-side only — yaw stays out of obs.
+            "heading_err": jnp.zeros(()),
             "foot_xy": ps.site_xpos[self._foot_site][:, :2],
             "step": jnp.array(0, jnp.int32),
             "next_push": jax.random.uniform(
@@ -471,6 +474,10 @@ class Walk(PipelineEnv):
         foot_vel_xy = (foot_xy - info["foot_xy"]) / self.dt
         info["foot_xy"] = foot_xy
 
+        # Integrated before the reward reads it, so step k is charged for the
+        # error it has actually accumulated including this step.
+        info["heading_err"] = info["heading_err"] + (gyro[2] - info["command"][2]) * self.dt
+
         first_contact = (info["air_time"] > 0.0) & in_contact
         air_time = info["air_time"]
         info["air_time"] = jnp.where(in_contact, 0.0, air_time + self.dt)
@@ -487,7 +494,7 @@ class Walk(PipelineEnv):
             vel_limit=self._vel_limit, soft_lo=self._soft_lo, soft_hi=self._soft_hi,
             air_time=air_time, first_contact=first_contact.astype(jnp.float32),
             foot_vel_xy=foot_vel_xy, in_contact=in_contact.astype(jnp.float32),
-            done=done, dt=self.dt)
+            heading_err=info["heading_err"], done=done, dt=self.dt)
         reward, scaled = rw.total(unweighted, self._w)
         reward = jnp.nan_to_num(reward)
 
