@@ -116,6 +116,32 @@ OBS_HIST = 5
 OBS_FRAME = 3 + 3 + 3 + 12 + 12 + 12 + 3
 OBS_SIZE = OBS_FRAME * OBS_HIST
 
+# Time constant of the heading-error integral the reward reads (rewards.py,
+# heading_drift). It LEAKS, and the leak is not a refinement -- it is the only
+# thing that makes the quantity safe.
+#
+# brax's AutoResetWrapper.step resets `pipeline_state` and `obs` and NOTHING
+# ELSE: a custom field in `info` survives the episode boundary. Every other
+# field here is either overwritten every step (foot_xy, last_action) or clamped
+# by contact (air_time), so none of them noticed. A plain integral would not
+# have been: it would accumulate across every episode in a rollout and grow
+# without bound, which is exactly what it did -- ep_len fell to 397 against the
+# 465-480 of every previous run.
+#
+# Resetting it on this env's own `done` is not enough either. Truncation at
+# episode_length happens in EpisodeWrapper, OUTSIDE this step(), and with ep_len
+# near 480 of 500 truncation is the COMMON ending, not the rare one.
+#
+# So it leaks instead, and inherits nothing that a leak does not erase: 5 s is
+# half an episode, so anything carried across a boundary is down to 13 % before
+# the next one ends. Measured cost of the choice, on the two recorded policies:
+# a plain integral separates their drift 1.77x against a true 1.78x, and this
+# separates it 1.55x, flat in tau from 2 s to 10 s. 14 % of fidelity for a
+# quantity that cannot be broken by wrapper semantics is the right trade twice
+# over, having now spent two runs on reward terms that were wrong in ways that
+# were never checked.
+HEADING_TAU = 5.0
+
 
 def rotate_inv(q, v, xp=jnp):
     """Rotate v from the world frame into the body frame given body quat q."""
@@ -364,8 +390,9 @@ class Walk(PipelineEnv):
             "last_action": jnp.zeros(12),
             "action_buf": jnp.zeros((self._n_delay, 12)),
             "air_time": jnp.zeros(4),
-            # integral of (yaw rate - commanded yaw rate); the heading error the
-            # episode has accumulated. Reward-side only — yaw stays out of obs.
+            # leaky integral of (yaw rate - commanded yaw rate): the heading
+            # error the last few seconds have accumulated. Reward-side only —
+            # yaw stays out of the observation. See HEADING_TAU.
             "heading_err": jnp.zeros(()),
             "foot_xy": ps.site_xpos[self._foot_site][:, :2],
             "step": jnp.array(0, jnp.int32),
@@ -475,8 +502,11 @@ class Walk(PipelineEnv):
         info["foot_xy"] = foot_xy
 
         # Integrated before the reward reads it, so step k is charged for the
-        # error it has actually accumulated including this step.
-        info["heading_err"] = info["heading_err"] + (gyro[2] - info["command"][2]) * self.dt
+        # error it has actually accumulated including this step. The -h/tau term
+        # is the leak; HEADING_TAU explains why it is not optional.
+        h = info["heading_err"]
+        info["heading_err"] = h + self.dt * (
+            (gyro[2] - info["command"][2]) - h / HEADING_TAU)
 
         first_contact = (info["air_time"] > 0.0) & in_contact
         air_time = info["air_time"]
@@ -521,6 +551,10 @@ class Walk(PipelineEnv):
         # steps, as an earlier `travelled_x` here did, is meaningless at any
         # scaling — so the forward progress metric is a velocity, which means
         # something once divided.
+        # Belt as well as braces: the leak handles the truncation this env cannot
+        # see, and this handles the terminations it can.
+        info["heading_err"] = jnp.where(done > 0.5, 0.0, info["heading_err"])
+
         metrics["vx_body_per_step"] = jnp.nan_to_num(lin_vel_b[0])
         metrics["track_err_xy_per_step"] = jnp.nan_to_num(
             jnp.linalg.norm(info["command"][:2] - lin_vel_b[:2]))

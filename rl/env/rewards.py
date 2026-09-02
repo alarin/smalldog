@@ -84,10 +84,11 @@ class Weights:
     # the unsaturated half of tracking; see the docstring
     bias_lin: float = -0.2
     # accumulated heading error. Replaces bias_ang, which was measured to point
-    # the wrong way. -0.10 puts a policy drifting like `bias` at ~3.6 % of its
-    # episode and one drifting like `obsA` at ~2 %, against ~0 for one that does
-    # not drift at all.
-    heading_drift: float = -0.10
+    # the wrong way. The quantity is a LEAKY integral (walk.py, HEADING_TAU) and
+    # runs 0.17 for a policy drifting like eff9916 and 0.26 for one drifting like
+    # 73e25d3, so -0.20 costs them ~2.4 % and ~3.6 % of an episode against ~0 for
+    # one that holds its heading.
+    heading_drift: float = -0.20
     # what a trot must not do
     lin_vel_z: float = -2.0
     ang_vel_xy: float = -0.05
@@ -151,8 +152,8 @@ def terms(*, cmd, lin_vel_b, ang_vel_b, gravity_b, base_z, stance_z,
         # gradient where the exp terms have none, which is exactly at the small
         # persistent offsets that have twice survived a whole training run.
         "bias_lin": jnp.sum(jnp.abs(cmd_xy - lin_vel_b[:2])),
-        # How far off the commanded heading the robot has got since the episode
-        # began. The env carries the integral; this only reads it.
+        # How far off the commanded heading the robot has drifted over the last
+        # few seconds. The env carries the leaky integral; this only reads it.
         "heading_drift": jnp.abs(heading_err),
         "lin_vel_z": lin_vel_b[2] ** 2,
         "ang_vel_xy": jnp.sum(ang_vel_b[:2] ** 2),
