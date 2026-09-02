@@ -312,6 +312,18 @@ class Walk(PipelineEnv):
         # the physics rather than of two different observations.
         self._s_accel = sensor_adr("imu_accel")
         self._s_touch = [sensor_adr(f"{leg}_contact") for leg in P["legs"]]
+        # Foot-site height at the CAD stance, i.e. the height a foot sits at when
+        # it is on flat ground. Subtracting it turns site z into clearance.
+        # Measured off the model rather than assumed: the site is not the contact
+        # sphere's lowest point and the offset is not the sphere radius.
+        _d = mujoco.MjData(mj_model)
+        _d.qpos[:] = q0
+        mujoco.mj_forward(mj_model, _d)
+        self._foot_z0 = jnp.array([
+            _d.site_xpos[mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_SITE,
+                                           f"{leg}_foot_site")][2]
+            for leg in P["legs"]])
+
         self._foot_site = jnp.array([
             mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_SITE, f"{leg}_foot_site")
             for leg in P["legs"]])
@@ -498,6 +510,7 @@ class Walk(PipelineEnv):
         in_contact = touch > 1.0                       # N; a foot carrying weight
 
         foot_xy = ps.site_xpos[self._foot_site][:, :2]
+        foot_h = ps.site_xpos[self._foot_site][:, 2] - self._foot_z0
         foot_vel_xy = (foot_xy - info["foot_xy"]) / self.dt
         info["foot_xy"] = foot_xy
 
@@ -523,7 +536,8 @@ class Walk(PipelineEnv):
             action=action, last_action=info["last_action"],
             vel_limit=self._vel_limit, soft_lo=self._soft_lo, soft_hi=self._soft_hi,
             air_time=air_time, first_contact=first_contact.astype(jnp.float32),
-            foot_vel_xy=foot_vel_xy, in_contact=in_contact.astype(jnp.float32),
+            foot_vel_xy=foot_vel_xy, foot_h=foot_h,
+            in_contact=in_contact.astype(jnp.float32),
             heading_err=info["heading_err"], done=done, dt=self.dt)
         reward, scaled = rw.total(unweighted, self._w)
         reward = jnp.nan_to_num(reward)

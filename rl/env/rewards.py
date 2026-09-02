@@ -96,11 +96,20 @@ class Weights:
     base_height: float = -1.0
     # what the hardware cannot afford
     torque: float = -2.0e-4
-    action_rate: float = -1.0e-2
     joint_vel: float = -1.0
     joint_limit: float = -1.0
     # gait shaping
     feet_air_time: float = 0.2
+    # 1e-2 -> 3e-2. Measured on the two recorded policies: ||da||^2 runs 2.37 for
+    # the 8.5 Hz gait and 3.75 for the 9.5 Hz one, so the term does track the
+    # thing it is named for -- it was simply too cheap to matter, 1.7-2.7 % of an
+    # episode against a buzz that survived two whole runs.
+    action_rate: float = -3.0e-2
+    # Swing feet must clear FOOT_CLEARANCE_TARGET, weighted by how fast the foot
+    # is travelling, so a foot about to land is not charged for being low. A
+    # shortfall penalty: a gait that clears the target pays nothing at all.
+    # Measured at -20 it costs the current policies ~3.8 % of an episode.
+    foot_clearance: float = -20.0
     foot_slip: float = -0.1
     stand_still: float = -0.5
     # the end
@@ -123,9 +132,15 @@ class Weights:
                 if f.name not in widths}
 
 
+# How high a swing foot should get, in metres. 40 mm is 22 % of this robot's
+# 181 mm stance height, the low end of what a real trot does, and 2.4x what the
+# policies measured so far ever reach -- their feet never pass 20 mm.
+FOOT_CLEARANCE_TARGET = 0.04
+
+
 def terms(*, cmd, lin_vel_b, ang_vel_b, gravity_b, base_z, stance_z,
           qpos_j, qvel_j, tau, action, last_action, vel_limit, soft_lo, soft_hi,
-          air_time, first_contact, foot_vel_xy, in_contact, heading_err,
+          air_time, first_contact, foot_vel_xy, foot_h, in_contact, heading_err,
           done, dt) -> dict:
     """Every reward term, unweighted. Keys match Weights' field names.
 
@@ -166,6 +181,13 @@ def terms(*, cmd, lin_vel_b, ang_vel_b, gravity_b, base_z, stance_z,
         # air time is only worth anything at the moment a foot lands: rewarding it
         # continuously pays a robot for holding a leg up forever.
         "feet_air_time": jnp.sum((air_time - 0.2) * first_contact),
+        # Shortfall only, and weighted by horizontal foot speed: a foot at the
+        # bottom of its arc is barely moving and is not asked to be high, a foot
+        # crossing the ground fast is. Same quantity foot_slip uses, opposite
+        # phase of the stride.
+        "foot_clearance": jnp.sum(
+            jnp.clip(FOOT_CLEARANCE_TARGET - foot_h, 0.0, None) ** 2
+            * jnp.linalg.norm(foot_vel_xy, axis=-1)),
         "foot_slip": jnp.sum(foot_vel_xy ** 2 * in_contact[:, None]),
         # standing still is a skill, and without this the policy fidgets in place
         # because fidgeting is free under a velocity-tracking reward at zero.
