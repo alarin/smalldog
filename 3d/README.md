@@ -106,6 +106,33 @@ and without it.
 Range of motion is measured by swept boolean interference against the real solids
 (`rom_scan()` in the script), not estimated.
 
+### Reaching the fork screws
+
+The fork's two arms are bolted to the hubs **last**, and there is no order in which they
+could be bolted first: the arms straddle the sleeve, so the fork goes on radially over a
+servo that is already in its bore. Each arm's four screws are then driven from *outside*
+it, along the joint axis. Whether a driver fits there is a property of whatever happens to
+be sitting behind that arm — the fork is identical at all three joints, its neighbours are
+not.
+
+**At the roll joint the inboard arm has 0.6 mm.** The passive-hub arm's outer face is at
+x = 68.1 and `roll_module`'s root gusset ends at 67.5. Behind that sits 2.8 mm of solid
+wall, and behind *that* the gusset's own hollow, which opens into the tray. So the four
+inboard screws on every `hip_bracket` are unreachable with the leg on the robot, and there
+is no assembly order that avoids it.
+
+`fork_access()` is the check, and it is the third of a family: `foot_bolt_check()` probes
+a bolt path through its own part, `thrust_clear()` probes a screw head against a swept
+annulus, and this one probes a **driver** against the neighbouring part. All three exist
+because the same defect kept arriving by the same route — `isValid()` is happy with a
+screw nobody can turn, `interference()` only looks at the static body, and `rom_scan` only
+looks at what moves. A fastener whose *access* is blocked is invisible to all three.
+
+The fix is not in this file yet: four ⌀5 holes through that 2.8 mm wall, on the same ⌀14
+circle, would let a long key reach straight through from inside the tray — but that wall is
+the leg's root load path and `fea.py` decides whether it can carry them, so it is a change
+to make deliberately and not while a chassis is on the printer.
+
 ## Geometry
 
 | | mm |
@@ -543,7 +570,9 @@ FAQ says stalls and burns the servo.
    clamp*) → fit both aluminium
    hubs to the servo → bolt the fork arms to the hubs (bottom arm's ⌀23 pad enters the
    case-base recess). The thrust bolts come first: once the fork is on, its spine sweeps
-   over the lug.
+   over the lug. **The fork cannot go on before the servo** — its arms straddle the
+   sleeve — so check the driver reach on both arms before you commit to an order; see
+   *Reaching the fork screws*, and run `mini_dog.py` for the `fork access:` line.
 4. Legs: hip bracket → thigh → shin → press the TPU foot onto the ⌀18 spigot, then the M3
    up through the foot into the nut in the ankle slot. The slot sits above the foot's top
    face, so the nut goes in with the foot already fitted, and the foot stays removable.
@@ -740,6 +769,9 @@ frame above.
 1. `servo_gauge` fit — the one thing that can invalidate everything else. It checks the
    bore and the ⌀14 bolt circle; it cannot check the *thread*, which is why the hub came
    back M3 after the gauge had already passed. Try a real screw through a real hole.
+   It also cannot check *access*: it is half a sleeve with one arm and nothing behind it.
+   `fork access:` in `mini_dog.py`'s report is what covers that, and it wants reading
+   before `chassis_bottom` goes on the printer.
 2. Orange Pi 5 Pro hole pattern (currently 92 × 54).
 3. ~~Unitree L2 base bolt circle~~ — measured from the manual drawing: ⌀51, 4 × M3 ▽6 at
    22.5°, ⌀60 spigot, ⌀75 base, 75 × 75 × 65 mm, 230 g. Cable exit still to confirm on a

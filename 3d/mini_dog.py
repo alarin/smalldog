@@ -104,6 +104,13 @@ THRUST_SEAT = 3.00                    # lug behind each nut - this is what takes
 # at any point, and is only ever a driving feature.  The clearance hole is @3.4 and runs a
 # millimetre past the lug's outer face, so a hex key still reaches the screw with the fork
 # in place.  thrust_clear() is the check that was missing; it prints on every run.
+# A screw you cannot reach is a screw that is not fitted.  The fork's two arms are bolted
+# to the hubs LAST, with the servo already in its sleeve - the arms straddle the sleeve, so
+# there is no order in which the fork goes on first - and each arm's four screws are driven
+# from OUTSIDE it, along the joint axis.  Whether a driver fits there is a property of the
+# neighbouring part, not of the fork, so fork_access() probes it against the real solid.
+DRIVER_D      = 5.00                  # hex driver shank, and the room to turn it
+DRIVER_REACH  = 25.00                 # straight run a stubby key needs behind the screw
 THRUST_BOLT_L = 10.00                 # M3 x 10: 9.35 of it is lug + nut + reach to the case
 THRUST_HEAD_D = 3.00                  # set screw, so the head IS the thread OD ...
 THRUST_HEAD_H = 0.00                  # ... and so it stands nothing proud of the shank
@@ -1566,6 +1573,40 @@ def foot_bolt_check():
     tip = FOOT_BOLT_L - FOOT_CB_Z                     # above FOOT_Z, from the shoulder
     return blocked, tip - (FOOT_NUT_Z + M3_NUT_H), (FOOT_NUT_Z + M3_NUT_H + 5.0) - tip
 
+def fork_access(reach=DRIVER_REACH):
+    """Can a driver actually reach each fork arm's four screws?  Returns
+    {(joint, side): blocked_mm3}, and 0.0 is the only passing value.
+
+    Third member of the same family as foot_bolt_check() and thrust_clear(), and it exists
+    for the same reason: `isValid()` is happy with a screw nobody can turn, interference()
+    only looks at the static body, and rom_scan only looks at what moves.  A fastener whose
+    ACCESS is blocked is invisible to all three, and the robot has now shipped that defect
+    twice - the foot bolt that opened inside the dome, and the clamp head inside the spine.
+
+    The probe is a driver-sized cylinder on each screw axis, run outward from the arm's
+    outer face, intersected with the part the fork bolts ONTO.  That neighbour is the whole
+    question: the fork is identical at all three joints, and what differs is what happens
+    to be sitting behind it."""
+    out = {}
+    for joint, loc, near in (("roll",  ROLL_LOC,  PARTS["chassis_bottom"][0]),
+                             ("pitch", PITCH_LOC, PARTS["hip_bracket_A"][0]),
+                             ("knee",  KNEE_LOC,  PARTS["thigh_A"][0])):
+        for side, face, sgn in (("driven",  HUB_TOP_Z + ARM_T,   +1.0),
+                                ("passive", ARM_BOT_TOP - ARM_T, -1.0)):
+            probe = None
+            for i in range(HUB_N):
+                th = math.radians(90*i)
+                c = cyl(DRIVER_D/2, reach,
+                        (HUB_BC/2*math.cos(th), HUB_BC/2*math.sin(th), face),
+                        axis=(0, 0, sgn))
+                probe = c if probe is None else probe.union(c)
+            try:
+                v = mv(probe, loc).val().intersect(near.val()).Volume()
+            except Exception:
+                v = 0.0
+            out[(joint, side)] = v
+    return out
+
 def thrust_clear():
     """Furthest anything the thrust clamp adds gets from the joint axis, against the
     SPINE_R0 the distal fork sweeps.  Returns (r, margin); margin has to stay positive.
@@ -1725,6 +1766,14 @@ def main():
         kind = "set screw" if THRUST_HEAD_H <= 0 else f"head @{THRUST_HEAD_D:.1f}"
         print(f"  clamp clear: M3 x {THRUST_BOLT_L:.0f} {kind} reaches r = {r:.2f} vs the"
               f" spine's {SPINE_R0:.1f} ({margin:+.2f} mm)")
+    # ... and whether a driver can reach the screws that hold the legs on at all.
+    acc = fork_access()
+    bad = {k: v for k, v in acc.items() if v > INTERF_TOL}
+    for (joint, side), v in bad.items():
+        print(f"  !! FORK ACCESS  {joint}/{side} arm: {v:.0f} mm3 of the driver's"
+              f" {DRIVER_REACH:.0f} mm run is solid - those four screws cannot be fitted")
+    if not bad:
+        print(f"  fork access: all six arms have {DRIVER_REACH:.0f} mm of clear driver run")
     v = gps_clear()
     if v > INTERF_TOL:
         print(f"  !! GPS MAST  {v:.1f} mm3 of gps_mount is inside the Orange Pi envelope")

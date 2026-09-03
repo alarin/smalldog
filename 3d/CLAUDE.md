@@ -85,7 +85,13 @@ name → (workplane, qty, note) and drives both the export loop and the BOM;
   span from the sole to the nut's far face is 28 mm — no head position could ever have
   reached, which is the tell that the number was never checked against the solid.
   `foot_bolt_check()` now probes the real solid along the axis and `build()` prints a
-  `foot bolt:` line; treat `!! FOOT BOLT` as a failure like `!! INTERFERENCE`. The
+  `foot bolt:` line; treat `!! FOOT BOLT` as a failure like `!! INTERFERENCE`.
+  **The same hole in the checks has now cost three fasteners, so there are three probes.**
+  `thrust_clear()` is the clamp screw against the annulus the distal fork sweeps, and
+  `fork_access()` is a driver-sized cylinder on each fork screw's axis against the part
+  the fork bolts onto — the roll joint's inboard arm has 0.6 mm of air behind it and its
+  four screws cannot be turned at all. When you add a fastener, ask the three questions
+  separately: does the hole reach, does the head clear, and can a driver get to it. The
   length follows from `FOOT_CB_Z`, `FOOT_NUT_Z` and `M3_NUT_H` — if you move any of
   those, `FOOT_BOLT_L` and the BOM line in `README.md` move with them. Fixed 2026-08-31.
 - **Nothing goes into 23 < r < 34 of a joint axis over the sleeve's length.** The distal
