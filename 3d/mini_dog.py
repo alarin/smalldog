@@ -110,7 +110,19 @@ THRUST_SEAT = 3.00                    # lug behind each nut - this is what takes
 # from OUTSIDE it, along the joint axis.  Whether a driver fits there is a property of the
 # neighbouring part, not of the fork, so fork_access() probes it against the real solid.
 DRIVER_D      = 5.00                  # hex driver shank, and the room to turn it
-DRIVER_REACH  = 25.00                 # straight run a stubby key needs behind the screw
+DRIVER_REACH  = 7.50                  # straight run needed to BREAK OUT of the material
+                                      # into open space.  Not a key length: at the roll
+                                      # joint no straight 25 mm run exists at any diameter
+                                      # and none can be made - the outboard screw's axis
+                                      # passes 0.2 mm inside the tray's own side wall, so
+                                      # a straight key would need a groove down the whole
+                                      # length of it.  What is achievable, and what the
+                                      # bores below deliver, is a clear tunnel through the
+                                      # material; a ball-end key does the last 20 deg.
+FORK_ACCESS_D  = 6.00                 # the bore: @6 around a @2.5 key through ~11 mm is
+                                      # ~21 deg of tilt, inside a ball end's ~25, and it
+                                      # also passes an M3 head so the screw goes in this
+                                      # way rather than being pre-placed in the arm.
 THRUST_BOLT_L = 10.00                 # M3 x 10: 9.35 of it is lug + nut + reach to the case
 THRUST_HEAD_D = 3.00                  # set screw, so the head IS the thread OD ...
 THRUST_HEAD_H = 0.00                  # ... and so it stands nothing proud of the shank
@@ -866,6 +878,38 @@ def roll_module():
                 .cut(bxc(xa-1, xm-3.4, -10.0, ROLL_Y+9.0, -11.0, 11.0)))
     return s
 
+def fork_access_bores(d=FORK_ACCESS_D):
+    """The four bores that let a driver reach the roll joint's inboard fork screws.
+
+    Coaxial with the screws by construction: the same HUB_BC circle fork() cuts, run from
+    the arm's outer face inward.  They have to be cut from the ASSEMBLED chassis and not
+    from roll_module(), because the path crosses two solids that are unioned - the tray's
+    own front wall at x 60.2..63 and the gusset's inner skin at 64.7..67.5 - and neither
+    of them alone blocks it.  Cut one at a time and the union fills the other back in.
+
+    They stop exactly on the tray's inner face, and that is not tidiness.  Run them one
+    millimetre further and the OUTBOARD bore starts eating the tray's SIDE wall, whose
+    inner face is at BODY_W/2-WALL = 43.2 while that screw's axis is at y = 43.0: at @6 it
+    would reach y = 46 and come out tangent to the outer skin, which is the zero-thickness
+    sliver this file has been bitten by before.  Inside the tray the wall is full-width and
+    the bore is wholly within it, so there is nothing to graze.
+
+    That 0.2 mm is also why DRIVER_REACH is a breakout distance and not a key length.  No
+    straight run of any diameter reaches that screw from inside the tray - a 2.5 mm key on
+    its axis is 1.05 mm inside the side wall and would need a groove down the whole length
+    of it.  What works is a ball end: @6 around a @2.5 key over 7.9 mm of bore is 23.9 deg
+    of tilt, inside the ~25 a ball end takes, and 20 deg of tilt carries the far end of the
+    key 14 mm inboard over its own length - clear of the wall by an order of magnitude.
+    The bore is the part that must be right; the angle is the user's wrist."""
+    z0 = (BODY_L/2 - WALL) - ROLL_X          # the tray's inner face, in servo-local z
+    b = None
+    for i in range(HUB_N):
+        th = math.radians(90*i)
+        c = cyl(d/2, (ARM_BOT_TOP - ARM_T) - z0,
+                (HUB_BC/2*math.cos(th), HUB_BC/2*math.sin(th), z0))
+        b = c if b is None else b.union(c)
+    return mv(b, ROLL_LOC)
+
 def chassis_bottom():
     s = (bxc(-BODY_L/2, BODY_L/2, -BODY_W/2, BODY_W/2, BODY_Z0, BODY_Z1)
          .cut(bxc(-BODY_L/2+WALL, BODY_L/2-WALL, -BODY_W/2+WALL, BODY_W/2-WALL,
@@ -873,6 +917,13 @@ def chassis_bottom():
     rm = roll_module()
     for f in (lambda w: w, mirY, mirX, lambda w: mirX(mirY(w))):
         s = s.union(f(rm))
+    # Driver access to the four inboard fork screws on every hip_bracket.  Without these
+    # they are not hard to fit, they are impossible: the arm's outer face is 0.6 mm off
+    # the root gusset and the fork can only go on after the servo is in its bore, so those
+    # screws are always last and always blind.  See README, "Reaching the fork screws".
+    ab = fork_access_bores()
+    for f in (lambda w: w, mirY, mirX, lambda w: mirX(mirY(w))):
+        s = s.cut(f(ab))
     # 6x 21700 cradle: two layers of three, cells along X, low and central.  Four fins on
     # BATT_PITCH, so each of the three channels comes out exactly CELL_D+CELL_FIT wide.
     for i in range(4):
@@ -1773,7 +1824,8 @@ def main():
         print(f"  !! FORK ACCESS  {joint}/{side} arm: {v:.0f} mm3 of the driver's"
               f" {DRIVER_REACH:.0f} mm run is solid - those four screws cannot be fitted")
     if not bad:
-        print(f"  fork access: all six arms have {DRIVER_REACH:.0f} mm of clear driver run")
+        print(f"  fork access: all six arms break out within {DRIVER_REACH:.0f} mm"
+              f" (roll/passive through @{FORK_ACCESS_D:.0f} bores)")
     v = gps_clear()
     if v > INTERF_TOL:
         print(f"  !! GPS MAST  {v:.1f} mm3 of gps_mount is inside the Orange Pi envelope")

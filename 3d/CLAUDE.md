@@ -89,9 +89,13 @@ name → (workplane, qty, note) and drives both the export loop and the BOM;
   **The same hole in the checks has now cost three fasteners, so there are three probes.**
   `thrust_clear()` is the clamp screw against the annulus the distal fork sweeps, and
   `fork_access()` is a driver-sized cylinder on each fork screw's axis against the part
-  the fork bolts onto — the roll joint's inboard arm has 0.6 mm of air behind it and its
-  four screws cannot be turned at all. When you add a fastener, ask the three questions
-  separately: does the hole reach, does the head clear, and can a driver get to it. The
+  the fork bolts onto — the roll joint's inboard arm has 0.6 mm of air behind it, and it
+  is `fork_access_bores()` in `chassis_bottom` that makes those four screws reachable at
+  all. Note where that cut lives: on the ASSEMBLED chassis, because the path crosses two
+  solids that get unioned and cutting either alone lets the union fill the other back in.
+  `DRIVER_REACH` is a breakout distance and not a key length, for a reason the docstring
+  gives. When you add a fastener, ask the three questions separately: does the hole reach,
+  does the head clear, and can a driver get to it. The
   length follows from `FOOT_CB_Z`, `FOOT_NUT_Z` and `M3_NUT_H` — if you move any of
   those, `FOOT_BOLT_L` and the BOM line in `README.md` move with them. Fixed 2026-08-31.
 - **Nothing goes into 23 < r < 34 of a joint axis over the sleeve's length.** The distal

@@ -128,10 +128,33 @@ because the same defect kept arriving by the same route — `isValid()` is happy
 screw nobody can turn, `interference()` only looks at the static body, and `rom_scan` only
 looks at what moves. A fastener whose *access* is blocked is invisible to all three.
 
-The fix is not in this file yet: four ⌀5 holes through that 2.8 mm wall, on the same ⌀14
-circle, would let a long key reach straight through from inside the tray — but that wall is
-the leg's root load path and `fea.py` decides whether it can carry them, so it is a change
-to make deliberately and not while a chassis is on the printer.
+**The fix is four ⌀6 bores per leg**, cut coaxially with the screws by
+`fork_access_bores()` and applied to the *assembled* chassis rather than to `roll_module`
+— the path crosses two solids that get unioned, the tray's own front wall at x 60.2…63 and
+the gusset's inner skin at 64.7…67.5, and cutting either one alone lets the union fill the
+other back in.
+
+They stop **exactly** on the tray's inner face, and that is not tidiness. One millimetre
+further in and the outboard bore starts eating the tray's *side* wall: its inner face is at
+`BODY_W/2 - WALL` = 43.2 and that screw's axis is at y = 43.0, so at ⌀6 the bore would
+reach y = 46 and come out tangent to the outer skin — the zero-thickness sliver this
+project has already been bitten by once. Inside the tray the front wall is full width and
+the bore is wholly within it, so there is nothing to graze.
+
+That same 0.2 mm is why `DRIVER_REACH` is a **breakout** distance, not a key length. No
+straight run of any diameter reaches the outboard screw from inside the tray: a 2.5 mm key
+on its axis is 1.05 mm inside the side wall and would want a groove down the whole length
+of it. What works is a ball end — ⌀6 around a ⌀2.5 key over 7.9 mm of bore is **23.9° of
+tilt**, inside the ~25° a ball end takes, and 20° carries the far end of the key 14 mm
+inboard over its own length. The bore is the part the CAD has to get right; the angle is
+the user's wrist.
+
+⌀6 also passes an M3 head, so the screws go in through the bores rather than being
+pre-placed in the arm and held with grease while the fork slides on.
+
+Not yet measured: this removes material from the gusset's inner skin and the tray's front
+wall, and `fea.py --all` against the previous run is what says whether the root can still
+carry the leg. Read the inter-layer SF on `hip_bracket_A` before printing a chassis.
 
 ## Geometry
 
@@ -571,7 +594,9 @@ FAQ says stalls and burns the servo.
    hubs to the servo → bolt the fork arms to the hubs (bottom arm's ⌀23 pad enters the
    case-base recess). The thrust bolts come first: once the fork is on, its spine sweeps
    over the lug. **The fork cannot go on before the servo** — its arms straddle the
-   sleeve — so check the driver reach on both arms before you commit to an order; see
+   sleeve — so its screws are always last. At the hips the four inboard ones are reached
+   from **inside the tray**, through the ⌀6 bores in the front wall, with a **ball-end**
+   hex key tilted inboard; do them with the deck off and before the battery goes in. See
    *Reaching the fork screws*, and run `mini_dog.py` for the `fork access:` line.
 4. Legs: hip bracket → thigh → shin → press the TPU foot onto the ⌀18 spigot, then the M3
    up through the foot into the nut in the ankle slot. The slot sits above the foot's top
