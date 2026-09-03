@@ -62,7 +62,8 @@ way and the case drives itself onto one thrust bolt at the back while the opposi
 leg stops it at the front; turn it the other way and the other pair does the same. The
 play is closed by geometry, not by friction — which is why there are two bolts and not
 one. Each threads into an M3 nut in a side-loaded channel in the lug, so nothing threads
-into plastic. **Fit M3 × 10 and no longer** — see the radius rule below.
+into plastic. **Fit M3 × 10 set screws** — grub screws, no head — and see the radius rule
+below, which is what the head broke.
 
 The obvious clamp is to slit the sleeve into a C and squeeze it, and it is the wrong one
 here. The −x end wall is the tube's **only** crossing of y = 0 — the cable window has
@@ -73,9 +74,34 @@ it back (0.5). The thrust clamp leaves the ring intact and costs nothing.
 
 Everything either clamp may add has to stay inside **r < 23 mm** of the joint axis: the
 distal fork's spine sweeps the annulus 23…34 over the sleeve's whole length, and the hip
-bracket's inboard web already comes to r = 22.0. The lug corner sits at 21.6, and a screw
-longer than 10 mm puts its head outside that. The ROM scan is unchanged by the clamp —
-roll ±90, pitch ±90, knee ±110 with and without it.
+bracket's inboard web already comes to r = 22.0. The lug corner sits at 21.6 and has never
+been the problem. **The screw is.**
+
+The first assembled leg bound on its own clamp, and the arithmetic reproduces it. The bolt
+is a jack, so its tip ends on the case with the case pushed fully forward — x = −9.76 —
+and an M3 × 10 therefore has its bearing face 0.65 mm proud of the lug. Add a DIN 912 cap
+head to that and the head's corner is at **r = 24.2**, inside an annulus that starts at
+23.0. The foul is not marginal and not at the edge of travel: it runs from about ±2° to
+±38° of joint rotation, a band that contains `STAND_PITCH` and that every stride crosses.
+
+Nothing is lost by deleting the head. The nut is captive in the lug, the tip presses the
+case and the reaction goes into `THRUST_SEAT`; the head bears on nothing at any point of
+that load path and is purely a driving feature. A headless M3 × 10 reaches r = 20.96 —
+inside the lug's own 21.57, so the lug goes back to being the binding term with 1.43 mm to
+spare. The ⌀3.4 clearance hole runs a millimetre past the lug's outer face, so a hex key
+still reaches the screw with the fork in place. For the record, the two alternatives: an
+ISO 7380 button head comes to 22.98, which is 0.02 mm and not a clearance, and a
+countersunk head sitting unsunk on the face comes to 23.08 and fouls.
+
+The length rule survives, at a different threshold — headless, M3 × 12 still clears by
+0.14 and M3 × 14 does not clear at all.
+
+`thrust_clear()` is that check, closed form, printed on every run as `clamp clear:`, and
+`thrust_bolts()` puts the screws into the static side of all three `rom_scan` calls so the
+boolean sweep sees them too. Neither existed before this: every printed solid passed, and
+the joint still bound, because the thing sticking out was a screw and no screw was in the
+model. The ROM scan is unchanged by the clamp itself — roll ±90, pitch ±90, knee ±110 with
+and without it.
 
 Range of motion is measured by swept boolean interference against the real solids
 (`rom_scan()` in the script), not estimated.
@@ -452,7 +478,7 @@ one `sleeve()` + one `fork()`, four `DECK_SCREWS` × 2, `CAM_FOOT_Y`, `LIDAR_N`,
 |---|---|
 | M2.5 × 6 (fork → driven hub, 4 per joint) | 48 |
 | M2.5 × 7 (fork → passive hub, 4 per joint) | 48 |
-| M3 × 10 + M3 nut (sleeve thrust clamp, 2 per joint — **not longer**) | 24 |
+| M3 × 10 **set screw** (grub, hex socket) + M3 nut (sleeve thrust clamp, 2 per joint) | 24 |
 | M3 × 30 socket head + M3 nut (foot → shin ankle) | 4 |
 | M3 × 12 + M3 nut (deck → tray bosses) | 8 |
 
@@ -471,6 +497,9 @@ one `sleeve()` + one `fork()`, four `DECK_SCREWS` × 2, `CAM_FOOT_Y`, `LIDAR_N`,
 Four of those lengths are derived rather than chosen, and three of them have a ceiling as
 well as a floor — a longer screw is not the safe direction:
 
+- **the thrust clamp, headless.** Not a length at all but a head: a cap head puts its
+  corner at r = 24.2 inside the fork spine's 23.0 and binds the joint over ±2…38°. See
+  *The thrust clamp*. Headless, the length ceiling is M3 × 12; × 14 fouls.
 - **the hub screws.** Driven: 4.0 arm + ≤2.5 hub, so 6.5 is the ceiling. Passive: 4.0 arm
   + 0.95 pedestal + ≤2.2 hub, so 7.15 is. Past the hub they bottom on the servo case,
   which the vendor FAQ says stalls and burns it. M2.5 × 7 is a rare length; a 1 mm washer
@@ -507,7 +536,9 @@ FAQ says stalls and burns the servo.
 1. Print `servo_gauge`, check a real ST3215 slides into the sleeve and the ⌀14 pattern lines up.
 2. Set servo IDs 1…12 over the bus **before** assembly (URT-1 + Feetech tool).
 3. Per joint: two M3 nuts into the thrust lug's channels → slide the servo into the sleeve
-   → run both thrust bolts in, evenly, until the case stops rocking → fit both aluminium
+   → run both thrust set screws in with a hex key, evenly, until the case stops rocking
+   (they are headless on purpose — a cap head fouls the fork spine, see *The thrust
+   clamp*) → fit both aluminium
    hubs to the servo → bolt the fork arms to the hubs (bottom arm's ⌀23 pad enters the
    case-base recess). The thrust bolts come first: once the fork is on, its spine sweeps
    over the lug.

@@ -87,9 +87,12 @@ name → (workplane, qty, note) and drives both the export loop and the BOM;
   those, `FOOT_BOLT_L` and the BOM line in `README.md` move with them. Fixed 2026-08-31.
 - **Nothing goes into 23 < r < 34 of a joint axis over the sleeve's length.** The distal
   fork's spine sweeps that annulus, and the hip bracket's inboard web already comes to
-  r = 22.0. It is the binding constraint on the sleeve thrust clamp — the lug corner sits
-  at 21.6, and it is why the fastener is specified as M3×10: a longer one puts its *head*
-  outside the radius.
+  r = 22.0. It is the binding constraint on the sleeve thrust clamp, and **screws count**:
+  the lug corner sits at 21.6 and always cleared, but an M3×10 cap head reaches 24.2 and
+  bound the first assembled leg over ±2…38° of travel. The fastener is specified headless
+  for that reason — `THRUST_HEAD_*` — and `thrust_clear()` prints the margin on every run
+  (`clamp clear:`), with `thrust_bolts()` in the static side of all three `rom_scan` calls.
+  A check over the printed solids alone cannot see this: the part sticking out is hardware.
 - **Do not slit the sleeve.** Its `-x` end wall is the tube's only crossing of y=0 — the
   cable window has already eaten the `+x` one — so a C-clamp slit there opens the whole
   sleeve-plus-link box section. This was tried and measured: `thigh_A` inter-layer SF at
