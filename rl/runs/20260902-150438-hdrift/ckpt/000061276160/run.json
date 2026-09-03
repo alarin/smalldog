@@ -1,0 +1,26 @@
+{
+  "args": {
+    "num_timesteps": 60000000,
+    "num_envs": 2048,
+    "episode_length": 500,
+    "batch_size": 256,
+    "unroll_length": 20,
+    "num_minibatches": 32,
+    "updates_per_batch": 4,
+    "learning_rate": 0.0003,
+    "entropy_cost": 0.01,
+    "discounting": 0.97,
+    "num_evals": 12,
+    "seed": 0,
+    "terrain": false,
+    "boxes": 0,
+    "no_randomize": false,
+    "mem_fraction": 0.6,
+    "no_checkpoints": false,
+    "name": "20260902-150438-hdrift",
+    "smoke": false
+  },
+  "step": 61276160,
+  "run": "20260902-150438-hdrift",
+  "note": "intermediate checkpoint; the run's own run.json has the history and the actuator note"
+}
