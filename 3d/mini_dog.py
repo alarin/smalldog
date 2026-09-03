@@ -1822,9 +1822,9 @@ def main():
     bad = {k: v for k, v in acc.items() if v > INTERF_TOL}
     for (joint, side), v in bad.items():
         print(f"  !! FORK ACCESS  {joint}/{side} arm: {v:.0f} mm3 of the driver's"
-              f" {DRIVER_REACH:.0f} mm run is solid - those four screws cannot be fitted")
+              f" {DRIVER_REACH:.1f} mm run is solid - those four screws cannot be fitted")
     if not bad:
-        print(f"  fork access: all six arms break out within {DRIVER_REACH:.0f} mm"
+        print(f"  fork access: all six arms break out within {DRIVER_REACH:.1f} mm"
               f" (roll/passive through @{FORK_ACCESS_D:.0f} bores)")
     v = gps_clear()
     if v > INTERF_TOL:
