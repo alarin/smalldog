@@ -137,17 +137,29 @@ def wedge(pts, z0, z1):
 
 
 def hub_face(z0, z1):
+    """the disc that lands on the driven hub's outer face.  The bolt pattern is NOT in
+    here - see hub_bolts()."""
+    return cyl(ARM_R, z1-z0, (0, 0, z0))
+
+
+def hub_bolts(a, z0):
     """the driven hub's bolt pattern, exactly as fork() cuts it: @6.4 over the central
     output-shaft screw so a driver still reaches it, and 4 x M3 clearance on the @14
     circle.  The screws are M3 x 6 and thread into the stock aluminium - see the note
     in fork(); a longer one bottoms out on the case and the vendor FAQ says that burns
-    servos."""
-    d = cyl(ARM_R, z1-z0, (0, 0, z0))
-    d = d.cut(cyl(3.2, 40, (0, 0, z0-10)))
+    servos.
+
+    Cut LAST, after every union.  The beam leaves the disc along +X and its root edge
+    lies on x = 0, so it runs straight over the 0 deg screw, over half of each of the
+    90/270 ones and over half the central bore - and a pattern cut into the disc before
+    that union is simply filled back in.  It shipped that way: of the four screws one
+    was open, two were D-shaped slivers and one was solid, so neither arm could be
+    bolted to the hub at all.  bolt_paths() below is the check that says so."""
+    a = a.cut(cyl(3.2, 40, (0, 0, z0-10)))
     for i in range(HUB_N):
         th = math.radians(90*i)
-        d = d.cut(cyl(M3_CLR, 40, (HUB_BC/2*math.cos(th), HUB_BC/2*math.sin(th), z0-10)))
-    return d
+        a = a.cut(cyl(M3_CLR, 40, (HUB_BC/2*math.cos(th), HUB_BC/2*math.sin(th), z0-10)))
+    return a
 
 
 # =====================================================================================
@@ -219,6 +231,7 @@ def bench_arm(reach, bolt_d):
     x0, x1 = reach-TIP_L, reach+TIP_R
     a = a.union(wedge([(0.0, -ROOT_W/2), (x0, -TIP_W/2), (x1, -TIP_W/2),
                        (x1, TIP_W/2), (x0, TIP_W/2), (0.0, ROOT_W/2)], z0, z1))
+    a = hub_bolts(a, z0)                                      # after the union, always
     a = a.cut(cyl(bolt_d/2, ARM_T+2, (reach, 0.0, z0-1)))     # the weight bolts here
     return a
 
@@ -240,6 +253,50 @@ def axis_inertia(shape, rho):
     return mp.m, (mp.I[2][2] + mp.m*(cx*cx + cy*cy)) * 1e-6
 
 
+def bolt_paths():
+    """Every fastener path through these parts, probed against the real solid.
+
+    `3d/CLAUDE.md` asks three separate questions of a new fastener - does the hole reach,
+    does the head clear, can a driver get to it - and the bench is the easy case for two
+    of them: the arm's screw heads face open air over a full turn, and the clamp screws
+    come in from the lug's exposed -x end.  The first question is the one that was wrong,
+    and it is the one nothing else here can see: a hole cut into a solid that a later
+    union fills back in leaves isValid() True, checks() green and the render unchanged.
+    So probe the holes themselves, the way mini_dog's foot_bolt_check() does.
+
+    Returns (lines, bad)."""
+    lines, bad = [], []
+    z0 = HUB_TOP_Z
+    for name, reach, bolt_d in (("bench_arm_s", ARM_S_R, ARM_S_BOLT),
+                                ("bench_arm_l", ARM_L_R, ARM_L_BOLT)):
+        a = PARTS[name][0].val()
+        probes = [("centre @6.4", cyl(3.2, ARM_T, (0, 0, z0))),
+                  ("tip bolt", cyl(bolt_d/2, ARM_T, (reach, 0.0, z0)))]
+        for i in range(HUB_N):
+            th = math.radians(90*i)
+            probes.append((f"hub screw {90*i} deg",
+                           cyl(M3_CLR, ARM_T, (HUB_BC/2*math.cos(th),
+                                               HUB_BC/2*math.sin(th), z0))))
+        worst = 0.0
+        for what, pr in probes:
+            v = a.intersect(pr.val()).Volume()
+            worst = max(worst, v)
+            if v > 0.01:
+                bad.append(f"!! BLOCKED  {name} {what}: {v:.2f} mm3 of solid in the hole")
+        lines.append(f"{name}: {len(probes)} paths, worst {worst:.2f} mm3")
+
+    st = PARTS["bench_stand"][0].val()
+    worst = st.intersect(md.thrust_bolts().val()).Volume()
+    for sg in (1, -1):                                  # and the nut goes in sideways
+        ns = md.nut_slot((-S_AX-SLEEVE_W-THRUST_L+md.THRUST_SEAT, sg*md.THRUST_Y, 0),
+                         (0, sg, 0), up=(1, 0, 0), run=md.THRUST_YL-md.THRUST_Y+2.0)
+        worst = max(worst, st.intersect(ns.val()).Volume())
+    if worst > 0.01:
+        bad.append(f"!! BLOCKED  bench_stand clamp screw or nut channel: {worst:.2f} mm3")
+    lines.append(f"bench_stand: 2 clamp screws + 2 nut channels, worst {worst:.2f} mm3")
+    return lines, bad
+
+
 def checks():
     """The three things that can silently be wrong here, checked the way mini_dog.py
     checks `body clear:` - a print is expensive and none of this is visible in a render:
@@ -250,7 +307,8 @@ def checks():
                  outside it.  If the stand ever touched one, the servo could not turn.
       the swing  the whole layout rests on the arm and the stand never sharing a z.
                  Assert it against the real solids over a full turn rather than trust
-                 the arithmetic in the docstring."""
+                 the arithmetic in the docstring.
+      the bolts  every hole, probed through the real solid - see bolt_paths()."""
     st = PARTS["bench_stand"][0].val()
     bad = []
     for name, (wp, _, _) in PARTS.items():
@@ -264,6 +322,9 @@ def checks():
         bad += [f"!! {what.upper()} FOULED  {v:.1f} mm3"] if v > 1.0 else []
     print(f"\n  bore clear: {bore:.1f} mm3   hubs clear: {hub:.1f} mm3   "
           f"swing clear over 360 deg: {worst:.1f} mm3")
+    lines, more = bolt_paths()
+    bad += more
+    print("  bolt paths:  " + "   ".join(lines))
     for b in bad:
         print("  " + b)
     return not bad

@@ -40,7 +40,7 @@ That last row drove the whole architecture.
 proximal link ──► SLEEVE : rectangular tube around the servo case, open on the axis.
                           Reaction torque goes into the 45×35 flats, not into screws.
                           Two M3 thrust bolts through its back wall take up the play.
-distal link   ──► FORK   : two arms lying on the two aluminium hubs, 4 × M2.5 each.
+distal link   ──► FORK   : two arms lying on the two aluminium hubs, 4 × M3 each.
                           The arms straddle the sleeve, so the servo is also captured axially.
 ```
 
@@ -460,16 +460,17 @@ see it.
 | part | qty | g |
 |---|---|---|
 | `bench_stand` | 1 | 140 — sleeve + column, servo axis 150 mm above the base |
-| `bench_arm_s` | 1 | 6.0 — light arm, reach 45 mm |
-| `bench_arm_l` | 1 | 9.5 — heavy arm, reach 90 mm |
+| `bench_arm_s` | 1 | 5.8 — light arm, reach 45 mm |
+| `bench_arm_l` | 1 | 9.4 — heavy arm, reach 90 mm |
 | `servo_gauge` | 1 | 11.8 — the same gauge as above, and still the thing to print first |
 
 One plate, 167 g, 6 h 04 on a Qidi Q2 (0.4 nozzle, 0.2 mm, 4 walls, 30 %). The layout's
 one load-bearing idea is that the arm lives in the 4 mm slab `HUB_TOP_Z` … `+ARM_T` and
 every part of the stand stays below `SLEEVE_LEN/2` — 3.8 mm of axial gap, which is what
 lets the arm swing a full circle over a stand of any shape. `bench_rig.py` asserts that
-against the real solids on every run, along with the bore and the hubs, and prints the
-`sweep.py` command line for each arm. See `robot/README.md`, "The bench, in order".
+against the real solids on every run, along with the bore, the hubs and every fastener
+path (`bolt_paths()` — the arm's hub pattern is cut *after* the beam is unioned on, and
+that check is what says so), and prints the `sweep.py` command line for each arm. See `robot/README.md`, "The bench, in order".
 
 Sliced in OrcaSlicer 2.4.2 for an Elegoo Neptune 4 Max (0.4 nozzle, 0.2 mm layer, 0.8 mm
 line, gyroid) at the settings above — G-code and the per-part figures are in

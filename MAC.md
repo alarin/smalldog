@@ -1,4 +1,4 @@
-# The mac's queue — CAD changes that have never been run
+# The mac's queue — worked 2026-09-03
 
 Three machines share this repository and nothing else (`rl/CLAUDE.md`, "The machine
 split"):
@@ -9,162 +9,115 @@ split"):
 | Windows + WSL2, RTX 3070 | training — `rl/`, plus the pure-Python MuJoCo sim. See [`WSL.md`](WSL.md) |
 | an Orange Pi 5 Pro | the robot — `robot/runtime`, step 7 |
 
-`WSL.md` is a permanent runbook for its machine. **This file is not**: it is a queue. Five
-commits changed `3d/` from a session that had no CadQuery, so nothing below has been
-through a single boolean. Two of them change printed geometry. Work the ladder in
-`3d/CLAUDE.md`, "Verifying a change" — the order is load-bearing — and delete the sections
-here as they come back green.
+Five commits changed `3d/` from a session that had no CadQuery. The ladder in
+`3d/CLAUDE.md`, "Verifying a change", has now been run against all five. **Four of them are
+green. `7e30e75` is not, and it never could have been** — see the last section, which is
+the only part of this file still live.
 
-## What is queued, and what each one risks
+## What the ladder said
 
-| commit | what it did | printed geometry? |
+| step | result |
+|---|---|
+| 0 baseline | `fea.py --all` at `b4d7e4a`, kept for step 4 |
+| 1 `mini_dog.py` | **found `chassis_bottom` at −0.3 cm³. Fixed** — see below. After the fix: every part valid, ROM unmoved at −90/+90, −90/+90, −110/+110, `body clear`, `gps clear`, `imu clear +0.80`, `foot bolt` ok |
+| | `clamp clear: M3 x 10 set screw reaches r = 21.57 vs the spine's 23.0 (+1.43 mm)` — exactly as predicted |
+| 2 bboxes | not one part's outline moved |
+| 3 render | three PNGs; the hip was measured rather than eyeballed, and that is where the live defect came from |
+| 4 `fea.py --all` | **no inter-layer SF dropped anywhere.** `hip_bracket_A` improved (stand4 46.3 → 46.7, stand2 23.1 → 23.3, land3g 7.7 → 7.8, stall 2.4 → 2.4); `thigh_A` and `shin_A` identical to a decimal. The bigger bearing area wins, as argued |
+| 5 `export_sim.py --check` | `4 feet down, upright +1.00`, base z 187 mm, terrain the same, camera axis (+0.99 −0.00 +0.10), urdf/mjcf leg mass agree |
+| 6 ROS 2 + consumers | regenerated; `check_model.py` and `--terrain` both **0 FAIL, 4 warn** (all pre-existing "GUESSED" warnings); `walk.py --dry-run --profile` 1050 ticks at 50 Hz, 0 late; `calib/safety/loop --selftest` all ok |
+| 7 `bench_rig.py` | passes |
+
+Mass came out **−4.15 g**, not the −1.2 g this file predicted: the hub holes are 1.3 g of
+it and the access bores are 2.9 g, so "plus a little from the access bores" was the wrong
+way round. 2.499 → 2.495 kg.
+
+**The mass control was run, because −4 g is inside the band `3d/CLAUDE.md` calls
+hypersensitive.** Same seed, the unchanged model beside the changed one:
+
+| | before, 2.499 kg | after, 2.495 kg |
 |---|---|---|
-| `93f9e93` | clamp screw is now headless; `thrust_bolts()` into all three `rom_scan` calls; `thrust_clear()` | no — hardware and checks only |
-| `12e9ef1` | the hub is tapped **M3**, not M2.5: fork clearance holes ⌀2.9 → ⌀3.4 | **yes**, all 12 forks |
-| `a52f843` | `fork_access()` — a driver probe on each fork screw's axis | no — a check only |
-| `7e30e75` | `fork_access_bores()` — ⌀6 through the tray front wall and the gusset skin | **yes**, `chassis_bottom` |
-| `b4d7e4a` | the fastener BOM, recounted off the geometry | no — docs |
+| flat trot | 781.7 mm | 782.4 mm |
+| course | 5/7, corridor 2892 mm | 5/7, corridor 2893 mm |
+| terrain, seeds 7…12 | 649 ±48 mm | 625 ±89 mm |
 
-All of it is on `claude/equipment-delivery-timeline-4gp7lq`.
+The flat arm moved 0.7 mm and the course is the same obstacle count and the same
+millimetre, so the cliff was not crossed. The terrain sweep's two means differ by 24 mm
+against spreads of 48 and 89 — the same distribution, which is what indistinguishable has
+to look like.
 
-## Step 0 — take the baseline first, or step 4 is worthless
+## The defect that was fixed: `chassis_bottom` was a −257 mm³ sliver
 
-`fea.py` is a comparison, not an absolute: the number that matters is whether the
-inter-layer SF **dropped**, and the changes are already committed, so the "before" has to
-come out of git. `b4d7e4a` is the last commit whose `mini_dog.py` is the old one.
+`7e30e75` cut its four ⌀6 bores *before* the rear connector pads were unioned on, and the
+pads start at exactly the plane the bores end on — `xw+WALL` = −60.2 against the bores'
+`BODY_L/2-WALL` = 60.2. They share **no volume at all**; the pad's inner face was welded
+straight onto the bore's circular opening, and OCC's fuse on that contact returned an
+inverted solid. `isValid()` said True, so nothing downstream noticed: 240 cm³ of chassis
+became a 2.5 × 14.9 × 6.9 mm sliver, the ROM read `hip_roll +0 .. +0`, every
+`interference()` pair fired at once, and the robot came out 280 g light.
 
-```bash
-git worktree add /tmp/smalldog-base b4d7e4a
-cd /tmp/smalldog-base/3d && ~/smalldog/3d/.venv/bin/python fea.py --all | tee /tmp/fea-before.txt
-```
+The cut now happens last, after everything that adds material near it, and `build()` fails
+a part whose volume is not positive. Both are written up in `3d/CLAUDE.md`.
 
-The worktree has no `.venv` of its own — run the main checkout's interpreter from inside
-it, which is why the paths above are absolute. Keep `/tmp/fea-before.txt`.
+## Still live — `7e30e75`'s bores do not do what they were cut to do
 
-## Step 1 — `.venv/bin/python mini_dog.py`
+Measured on the repaired solid, front-left hip, ⌀2.5 key swept over tilt and direction:
 
-Every part valid, and then read four lines. Two are new and two must not have moved.
+* **The deck boss at (±52, ±38) stands in front of three of the four screws.** It is
+  `DECK_BOSS_R` = 5.8 and full height, z −22…+25, and its outer face is at x = 57.8 — 2.4 mm
+  inboard of the bore mouth at 60.2. On the screw axes it overlaps the key by 5.05 mm at
+  y = 36 (both z = ±7) and 2.05 mm at y = 43. Only the y = 29 screw is clear, and it is
+  clear straight-on with a 25 mm key, 0.00 mm³ blocked. `7e30e75` checked the bores against
+  the sleeve, the battery cradle and the BMS bay; the bosses are the one thing directly in
+  line and they were not checked.
+* **The outboard bore breaks out through the side of the robot.** Its axis is at y = 43 and
+  at ⌀6 it reaches y = 46.00 — the tray's outer skin, exactly. Not "tangent inside the wall
+  where it is full width": the front wall's *outer* surface is at y = 46 for the bore's whole
+  2.8 mm of x. Measured at x = 61.6, the skin left between bore and outside is **0.00 mm at
+  z = 0**, 0.04 at z = ±0.5, 0.17 at ±1.0, 0.40 at ±1.5. That is an open slot with a knife
+  edge, not a tunnel.
+* **An M3 head cannot pass that wall on that axis at all.** ⌀5.5 centred at y = 43 reaches
+  45.75 against the skin at 46 — 0.25 mm, at zero clearance. So "⌀6 also passes an M3 head,
+  so the screws go in this way" is false for the screw that motivated the bores.
+* **The bore's tilt budget is half what the commit claims.** 23.9° = atan(3.5/7.9) assumes
+  the key pivots at the bore's middle. It pivots at the *screw*, at the far end, so the
+  mouth-end swing is (D−d)/2 over L: atan(1.75/7.9) = **12.5°**. Measured, the key is clean
+  in the bore to 12° and fouling by 16°. 12.5° is not enough to clear the tray's side wall,
+  which the key must cross for its first ~4.7 mm.
 
-**New, and they are the point of the whole batch:**
+`fork_access()` prints `all six arms break out within 7.5 mm` through all of this, because
+`DRIVER_REACH` = 7.5 against a 7.9 mm bore keeps the probe **inside the bore** — by 0.4 mm,
+as `7e30e75` itself notes. It therefore tests that the bore exists and nothing else. It is
+a check that passes on a screw nobody can turn, which is the exact failure mode
+`foot_bolt_check()` and `thrust_clear()` were written to end.
 
-```
-clamp clear: M3 x 10 set screw reaches r = 21.57 vs the spine's 23.0 (+1.43 mm)
-fork access: all six arms break out within 7.5 mm (roll/passive through @6 bores)
-```
+Three ways out, and picking one is a design decision, not a verification one:
 
-`r = 21.57` is the lug, not the screw — headless, the screw comes to 20.96 and the lug is
-the binding term again, which is the design intent restored. A `!! THRUST CLAMP` line means
-`THRUST_HEAD_*` disagrees with the fastener; a `!! FORK ACCESS roll/passive` line means the
-bores did not land where the screws are, and that is the one to debug first because the
-legs cannot be bolted on without them.
+1. **move the deck bosses.** `DECK_SCREWS`' outer pair at x = ±52 is the only thing in the
+   way of two of the three; y = 38 → 30 or so would clear y = 36 and y = 43 both. Cheap in
+   CAD, but it moves a deck screw and its nut slot, and the mid pair's clipping comment in
+   `chassis_bottom` says that pattern has already been fought over once;
+2. **give up on driving those screws through the tray** and pre-place them in the fork arm,
+   which makes the bore a key-clearance hole rather than a head-clearance one — but 12.5° of
+   tilt still does not clear the side wall for the outboard one, so this fixes three
+   screws, not four;
+3. **change what the fork bolts to at the roll joint** so the inboard arm's screws are not
+   blind. This is the honest one and the expensive one.
 
-**Must be unchanged:**
-
-```
-hip_roll   free  -90 ..  +90        body clear: ...
-hip_pitch  free  -90 ..  +90        imu clear: ...
-knee       free -110 .. +110        foot bolt: ...  gps clear: ...  lidar clear: ...
-```
-
-The ROM is the one to watch. `thrust_bolts()` is now in the static side of all three scans,
-so if a clamp screw fouls anything the ROM is where it shows — and the ROM feeds
-`joint_limits_rad` in `bom.json`, which feeds the gait's clamps and `robot/runtime`'s soft
-limits. A moved ROM is not a cosmetic change.
-
-Total mass should come back **~1.2 g lighter** than 2.496 kg: 96 hub holes going ⌀2.9 → ⌀3.4
-is 0.95 cm³, plus a little from the access bores.
-
-## Step 2 — bboxes in the same table
-
-Nothing here moved a part's outline. Any bbox change is a bug, not a result.
-
-## Step 3 — `.venv/bin/python render.py`, and actually look
-
-Look at the hip specifically: four ⌀6 bores now break through the tray's front wall on the
-outboard side of each roll cradle, and the outboard one of the four sits 0.2 mm off the
-tray's side wall. If it has eaten into the side wall's outer skin, that is a tangency and
-it will read as a knife edge in the render. It should not — the bores stop exactly on the
-tray's inner face for that reason — but this is the cheapest place to catch it.
-
-## Step 4 — `.venv/bin/python fea.py --all`, against `/tmp/fea-before.txt`
-
-**This is the gate.** Judge on the **inter-layer** SF, the second of the `SF xy / z` pair.
-
-The change under test is the hub holes in the fork arms, and `hip_bracket_A` / `thigh_A` /
-`shin_A` are all fixed at exactly those holes (`hub_clamp()`), so the case is well posed.
-Two effects that point opposite ways, which is why this is measured and not argued:
-
-* the ligaments shrink — 2.35 → 2.10 mm from the hole to the arm's central bore, 5.05 →
-  4.80 mm out to the rim;
-* the bearing area grows — 10.0 → 12.0 mm² per screw, so bearing stress on the PETG under
-  the same joint torque falls 17 %, and the screw goes M2.5 → M3 in shear.
-
-Neutral-to-better is the expectation. **Any drop in inter-layer SF is a regression** — fix
-it or report the before/after explicitly, per `3d/CLAUDE.md`.
-
-### The gap in this step, and it is a real one
-
-`fea.py --all` covers `shin_A`, `thigh_A`, `hip_bracket_A` and **nothing else**.
-`part_specs()` has no entry for `chassis_bottom`, so **the access bores are not covered by
-any FEA case in this repository** — and they are cut into the root gusset's inner skin and
-the tray's front wall, which is the leg's root load path.
-
-Two honest ways forward, and it is a judgement call:
-
-1. add a `chassis_bottom` spec to `part_specs()` — fixed at the deck bosses, loaded at the
-   roll sleeve — and run it before and after. It is the right answer and it is an hour;
-2. accept it and watch the printed part at the hip, on the grounds that the bores sit in a
-   2.8 mm internal diaphragm well inside a 63 × 30.7 mm block whose outer walls carry the
-   load. Plausible, unmeasured.
-
-Do not print four chassis and find out.
-
-## Step 5 — `.venv/bin/python export_sim.py --check`
-
-Rebuilds `out/sim/` and stands the robot up in MuJoCo for 3 s. Pass is
-`4 feet down, upright +1.00` and a base height near the CAD stance. The masses moved by
-~1.2 g so the numbers will not be bit-identical to the last run; the stance should be.
-
-## Step 6 — regenerate the ROS 2 description, then the consumers
-
-```bash
-cd ros2 && ../3d/.venv/bin/python smalldog_description/scripts/generate_model.py
-```
-
-Masses and inertias moved, so `robot_params.json` moves with them, and three things read
-it:
-
-```bash
-cd rl   && python checks/check_model.py && python checks/check_model.py --terrain
-cd ros2 && ../3d/.venv/bin/python tools/standalone_sim.py --headless
-cd robot && python runtime/walk.py --dry-run --profile
-```
-
-The last one is the new 50 Hz runtime and needs no hardware — it reads the same
-`robot_params.json` and will say so if the joint order or the limits moved under it. Its
-own selftests (`runtime/calib.py`, `runtime/safety.py`, `runtime/loop.py`, each
-`--selftest`) are pure stdlib and run anywhere.
-
-## Step 7 — the bench fixture, which also changed
-
-```bash
-cd 3d && .venv/bin/python bench_rig.py
-```
-
-`hub_face()` follows the hub to M3, so its own asserts (bore, hubs, swing clearance) have
-to pass again. Not part of the robot — no FEA, no sim consumer — but `robot/bench` cannot
-run without it.
+Whichever it is, `fork_access()` has to stop probing only inside the bore — the probe needs
+to continue into the tray until it reaches open air, and then it will fail until the
+geometry is fixed. A red line that is true beats a green one that is not.
 
 ## Hardware notes that go with this batch
 
 * **Thrust clamp: M3 × 10 set screws**, not cap screws. A cap head reaches r = 24.2 into an
   annulus the fork spine sweeps from 23.0 and binds the joint over ±2…38°. Found on the
-  bench, then reproduced in the arithmetic.
+  bench, then reproduced in the arithmetic. Verified here: `clamp clear` reads +1.43 mm.
 * **Hub screws are M3 × 6 driven / M3 × 7 passive.** Ceilings 6.5 and 7.15; past the hub
   they bottom on the case and the vendor FAQ says that burns servos. A legs plate already
   printed does **not** need reprinting — the hole only grew, so drill the eight per joint
   out to 3.3–3.4.
-* **The hip's inboard fork screws are fitted from inside the tray**, through the ⌀6 bores,
-  with a **ball-end** hex key tilted inboard — deck off, before the battery goes in. There
-  is no straight run to the outboard one of the four and there cannot be; see
-  `3d/README.md`, "Reaching the fork screws".
+* ~~**The hip's inboard fork screws are fitted from inside the tray**, through the ⌀6 bores,
+  with a **ball-end** hex key tilted inboard.~~ **Not true as built** — see the section
+  above. One of the four is reachable; three are behind a deck boss, and the outboard one
+  has no wall left. Do not print a chassis against this note.

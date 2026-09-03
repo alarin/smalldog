@@ -157,10 +157,10 @@ cd 3d && .venv/bin/python bench_rig.py       # -> out/bench/{step,stl} + the num
 
 | part | g | why |
 |---|---|---|
-| `servo_gauge` | 11.8 | **print this one alone first and stop.** It is half a sleeve with a hub arm: check that a real ST3215 drops into the bore, and that the arm's four M2.5 land on the hub, before spending five hours on a stand built out of the same measured numbers. |
+| `servo_gauge` | 11.8 | **print this one alone first and stop.** It is half a sleeve with a hub arm: check that a real ST3215 drops into the bore, and that the arm's four M3 land on the hub, before spending five hours on a stand built out of the same measured numbers. |
 | `bench_stand` | 140 | sleeve + the two M3 thrust bolts + a column; axis 150 mm above the base |
-| `bench_arm_s` | 6.0 | light arm, reach 45 mm — the direct `J_m` measurement |
-| `bench_arm_l` | 9.5 | heavy arm, reach 90 mm — the holds, and the second free swing |
+| `bench_arm_s` | 5.8 | light arm, reach 45 mm — the direct `J_m` measurement |
+| `bench_arm_l` | 9.4 | heavy arm, reach 90 mm — the holds, and the second free swing |
 
 One plate, **167 g, 6 h 04** on a Q2 at 0.2 mm / 0.4 nozzle / 4 walls / 30 %.
 5.8 g of that is support and it is only in two places — inside the gauge (3.5 g)

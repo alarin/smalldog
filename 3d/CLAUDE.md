@@ -168,8 +168,23 @@ name → (workplane, qty, note) and drives both the export loop and the BOM;
   the pads. Moving `DECK_T`, `BATT_H`, the deck window or `IMU_TAB_T` moves one of those
   two walls; the build prints the remaining gap on every run, and it is allowed to be
   small but never negative.
-- `build()` checks `shape.isValid()` per part; an `!! INVALID` line in the output is a
-  failure, not a warning.
+- **A boolean that fails on a degenerate contact comes back INVERTED, not broken, and
+  `isValid()` still says True.** This is the OCC silent-failure note above generalised off
+  the shin lofts, and it shipped: `fork_access_bores()` cut its four @6 bores before the
+  rear connector pads were unioned on, and those pads start at exactly the plane the bores
+  end on - `xw+WALL` = -60.2 against the bores' `BODY_L/2-WALL` = 60.2. They share **no
+  volume at all**; the pad's inner face is welded straight onto the bore's circular
+  opening, and that contact alone was enough. `chassis_bottom` came back at **-257 mm3**,
+  a 2.5 x 14.9 x 6.9 mm sliver where 240 cm3 should be, and because the volume was negative
+  rather than the shape invalid *nothing downstream noticed*: `isValid()` passed, the ROM
+  scan read `hip_roll +0 .. +0`, every `interference()` pair fired at once, and the total
+  mass came out 280 g light. The cure is ordering - **cut a through-path after everything
+  that adds material near it**, not before - and `build()` now fails a part whose volume is
+  not positive, which is the check that names it in one line instead of five confusing ones.
+  Read `!! INVALID` on a part you have just given a new hole as "a boolean inverted", not
+  "the geometry is subtly wrong". Fixed 2026-09-03.
+- `build()` checks `shape.isValid()` **and `Volume() > 0`** per part; an `!! INVALID` line
+  in the output is a failure, not a warning.
 - **Every model change is re-checked for strength.** Any edit to `mini_dog.py` — a constant
   in the parameter block just as much as a part function — is unfinished until
   `.venv/bin/python fea.py --all` has been run and its safety factors compared against the

@@ -917,13 +917,6 @@ def chassis_bottom():
     rm = roll_module()
     for f in (lambda w: w, mirY, mirX, lambda w: mirX(mirY(w))):
         s = s.union(f(rm))
-    # Driver access to the four inboard fork screws on every hip_bracket.  Without these
-    # they are not hard to fit, they are impossible: the arm's outer face is 0.6 mm off
-    # the root gusset and the fork can only go on after the servo is in its bore, so those
-    # screws are always last and always blind.  See README, "Reaching the fork screws".
-    ab = fork_access_bores()
-    for f in (lambda w: w, mirY, mirX, lambda w: mirX(mirY(w))):
-        s = s.cut(f(ab))
     # 6x 21700 cradle: two layers of three, cells along X, low and central.  Four fins on
     # BATT_PITCH, so each of the three channels comes out exactly CELL_D+CELL_FIT wide.
     for i in range(4):
@@ -982,6 +975,24 @@ def chassis_bottom():
     ky, kl, kd = CAM_KEY                      # ... and the pocket its far end keys into
     s = s.cut(bxc(CAM_FOOT_X-3.0-CLR, CAM_FOOT_X+3.0+CLR, ky-kl/2-CLR, ky+kl/2+CLR,
                   CAM_LEDGE-kd-CLR, CAM_LEDGE+1.0))
+    # Driver access to the four inboard fork screws on every hip_bracket.  Without these
+    # they are not hard to fit, they are impossible: the arm's outer face is 0.6 mm off
+    # the root gusset and the fork can only go on after the servo is in its bore, so those
+    # screws are always last and always blind.  See README, "Reaching the fork screws".
+    #
+    # LAST, and that is not tidiness either.  These bores end exactly on the tray's inner
+    # face at x = +-60.2, and the rear connector pads are unioned on starting from exactly
+    # that plane - the XT30 pad spans y 16..34, z +-6.3, and the rear bore at y = 29 opens
+    # inside it.  They share no volume at all: the pad's inner face is welded straight onto
+    # the bore's circular opening, and OCC's fuse on that degenerate contact returned a
+    # solid of volume -257 mm3.  isValid() said True, so nothing downstream noticed - the
+    # whole chassis collapsed to a 2.5 x 14.9 x 6.9 mm sliver, the ROM scan read hip_roll
+    # as +0..+0, and every interference pair fired at once.  Cut after everything that
+    # adds material and the union never sees a bored face.  (build() now also fails a part
+    # whose volume is not positive, which is the check that would have named this.)
+    ab = fork_access_bores()
+    for f in (lambda w: w, mirY, mirX, lambda w: mirX(mirY(w))):
+        s = s.cut(f(ab))
     return s.cut(env_all())
 
 # =====================================================================================
@@ -1746,7 +1757,11 @@ def main():
     print("\n  part                qty   volume   est.mass    print bbox (mm)")
     for name, (wp, qty, note) in PARTS.items():
         shp = wp.val()
-        ok = shp.isValid()
+        # Volume, not just isValid().  A boolean that fails on a degenerate contact - two
+        # coincident faces, a tangency - comes back inverted rather than broken: OCC raises
+        # nothing and isValid() still says True, and the part is then a sliver with negative
+        # volume.  See chassis_bottom's fork_access_bores() note for the one that shipped.
+        ok = shp.isValid() and shp.Volume() > 0.0
         cq.exporters.export(wp, os.path.join(OUT, "step", f"{name}.step"))
         ax, ang = PRINT_ORIENT[name]
         pw = wp.rotate((0,0,0), ax, ang) if ang else wp
