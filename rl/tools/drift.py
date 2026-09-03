@@ -109,7 +109,7 @@ def rollout(seed):
 
 print(f"{RUN}   {SEEDS} seed(s) x {SECONDS:g} s, commanded vx {CMD[0]:g} m/s")
 fin_x, fin_y, fin_h, fin_s, fell = [], [], [], [], 0
-A0 = None
+A0 = None; ACTS = []
 for s in range(SEEDS):
     t, X, Y, TH, U, V, YR, A, ok = rollout(s)
     if not ok or len(t) < 20:
@@ -118,6 +118,7 @@ for s in range(SEEDS):
     slip = np.cumsum(V * np.cos(TH)) * dt
     fin_x.append(X[-1] * 1000); fin_y.append(Y[-1] * 1000)
     fin_h.append(head[-1] * 1000); fin_s.append(slip[-1] * 1000)
+    ACTS.append(A)
     if s == 0:
         A0 = A
         print(f"\nseed 0, unperturbed:")
@@ -136,6 +137,35 @@ print(f"  travelled x   {np.mean(fin_x):+8.0f}{sd(fin_x)} mm")
 print(f"  world y       {np.mean(fin_y):+8.0f}{sd(fin_y)} mm")
 print(f"    of which heading {np.mean(fin_h):+8.0f}{sd(fin_h)} mm")
 print(f"    of which slip    {np.mean(fin_s):+8.0f}{sd(fin_s)} mm")
+
+# Mirror symmetry. A straight-ahead command is symmetric under y -> -y and the
+# robot is too (model.py places the four hips as translated copies at +-36 mm
+# with identity quaternions, and check below: leg masses and mirrored ipos agree
+# to 0.000 g / 0.000 mm, stance CoM y is -0.03 mm). So the time-averaged policy
+# should be symmetric, and any residual is the policy leaning of its own accord.
+#
+# The sign convention is the trap. Reflecting through the x-z plane sends an
+# axial vector to (-wx, +wy, -wz), and every joint axis here is +x for roll and
+# +y for pitch and knee, in bodies that are NOT rotated. So symmetry demands
+#
+#     roll        a[left] = -a[right]      residual = a[left] + a[right]
+#     pitch/knee  a[left] = +a[right]      residual = a[left] - a[right]
+#
+# Read the raw means without that and an opposite-signed roll pair looks like a
+# dramatic lean when it is the one thing that is behaving. That mistake was made
+# here, out loud, before this block was written.
+print("\nmirror residual, mean over seeds (0 = symmetric):")
+res = {}
+for pair in (("fl", "fr"), ("rl", "rr")):
+    for kind in ("roll", "pitch", "knee"):
+        il = names.index(f"{pair[0]}_{kind}"); ir = names.index(f"{pair[1]}_{kind}")
+        vals = [A[:, il].mean() + (A[:, ir].mean() if kind == "roll" else -A[:, ir].mean())
+                for A in ACTS]
+        res[f"{pair[0]}/{pair[1]} {kind}"] = (float(np.mean(vals)), float(np.std(vals)))
+for k, (mu, sg) in sorted(res.items(), key=lambda z: -abs(z[1][0])):
+    bar = "#" * min(40, int(abs(mu) * 100))
+    print(f"    {k:<16}{mu:+.4f}" + (f" +- {sg:.4f}" if len(ACTS) > 1 else "")
+          + f"   {bar}")
 
 print("\nmean action per joint, seed 0 (policy output, before scaling):")
 for n, m in sorted(zip(names, A0.mean(axis=0)), key=lambda z: z[0]):
