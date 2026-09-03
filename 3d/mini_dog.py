@@ -27,7 +27,12 @@ OUT  = os.path.join(HERE, "out")
 S_L, S_W, S_H = 45.22, 24.72, 35.00   # case: length x width x height(along the axis)
 S_AX          = 10.11                 # axis offset from the output-side end face
 HUB_D         = 19.20                 # both aluminium hub plates
-HUB_BC        = 14.00                 # 4x M2.5 clearance holes, at 0/90/180/270 deg
+HUB_BC        = 14.00                 # 4x HUB_BOLT_D clearance holes, at 0/90/180/270
+HUB_BOLT_D    = 3.00                  # M3, and this one is measured on a real hub rather
+                                      # than read off the vendor STEP, which says @2.5 and
+                                      # is wrong.  The BOLT CIRCLE is right - the printed
+                                      # gauge dropped onto the real hub before this was
+                                      # found - so only the hole size and the screw move.
 HUB_N         = 4
 HUB_TOP_Z     = +20.30                # driven-hub outer face  (case top  +17.50)
 HUB_BOT_Z     = -16.95                # passive-hub outer face (case base -17.50, recessed)
@@ -687,7 +692,7 @@ def hub_plate(top=True):
         h = h.cut(cyl(HUB_CTR_D/2, HUB_T_BOT+2, (0,0,z0-1)))
     for i in range(HUB_N):
         th = math.radians(90*i)
-        h = h.cut(cyl(2.50/2, 12, (HUB_BC/2*math.cos(th), HUB_BC/2*math.sin(th), z0-1)))
+        h = h.cut(cyl(HUB_BOLT_D/2, 12, (HUB_BC/2*math.cos(th), HUB_BC/2*math.sin(th), z0-1)))
     return h
 
 def hubs():
@@ -784,7 +789,7 @@ def fork(spine_r0=SPINE_R0, spine_r1=SPINE_R1, spine_w=SPINE_W):
         for i in range(HUB_N):
             th = math.radians(90*i)
             px, py = HUB_BC/2*math.cos(th), HUB_BC/2*math.sin(th)
-            a = a.cut(cyl(M25_CLR, 40, (px,py,z0-10)))
+            a = a.cut(cyl(M3_CLR, 40, (px,py,z0-10)))
         return a
     top = arm(HUB_TOP_Z, HUB_TOP_Z+ARM_T)
     bot = arm(ARM_BOT_TOP-ARM_T, ARM_BOT_TOP)
@@ -793,14 +798,17 @@ def fork(spine_r0=SPINE_R0, spine_r1=SPINE_R1, spine_w=SPINE_W):
     bot = bot.cut(cyl(3.2, 40, (0,0,z)))          # pedestal plugs the four M2.5 holes
     for i in range(HUB_N):
         th = math.radians(90*i)
-        bot = bot.cut(cyl(M25_CLR, 40, (HUB_BC/2*math.cos(th), HUB_BC/2*math.sin(th), z)))
+        bot = bot.cut(cyl(M3_CLR, 40, (HUB_BC/2*math.cos(th), HUB_BC/2*math.sin(th), z)))
     # No nut pockets here.  The screw is driven from the outside and threads into the
     # stock aluminium hub - the @2.5 holes in both plates are tapped, and there is nowhere
     # for a nut anyway: behind the driven hub sit 0.30 mm to the case top, behind the
     # passive one the 0.55 mm base recess.  A hex pocket would also take 2.2 of the 4.0 mm
     # arm exactly under the screw head, where the bolt load enters the part.
-    # Screws: M2.5x6 driven (4.0 arm + <=2.5 hub), M2.5x7 passive (4.0 + 0.95 pedestal
+    # Screws: M3x6 driven (4.0 arm + <=2.5 hub), M3x7 passive (4.0 + 0.95 pedestal
     # + <=2.2 hub).  Longer bottoms out on the case - the vendor FAQ warns it burns servos.
+    # M3 and not M2.5: HUB_BOLT_D is measured on the hub, the STEP's @2.5 is not what
+    # arrived.  Only the hole grew - @2.9 to @3.4 - so a leg already printed can be
+    # drilled out rather than reprinted.
     spine = bxc(-spine_r1, -spine_r0, -spine_w/2, spine_w/2, ARM_BOT_TOP-ARM_T, HUB_TOP_Z+ARM_T)
     return top.union(bot).union(spine)
 
@@ -1466,7 +1474,7 @@ def servo_gauge():
     a = a.cut(cyl(3.2, 20, (0,0,HUB_TOP_Z-1)))
     for i in range(HUB_N):
         th = math.radians(90*i)
-        a = a.cut(cyl(M25_CLR, 20, (HUB_BC/2*math.cos(th), HUB_BC/2*math.sin(th), HUB_TOP_Z-1)))
+        a = a.cut(cyl(M3_CLR, 20, (HUB_BC/2*math.cos(th), HUB_BC/2*math.sin(th), HUB_TOP_Z-1)))
     return g.union(a.translate((0, 46.0, -HUB_TOP_Z)))
 
 # =====================================================================================

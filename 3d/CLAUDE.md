@@ -55,7 +55,10 @@ name → (workplane, qty, note) and drives both the export loop and the BOM;
 - **Units are mm** everywhere: geometry, FEA (N, MPa), exports.
 - **Servo interface is measured, not assumed.** The numbers in the `S_*` / `HUB_*` block
   come from `ref/ST3215-3D/ST3215.step` via `tools/measure*.py`. If one looks wrong,
-  re-measure — do not adjust it to make a part fit.
+  re-measure — do not adjust it to make a part fit. **And the STEP is not the last word:**
+  `HUB_BOLT_D` is M3, measured on a hub that arrived, against the ⌀2.5 the STEP shows.
+  A vendor number that a real part contradicts loses; mark it in the README's source
+  column so the next reader knows which rows have met hardware.
 - **The ST3215 case has no threaded side holes.** The whole sleeve+fork architecture
   exists because of that. Nothing may load the servo through a printed thread or a
   single-shear horn.
@@ -68,7 +71,7 @@ name → (workplane, qty, note) and drives both the export loop and the BOM;
   at the moment in the assembly order when that nut goes in, and that is what fixes the
   assembly order in `README.md` (the LiDAR pedestal has to be bolted to the deck before
   the deck goes on the tray, because its screw heads end up inside the tray). At the
-  servo hubs the screw threads into the stock aluminium plate (both are tapped M2.5) —
+  servo hubs the screw threads into the stock aluminium plate (both are tapped M3) —
   there is no room for a nut there, and a hex pocket would eat over half the fork arm
   right under the screw head.
 - **A blind fastener path is invisible to every check in this repo, so the foot bolt has

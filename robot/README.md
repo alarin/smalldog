@@ -212,7 +212,7 @@ Non-printed, and the bench does not work without them:
 - **a clamp.** The stand only holds itself down by 1.4× with the heavy arm out
   horizontal — the two slots in the base take an M6 or a G-clamp, and
   `bench_rig.py` prints that ratio on every run;
-- 4 × M2.5 × 6 into the driven hub, 2 × M3 × 10 **set screws** + nuts for the thrust
+- 4 × M3 × 6 into the driven hub, 2 × M3 × 10 **set screws** + nuts for the thrust
   clamp. Headless is the robot's spec and the reason is on the robot, not here — a
   cap head fouls the fork spine (`3d/README.md`, *The thrust clamp*). The bench has no
   fork, so either works on the stand; use the same screw so there is one box of them.

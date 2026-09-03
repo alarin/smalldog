@@ -28,7 +28,7 @@ the scripts in [tools/](tools/):
 | driven hub plate (25T side) | ⌀19.2, outer face **+20.30** from the case mid-plane | STEP |
 | passive hub plate | ⌀19.2, outer face **−16.95** (recessed 0.55 into the case base, ⌀25 pocket) | STEP |
 | hub-to-hub mounting span | **37.25 mm** | drawing |
-| hub fixing | 4 × ⌀2.5 **tapped M2.5** on a **⌀14** bolt circle, at 0/90/180/270° | STEP |
+| hub fixing | 4 × **tapped M3** on a **⌀14** bolt circle, at 0/90/180/270° | **hardware** — the STEP says ⌀2.5 and is wrong |
 | hub plate thickness | driven **2.50** (z 17.80…20.30), passive **2.20** (−16.95…−14.75) | STEP |
 | case side faces | **no threaded holes** — the case is gripped by form, not by screws | STEP |
 
@@ -476,8 +476,8 @@ one `sleeve()` + one `fork()`, four `DECK_SCREWS` × 2, `CAM_FOOT_Y`, `LIDAR_N`,
 
 | | qty |
 |---|---|
-| M2.5 × 6 (fork → driven hub, 4 per joint) | 48 |
-| M2.5 × 7 (fork → passive hub, 4 per joint) | 48 |
+| M3 × 6 (fork → driven hub, 4 per joint) | 48 |
+| M3 × 7 (fork → passive hub, 4 per joint) | 48 |
 | M3 × 10 **set screw** (grub, hex socket) + M3 nut (sleeve thrust clamp, 2 per joint) | 24 |
 | M3 × 30 socket head + M3 nut (foot → shin ankle) | 4 |
 | M3 × 12 + M3 nut (deck → tray bosses) | 8 |
@@ -500,10 +500,12 @@ well as a floor — a longer screw is not the safe direction:
 - **the thrust clamp, headless.** Not a length at all but a head: a cap head puts its
   corner at r = 24.2 inside the fork spine's 23.0 and binds the joint over ±2…38°. See
   *The thrust clamp*. Headless, the length ceiling is M3 × 12; × 14 fouls.
-- **the hub screws.** Driven: 4.0 arm + ≤2.5 hub, so 6.5 is the ceiling. Passive: 4.0 arm
-  + 0.95 pedestal + ≤2.2 hub, so 7.15 is. Past the hub they bottom on the servo case,
-  which the vendor FAQ says stalls and burns it. M2.5 × 7 is a rare length; a 1 mm washer
-  under the head of an M2.5 × 8 gets there, an M2.5 × 6 leaves ~1 mm in the thread.
+- **the hub screws, M3 and not M2.5.** `HUB_BOLT_D` is measured on a hub that arrived;
+  the vendor STEP's ⌀2.5 is not what the part has. Driven: 4.0 arm + ≤2.5 hub, so 6.5 is
+  the ceiling. Passive: 4.0 arm + 0.95 pedestal + ≤2.2 hub, so 7.15 is. Past the hub they
+  bottom on the servo case, which the vendor FAQ says stalls and burns it. M3 × 7 is a
+  rare length; a 1 mm washer under the head of an M3 × 8 gets there, an M3 × 6 leaves
+  ~1 mm in the thread.
 - **the Orange Pi standoffs, M2.5 × 8 and not × 10.** The clearance hole runs from the
   deck's *top* face upward — it does not pass through the deck — so the screw has
   `OPI_STAND_H` + the board, 7.0 + 1.6 = 8.6 mm, and no more. Ten bottoms on the deck and
@@ -525,7 +527,7 @@ outboard for the Orange Pi standoffs, forward under the chin for the camera guss
 x = 0 into the deck window for the IMU tabs, and above the foot's top face for the ankle
 bolt. No heat-set inserts.
 
-No nuts at the hubs: the ⌀2.5 holes in both aluminium plates are tapped M2.5, so the screw
+No nuts at the hubs: the holes in both aluminium plates are tapped M3, so the screw
 goes in from the outside of the fork arm and threads into metal. There is no room for a nut
 anyway — 0.30 mm behind the driven hub, and the 0.55 mm base recess behind the passive one.
 Do not fit longer screws: past the hub they bottom out on the servo case, which the vendor
@@ -735,7 +737,9 @@ frame above.
 
 ## Verify before printing the whole set
 
-1. `servo_gauge` fit — the one thing that can invalidate everything else.
+1. `servo_gauge` fit — the one thing that can invalidate everything else. It checks the
+   bore and the ⌀14 bolt circle; it cannot check the *thread*, which is why the hub came
+   back M3 after the gauge had already passed. Try a real screw through a real hole.
 2. Orange Pi 5 Pro hole pattern (currently 92 × 54).
 3. ~~Unitree L2 base bolt circle~~ — measured from the manual drawing: ⌀51, 4 × M3 ▽6 at
    22.5°, ⌀60 spigot, ⌀75 base, 75 × 75 × 65 mm, 230 g. Cable exit still to confirm on a
