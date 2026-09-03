@@ -147,9 +147,11 @@ class Weights:
 #   same policies peak at 20/22/16/20 mm -- the number was quoted at the speed
 #   that flattered the complaint.
 #
-# Measured against hdrift at the SAME 33.42 M step, this term at -20 moved peak
-# lift not at all (20/22/16/20 -> 20/22/14/19 mm). It cost ~3.8 % of an episode
-# and bought nothing, which is what a shaping term does when it asks for
+# Measured against hdrift at the SAME 33.42 M step, 8 seeds each, this term at
+# -20 moved peak lift the wrong way and not significantly: 20.3 +- 2.5 mm ->
+# 18.4 +- 2.6 mm pooled over the four feet, a 1.9 mm change against a 1.2 mm
+# standard error. It cost ~3.8 % of an episode and bought nothing, which is what
+# a shaping term does when it asks for
 # clearance the environment never rewards. Clearance is a curriculum problem:
 # raise box_height_m_abs and the policy lifts because it must. Do that before
 # raising this weight again.

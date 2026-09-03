@@ -3,81 +3,144 @@
 gait.py -- what the walk actually looks like, in numbers.
 
     RUN=runs/<run>             python tools/gait.py
-    RUN=runs/<run>/ckpt/<step> python tools/gait.py
+    RUN=runs/<run>/ckpt/<step> SEEDS=8 CMDS=0.2,0.4 python tools/gait.py
 
 Per commanded speed: peak-to-peak foot lift on each leg, the dominant frequency
 of each foot's height signal, the stride that implies, and how much of the
 action signal sits above 10 Hz. The last one is the buzz -- a policy whose
 action power is half above 10 Hz on a 50 Hz controller is chattering, not
-walking, and no amount of looking at the reward curve will say so.
+walking, and no reward curve will say so.
 
-Point it at two runs' checkpoints at the SAME step to compare gaits; comparing a
-33 M checkpoint against a 60 M one measures training, not the change you made.
+SEEDS is not optional decoration. Each seed scatters the initial joint angles by
+1.1 deg and the drop height by 3 mm, and the spread that comes back is the only
+thing that says whether a difference between two policies is a difference. It
+was worth 8 seeds on the first comparison this tool was written for: the gait
+frequency separated by 1.17 Hz against a 0.10 Hz spread and was real, while the
+foot lift moved 1.9 mm against a 1.2 mm standard error and was not.
+
+Point it at two runs' checkpoints at the SAME step. Comparing a 33 M checkpoint
+against a 60 M one measures training, not the change you made.
 
 Runs on the CPU (JAX_PLATFORMS=cpu) so it can be used while a run holds the GPU.
 """
 import os, sys, json, numpy as np
 _RL = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, _RL); os.chdir(_RL)
-import jaxenv; jaxenv.configure(0.60)
+import jaxenv; jaxenv.configure(0.10)
 import jax, mujoco
 from brax.io import model as brax_io_model
 from brax.training.acme import running_statistics
 from brax.training.agents.ppo import networks as ppo_networks
 import actuator, model as model_mod
 from env import Walk, assemble_obs, stack_obs, init_hist
-RUN=os.environ.get("RUN","runs/20260831-162549"); SECONDS=6.0
-targs=json.load(open(f"{RUN}/run.json"))["args"]
-env=Walk(terrain=targs["terrain"],n_boxes=targs["boxes"])
-nets=ppo_networks.make_ppo_networks(observation_size=env.observation_size,
- action_size=env.action_size,preprocess_observations_fn=running_statistics.normalize,
- policy_hidden_layer_sizes=(128,128,128),value_hidden_layer_sizes=(256,256,256))
-prm=brax_io_model.load_params(f"{RUN}/params")
-if len(prm)>2: prm=prm[:2]
-pol=jax.jit(ppo_networks.make_inference_fn(nets)(prm,deterministic=True))
-p=actuator.load(); mj,_=model_mod.build(terrain=False,n_boxes=0,mjx_safe=True)
-P=model_mod.robot_params(); qadr,vadr,act=model_mod.joint_order(mj,P)
-lo,hi=model_mod.limits(P,soft=True); q0=model_mod.stance_qpos(mj,P); st_j=q0[qadr]
-sadr=lambda n:int(mj.sensor_adr[mujoco.mj_name2id(mj,mujoco.mjtObj.mjOBJ_SENSOR,n)])
-LEGS=["fl","fr","rl","rr"]
-fsid=[mujoco.mj_name2id(mj,mujoco.mjtObj.mjOBJ_SITE,f"{l}_foot_site") for l in LEGS]
 
-for CMDV in (0.2, 0.4):
-    CMD=np.array([CMDV,0.0,0.0])
-    d=mujoco.MjData(mj); d.qpos[:]=q0; mujoco.mj_forward(mj,d)
-    aq,ag,aa=sadr("imu_quat"),sadr("imu_gyro"),sadr("imu_accel")
-    dt=1/50.0; n_sub=int(round(dt/mj.opt.timestep)); la=np.zeros(12); hist=None
-    FZ=[]; BX=[]; ACT=[]
-    for k in range(int(SECONDS/dt)):
-        fr_,_=assemble_obs(quat=d.sensordata[aq:aq+4],gyro=d.sensordata[ag:ag+3],
-            accel=d.sensordata[aa:aa+3],
-            qpos_j=d.qpos[qadr],qvel_j=d.qvel[vadr],stance_j=st_j,last_action=la,
-            command=CMD,xp=np)
+RUN = os.environ.get("RUN")
+if not RUN:
+    raise SystemExit("set RUN=runs/<run> or RUN=runs/<run>/ckpt/<step>")
+SECONDS = float(os.environ.get("SECONDS", "6.0"))
+SEEDS = int(os.environ.get("SEEDS", "8"))
+CMDS = [float(c) for c in os.environ.get("CMDS", "0.2,0.4").split(",")]
+SETTLE = 1.0                       # s discarded: the drop, not the gait
+
+targs = json.load(open(f"{RUN}/run.json"))["args"]
+env = Walk(terrain=targs["terrain"], n_boxes=targs["boxes"])
+nets = ppo_networks.make_ppo_networks(
+    observation_size=env.observation_size, action_size=env.action_size,
+    preprocess_observations_fn=running_statistics.normalize,
+    policy_hidden_layer_sizes=(128, 128, 128),
+    value_hidden_layer_sizes=(256, 256, 256))
+prm = brax_io_model.load_params(f"{RUN}/params")
+if len(prm) > 2:
+    prm = prm[:2]
+pol = jax.jit(ppo_networks.make_inference_fn(nets)(prm, deterministic=True))
+
+p = actuator.load()
+mj, _ = model_mod.build(terrain=False, n_boxes=0, mjx_safe=True)
+P = model_mod.robot_params()
+qadr, vadr, act = model_mod.joint_order(mj, P)
+lo, hi = model_mod.limits(P, soft=True)
+q0 = model_mod.stance_qpos(mj, P); st_j = q0[qadr]
+sadr = lambda n: int(mj.sensor_adr[mujoco.mj_name2id(mj, mujoco.mjtObj.mjOBJ_SENSOR, n)])
+aq, ag, aa = sadr("imu_quat"), sadr("imu_gyro"), sadr("imu_accel")
+LEGS = ["fl", "fr", "rl", "rr"]
+fsid = [mujoco.mj_name2id(mj, mujoco.mjtObj.mjOBJ_SITE, f"{l}_foot_site") for l in LEGS]
+dt = 1 / 50.0
+n_sub = int(round(dt / mj.opt.timestep))
+
+
+def rollout(cmd, seed):
+    """-> (foot heights, actions, distance, seconds) after the settle window."""
+    rng = np.random.default_rng(seed)
+    d = mujoco.MjData(mj); d.qpos[:] = q0
+    if seed is not None:
+        d.qpos[qadr] += rng.normal(0, 0.02, 12)     # 1.1 deg of joint scatter
+        d.qpos[2] += rng.normal(0, 0.003)           # 3 mm of drop height
+    mujoco.mj_forward(mj, d)
+    la = np.zeros(12); hist = None; FZ = []; ACT = []; x0 = None
+    for k in range(int(SECONDS / dt)):
+        fr_, _ = assemble_obs(
+            quat=d.sensordata[aq:aq + 4], gyro=d.sensordata[ag:ag + 3],
+            accel=d.sensordata[aa:aa + 3], qpos_j=d.qpos[qadr], qvel_j=d.qvel[vadr],
+            stance_j=st_j, last_action=la, command=cmd, xp=np)
         if hist is None:
-            hist=init_hist(fr_,xp=np); obs=hist.reshape(-1)
+            hist = init_hist(fr_, xp=np); obs = hist.reshape(-1)
         else:
-            obs,hist=stack_obs(hist,fr_,xp=np)
-        a_,_=pol(obs,jax.random.PRNGKey(0)); a_=np.asarray(a_); la=a_
-        tgt=np.clip(st_j+a_*0.35,lo,hi)
+            obs, hist = stack_obs(hist, fr_, xp=np)
+        a_, _ = pol(obs, jax.random.PRNGKey(0)); a_ = np.asarray(a_); la = a_
+        tgt = np.clip(st_j + a_ * 0.35, lo, hi)
         for _ in range(n_sub):
-            q,w=d.qpos[qadr],d.qvel[vadr]
-            d.ctrl[act]=actuator.motor_torque(p,actuator.duty(p,tgt-q,w,xp=np)*12.0,w,xp=np)
-            mujoco.mj_step(mj,d)
-        FZ.append([d.site_xpos[s][2] for s in fsid]); BX.append(d.qpos[0]); ACT.append(a_.copy())
-    FZ=np.array(FZ); BX=np.array(BX); ACT=np.array(ACT)
-    n=len(FZ); freqs=np.fft.rfftfreq(n, dt)
-    print(f"\n=== command vx {CMDV} m/s ===")
-    print(f"  foot lift peak-to-peak: " + "  ".join(
-        f"{l} {(FZ[:,i].max()-FZ[:,i].min())*1000:.0f}mm" for i,l in enumerate(LEGS)))
-    dom=[]
-    for i,l in enumerate(LEGS):
-        s=FZ[:,i]-FZ[:,i].mean(); P_=np.abs(np.fft.rfft(s))**2
-        P_[0]=0; f=freqs[np.argmax(P_)]; dom.append(f)
-        print(f"  {l}: dominant foot-z frequency {f:5.2f} Hz")
-    F=float(np.mean(dom)); v=(BX[-1]-BX[0])/(n*dt)
-    print(f"  speed {v:.3f} m/s, gait {F:.2f} Hz -> STRIDE {v/F*1000:.0f} mm, "
-          f"{50/F:.1f} control steps per cycle")
-    # action chatter: how much of the action signal is at the Nyquist end
-    As=ACT-ACT.mean(0); PA=np.abs(np.fft.rfft(As,axis=0))**2; PA[0]=0
-    hi_frac=PA[freqs>10].sum()/PA.sum()
-    print(f"  action power above 10 Hz: {hi_frac*100:.0f}%   (Nyquist is 25 Hz)")
+            q, w = d.qpos[qadr], d.qvel[vadr]
+            d.ctrl[act] = actuator.motor_torque(
+                p, actuator.duty(p, tgt - q, w, xp=np) * 12.0, w, xp=np)
+            mujoco.mj_step(mj, d)
+        if k == int(SETTLE / dt):
+            x0 = d.qpos[0]
+        if k >= int(SETTLE / dt):
+            FZ.append([d.site_xpos[i][2] for i in fsid]); ACT.append(a_.copy())
+        if d.qpos[2] < 0.08:
+            break
+    n = len(FZ)
+    return np.array(FZ), np.array(ACT), (d.qpos[0] - x0 if n else 0.0), n * dt
+
+
+def spectrum(FZ, ACT, T):
+    n = len(FZ); ff = np.fft.rfftfreq(n, dt)
+    dom = []
+    for i in range(4):
+        s = FZ[:, i] - FZ[:, i].mean()
+        Pw = np.abs(np.fft.rfft(s)) ** 2; Pw[0] = 0
+        dom.append(ff[np.argmax(Pw)])
+    As = ACT - ACT.mean(0)
+    PA = np.abs(np.fft.rfft(As, axis=0)) ** 2; PA[0] = 0
+    return np.mean(dom), PA[ff > 10].sum() / PA.sum()
+
+
+print(f"{RUN}   {SEEDS} seed(s) x {SECONDS:g} s, first {SETTLE:g} s discarded")
+for cmd_v in CMDS:
+    cmd = np.array([cmd_v, 0.0, 0.0])
+    L, F, V, H, fell = [], [], [], [], 0
+    for s in range(SEEDS):
+        FZ, ACT, dx, T = rollout(cmd, s if SEEDS > 1 else None)
+        if len(FZ) < 20:
+            fell += 1; continue
+        L.append((FZ.max(0) - FZ.min(0)) * 1000)
+        f, hf = spectrum(FZ, ACT, T)
+        F.append(f); V.append(dx / T); H.append(hf)
+    if not L:
+        print(f"\n=== command vx {cmd_v} m/s: fell on every seed"); continue
+    L = np.array(L); F = np.array(F); V = np.array(V); H = np.array(H)
+    se = lambda x: x.std() / max(1, np.sqrt(len(x)))
+    print(f"\n=== command vx {cmd_v} m/s" + (f"   ({fell} seed(s) fell)" if fell else ""))
+    print("  peak foot lift   " + "  ".join(
+        f"{l} {L[:, i].mean():5.1f}" + (f"+-{L[:, i].std():.1f}" if len(L) > 1 else "")
+        for i, l in enumerate(LEGS)) + " mm")
+    if len(L) > 1:
+        print(f"  lift pooled      {L.mean():5.1f} +- {L.std():.1f} mm  "
+              f"(se of the mean {se(L.reshape(-1)):.1f})")
+    print(f"  gait             {F.mean():5.2f}" + (f" +- {F.std():.2f}" if len(F) > 1 else "")
+          + f" Hz   -> stride {V.mean() / F.mean() * 1000:.0f} mm, "
+            f"{50 / F.mean():.1f} control steps per cycle")
+    print(f"  speed            {V.mean():5.3f}" + (f" +- {V.std():.3f}" if len(V) > 1 else "")
+          + " m/s")
+    print(f"  action power >10 Hz {H.mean() * 100:.0f}%" +
+          (f" +- {H.std() * 100:.0f}" if len(H) > 1 else "") + "   (Nyquist is 25 Hz)")
