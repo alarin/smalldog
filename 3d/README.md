@@ -443,19 +443,48 @@ splittable at all: the fork is what puts the servo shaft in double shear.
 
 ## Fasteners
 
+Counts are per robot and come off the geometry, not off a memory of it: 12 joints, each
+one `sleeve()` + one `fork()`, four `DECK_SCREWS` × 2, `CAM_FOOT_Y`, `LIDAR_N`, `HUB_N`.
+
+**Structural — the robot stands and walks on these:**
+
 | | qty |
 |---|---|
 | M2.5 × 6 (fork → driven hub, 4 per joint) | 48 |
 | M2.5 × 7 (fork → passive hub, 4 per joint) | 48 |
 | M3 × 10 + M3 nut (sleeve thrust clamp, 2 per joint — **not longer**) | 24 |
-| M3 × 12 + M3 nut (deck → tray bosses) | 8 |
-| M3 × 16 + M3 nut (LiDAR pedestal → deck) | 4 |
-| M3 × 12 (Unitree L2 → pedestal, into the L2's own M3 threads) | 4 |
-| M3 × 24 (LiDAR guard + deck → tray boss, replaces the front two deck screws) | 2 |
-| M3 × 24 (GPS mast + deck → tray boss, replaces the rear two deck screws) | 2 |
-| cable tie, 2.5 mm (GPS receiver → platform) | 2 |
 | M3 × 30 socket head + M3 nut (foot → shin ankle) | 4 |
-| M2.5 × 10 + M2.5 nut (Orange Pi) | 4 |
+| M3 × 12 + M3 nut (deck → tray bosses) | 8 |
+
+**Payload — none of it is needed to walk:**
+
+| | qty |
+|---|---|
+| M2.5 × 8 + M2.5 nut (Orange Pi → deck standoffs) | 4 |
+| M2.5 × 6 + M2.5 nut (BMI088 → the IMU tabs, from below) | 2 |
+| M3 × 20 + M3 nut (camera mount → the chassis gusset) | 2 |
+| M3 × 16 + M3 nut (LiDAR pedestal → deck, from underneath) | 4 |
+| M3 × 12 (Unitree L2 → pedestal, into the L2's own M3 threads) | 4 |
+| M3 × 24 (GPS mast + deck → tray boss, **replaces** the rear two deck screws) | 2 |
+| cable tie, 2.5 mm (GPS receiver → platform) | 2 |
+
+Four of those lengths are derived rather than chosen, and three of them have a ceiling as
+well as a floor — a longer screw is not the safe direction:
+
+- **the hub screws.** Driven: 4.0 arm + ≤2.5 hub, so 6.5 is the ceiling. Passive: 4.0 arm
+  + 0.95 pedestal + ≤2.2 hub, so 7.15 is. Past the hub they bottom on the servo case,
+  which the vendor FAQ says stalls and burns it. M2.5 × 7 is a rare length; a 1 mm washer
+  under the head of an M2.5 × 8 gets there, an M2.5 × 6 leaves ~1 mm in the thread.
+- **the Orange Pi standoffs, M2.5 × 8 and not × 10.** The clearance hole runs from the
+  deck's *top* face upward — it does not pass through the deck — so the screw has
+  `OPI_STAND_H` + the board, 7.0 + 1.6 = 8.6 mm, and no more. Ten bottoms on the deck and
+  lifts the board off the standoff. The nut sits 1.5…3.5 above the deck, so 8 clears it.
+- **the camera, M3 × 20.** Head counterbore at `top` − 6 = 25.96, nut floor at
+  `CAM_LEDGE` − `CAM_NUT_DZ` = 7.36: 18.6 mm to full engagement. M3 × 16 reaches 9.96 and
+  the nut's top face is at 10.06, i.e. it does not enter the nut at all.
+- **the IMU, M2.5 × 6.** 1.6 of board + 1.75 of tab reaches the nut, 2.0 more clears it —
+  5.35. It stands 0.65 proud of the deck's top face, under the Pi's 7 mm standoffs.
+  The board thickness is `IMU_BOARD` and is still **verify**; so is this length.
 
 **Nothing threads into plastic anywhere on the robot.** Every screw above that is not going
 into the stock aluminium lands in a nut, and every one of those nuts sits in a side-loaded
@@ -463,7 +492,9 @@ slot (`nut_slot()` in the script) whose two walls hold the nut's flats so it can
 The slot always opens toward the face that is still reachable at the point in the assembly
 order where that nut goes in — outward for the LiDAR legs, toward the middle of the tray
 for the corner deck bosses, along +x for the mid pair (inboard of them is the pack),
-outboard for the Orange Pi standoffs, and above the foot's top face for the ankle bolt. No heat-set inserts.
+outboard for the Orange Pi standoffs, forward under the chin for the camera gusset, toward
+x = 0 into the deck window for the IMU tabs, and above the foot's top face for the ankle
+bolt. No heat-set inserts.
 
 No nuts at the hubs: the ⌀2.5 holes in both aluminium plates are tapped M2.5, so the screw
 goes in from the outside of the fork arm and threads into metal. There is no room for a nut
