@@ -248,6 +248,21 @@ class Commands:
     Ranges are what the hardware can plausibly do, not what the sim can: the
     analytic trot in ros2/ makes 0.20 m/s and the sim reaches 0.78 m in a 5 s trot
     on this box. Asking for 2 m/s would train a policy to fall over quickly.
+
+    The top of vx is above what the actuator can deliver, and this is measured,
+    not suspected. Commanding a trained policy 0.2 / 0.4 / 0.6 / 0.8 m/s on the
+    CPU engine, nominal servo, it answers 0.236 / 0.432 / 0.426 / 0.423 -- pinned
+    from 0.4 upward. At the pin, the 95th percentile joint speed is 4.51 rad/s
+    against the 4.71 rad/s no-load speed in params/st3215.json: 96 % of it, and
+    the p95 does not move between the 0.6 and the 0.8 command. The robot is not
+    failing to learn 0.8 m/s, it is geared out of it.
+
+    So roughly (0.8 - 0.43) / 1.2 = 31 % of sampled vx commands are unreachable,
+    and about 0.057 m/s of the ~0.184 m/s track_err a run reports is arithmetic
+    rather than skill. Do NOT narrow this range on the strength of that: 4.71
+    rad/s is the datasheet, params/st3215.json still says "fitted": false, and
+    the whole ceiling is a property of an unfitted model. Fit the servo on the
+    bench, then set this range from the fit.
     """
     vx: tuple = (-0.4, 0.8)
     vy: tuple = (-0.3, 0.3)

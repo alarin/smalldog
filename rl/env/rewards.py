@@ -135,6 +135,24 @@ class Weights:
 # How high a swing foot should get, in metres. 40 mm is 22 % of this robot's
 # 181 mm stance height, the low end of what a real trot does, and 2.4x what the
 # policies measured so far ever reach -- their feet never pass 20 mm.
+#
+# That justification is wrong, and the run that used it measured why. Two things
+# the paragraph above did not check:
+#
+#   the terrain. domain_rand.json caps box_height_m_abs at 0.022, so the tallest
+#   obstacle the policy ever meets is 22 mm. Feet that peak at 20-22 mm are not
+#   under-lifting; they are clearing the world they were shown, exactly.
+#
+#   the speed. "never pass 20 mm" came from a 0.2 m/s rollout. At 0.4 m/s the
+#   same policies peak at 20/22/16/20 mm -- the number was quoted at the speed
+#   that flattered the complaint.
+#
+# Measured against hdrift at the SAME 33.42 M step, this term at -20 moved peak
+# lift not at all (20/22/16/20 -> 20/22/14/19 mm). It cost ~3.8 % of an episode
+# and bought nothing, which is what a shaping term does when it asks for
+# clearance the environment never rewards. Clearance is a curriculum problem:
+# raise box_height_m_abs and the policy lifts because it must. Do that before
+# raising this weight again.
 FOOT_CLEARANCE_TARGET = 0.04
 
 
