@@ -288,6 +288,7 @@ class Walk(PipelineEnv):
         mj_model, self.build_notes = model_mod.build(terrain=terrain, n_boxes=n_boxes, **kw)
         self.mj_model = mj_model
         self.n_boxes = n_boxes
+        self.box_geoms = model_mod.box_geom_ids(mj_model, n_boxes) if n_boxes else []
         P = model_mod.robot_params()
         self.P = P
 

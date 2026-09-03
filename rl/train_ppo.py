@@ -147,7 +147,8 @@ def main():
 
     randomization = None
     if not a.no_randomize:
-        randomization = functools.partial(domain_randomize, n_boxes=a.boxes)
+        randomization = functools.partial(
+            domain_randomize, n_boxes=a.boxes, box_geoms=env.box_geoms)
 
     networks = functools.partial(
         ppo_networks.make_ppo_networks,

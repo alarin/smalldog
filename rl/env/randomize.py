@@ -30,11 +30,15 @@ import model as model_mod
 
 
 def domain_randomize(sys, rng: jax.Array, ranges: dict | None = None,
-                     n_boxes: int = 0):
+                     n_boxes: int = 0, box_geoms=None):
     """brax randomization_fn: (sys, rng) -> (sys_v, in_axes).
 
     `rng` arrives with one key per environment. Returns the vmapped system and
     the in_axes tree telling brax which fields are batched.
+
+    `box_geoms` is the box geom indices, from model.box_geom_ids(). Pass them.
+    They are NOT the last n_boxes geoms — see that function for what the tail
+    slice actually points at, and what it did when it was tried.
     """
     ranges = ranges or model_mod.domain_ranges()
     fr_lo, fr_hi = ranges["contact"]["friction"]["range"]
@@ -44,9 +48,13 @@ def domain_randomize(sys, rng: jax.Array, ranges: dict | None = None,
     h_lo, h_hi = ranges["terrain"]["box_height_m_abs"]["range"]
     d_lo, d_hi = ranges["terrain"]["box_density"]["range"]
 
-    # The boxes are the last n_boxes geoms in the model — model.build appends
-    # them to the worldbody after everything the CAD generated.
-    box_slice = slice(sys.ngeom - n_boxes, sys.ngeom) if n_boxes else None
+    if n_boxes and box_geoms is None:
+        raise ValueError(
+            "n_boxes without box_geoms. The indices have to come from "
+            "model.box_geom_ids(mj_model, n_boxes); this function used to "
+            "guess them as the tail of the geom array and the guess was "
+            "wrong — it selected the rear-right leg.")
+    box_idx = jnp.asarray(box_geoms, dtype=int) if n_boxes else None
     box_half_z = model_mod.BOX_HALF[2]
     patch = model_mod.BOX_PATCH_M
 
@@ -81,8 +89,8 @@ def domain_randomize(sys, rng: jax.Array, ranges: dict | None = None,
             top = jax.random.uniform(k_h, (n_boxes,), minval=h_lo, maxval=h_hi)
             z = jnp.where(up, top - box_half_z, -box_half_z - 1.0)
             xy = jax.random.uniform(k_xy, (n_boxes, 2), minval=-patch, maxval=patch)
-            pos = sys.geom_pos.at[box_slice, 0:2].set(xy)
-            pos = pos.at[box_slice, 2].set(z)
+            pos = sys.geom_pos.at[box_idx, 0:2].set(xy)
+            pos = pos.at[box_idx, 2].set(z)
             out["geom_pos"] = pos
 
         return out

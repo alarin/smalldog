@@ -40,6 +40,8 @@ if not RUN:
 SECONDS = float(os.environ.get("SECONDS", "6.0"))
 SEEDS = int(os.environ.get("SEEDS", "8"))
 CMDS = [float(c) for c in os.environ.get("CMDS", "0.2,0.4").split(",")]
+BOXES = int(os.environ.get("BOXES", "0"))       # raise this many in the robot's path
+BOXH = float(os.environ.get("BOXH", "0.022"))   # their top height, m; 0.022 is the domain_rand cap
 SETTLE = 1.0                       # s discarded: the drop, not the gait
 
 targs = json.load(open(f"{RUN}/run.json"))["args"]
@@ -68,14 +70,45 @@ dt = 1 / 50.0
 n_sub = int(round(dt / mj.opt.timestep))
 
 
+def model_for(rng):
+    """A freshly compiled model with the boxes in the corridor the robot walks.
+
+    Compiled, not edited: model.compile_with_boxes explains why writing
+    geom_pos on a live model gives you a box that draws but does not collide.
+
+    The corridor matters too. model.BOX_PATCH_M scatters over +-4 m square,
+    which is the right order for where an episode ends up and the wrong shape
+    for where it goes -- the robot leaves the origin forwards and stays inside
+    about +-0.4 m laterally. At 24 boxes and density 0.275 that is 0.22 boxes
+    met per 4 m episode: one box every five episodes is not a curriculum. Here
+    BOXES=n means n boxes actually underfoot.
+    """
+    tops = rng.uniform(0.0, BOXH, BOXES)
+    x = rng.uniform(0.5, 4.0, BOXES)                         # not under the start
+    y = rng.uniform(-0.35, 0.35, BOXES)
+    return model_cache(tuple(tops), tuple(x), tuple(y))
+
+
+_CACHE = {}
+
+
+def model_cache(tops, x, y):
+    key = (tops, x, y)
+    if key not in _CACHE:
+        _CACHE[key] = model_mod.compile_with_boxes(
+            list(tops), list(zip(x, y)), mjx_safe=True)[0]
+    return _CACHE[key]
+
+
 def rollout(cmd, seed):
     """-> (foot heights, actions, distance, seconds) after the settle window."""
     rng = np.random.default_rng(seed)
-    d = mujoco.MjData(mj); d.qpos[:] = q0
+    mjs = model_for(rng) if BOXES else mj
+    d = mujoco.MjData(mjs); d.qpos[:] = q0
     if seed is not None:
         d.qpos[qadr] += rng.normal(0, 0.02, 12)     # 1.1 deg of joint scatter
         d.qpos[2] += rng.normal(0, 0.003)           # 3 mm of drop height
-    mujoco.mj_forward(mj, d)
+    mujoco.mj_forward(mjs, d)
     la = np.zeros(12); hist = None; FZ = []; ACT = []; x0 = None
     for k in range(int(SECONDS / dt)):
         fr_, _ = assemble_obs(
@@ -92,7 +125,7 @@ def rollout(cmd, seed):
             q, w = d.qpos[qadr], d.qvel[vadr]
             d.ctrl[act] = actuator.motor_torque(
                 p, actuator.duty(p, tgt - q, w, xp=np) * 12.0, w, xp=np)
-            mujoco.mj_step(mj, d)
+            mujoco.mj_step(mjs, d)
         if k == int(SETTLE / dt):
             x0 = d.qpos[0]
         if k >= int(SETTLE / dt):
@@ -115,7 +148,8 @@ def spectrum(FZ, ACT, T):
     return np.mean(dom), PA[ff > 10].sum() / PA.sum()
 
 
-print(f"{RUN}   {SEEDS} seed(s) x {SECONDS:g} s, first {SETTLE:g} s discarded")
+print(f"{RUN}   {SEEDS} seed(s) x {SECONDS:g} s, first {SETTLE:g} s discarded"
+      + (f", {BOXES} boxes up to {BOXH*1000:.0f} mm in the corridor" if BOXES else ", flat"))
 for cmd_v in CMDS:
     cmd = np.array([cmd_v, 0.0, 0.0])
     L, F, V, H, fell = [], [], [], [], 0
@@ -127,7 +161,7 @@ for cmd_v in CMDS:
         f, hf = spectrum(FZ, ACT, T)
         F.append(f); V.append(dx / T); H.append(hf)
     if not L:
-        print(f"\n=== command vx {cmd_v} m/s: fell on every seed"); continue
+        print(f"\n=== command vx {cmd_v} m/s: fell on {fell}/{SEEDS} seeds"); continue
     L = np.array(L); F = np.array(F); V = np.array(V); H = np.array(H)
     se = lambda x: x.std() / max(1, np.sqrt(len(x)))
     print(f"\n=== command vx {cmd_v} m/s" + (f"   ({fell} seed(s) fell)" if fell else ""))

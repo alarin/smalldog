@@ -222,6 +222,71 @@ def stance_qpos(m: mujoco.MjModel, P: dict) -> np.ndarray:
     return q
 
 
+def box_geom_ids(m: mujoco.MjModel, n_boxes: int) -> list[int]:
+    """The procedural terrain boxes, found by name.
+
+    NOT `ngeom - n_boxes`. The boxes go on the worldbody and worldbody geoms
+    compile FIRST -- geom 0 is the floor, 1..n are the boxes, and the CAD's
+    geoms follow. A tail slice lands on the rear-right leg, so randomising it
+    teleports the robot's own collision shapes once per episode. Measured on a
+    6-box model: ngeom 53, the last six geoms are rr_hip/rr_thigh/rr_shin and
+    rr_foot, and a policy asked to walk in that scene falls on every seed.
+
+    env/randomize.py carried the tail slice, with a comment asserting the
+    opposite, from the day it was written. It never fired because every run so
+    far passed --boxes 0; rl/README.md prescribes boxes, so it was waiting.
+    """
+    ids = []
+    for i in range(n_boxes):
+        g = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_GEOM, f"tbox{i}")
+        if g < 0:
+            raise ValueError(f"tbox{i} is not in this model — was it built with "
+                             f"n_boxes={n_boxes}?")
+        ids.append(int(g))
+    return ids
+
+
+def compile_with_boxes(tops, xy, terrain: bool = False, **kw):
+    """A model whose procedural boxes are ALREADY where you want them.
+
+    Use this instead of writing `m.geom_pos[box_ids] = ...` on a compiled model.
+    Worldbody geoms are static, and MuJoCo bakes their bounding volumes at
+    compile time: move one afterwards and `geom_xpos` follows, so the box draws
+    and reads back in the new place, while broadphase keeps testing the old one.
+    Nothing errors. The box is simply not there.
+
+    MJX does NOT share the fault -- it rebuilds candidate pairs from the live
+    positions -- which is the dangerous part. Measured on this model, a 260 mm
+    slab with its top at 60 mm under a dropped robot:
+
+        MJX,  box moved after put_model    base settles 106.2 mm   collides
+        CPU,  box moved after compile      base settles  73.5 mm   falls through
+        CPU,  box placed before compile    base settles 106.4 mm   collides
+
+    So env/randomize.py's per-environment boxes are real during training and
+    would be invisible in eval.py's sim-to-sim pass, which is the one place the
+    project treats as the honest engine. A terrain policy would be scored on
+    flat ground and the report would say rough.
+
+    `tops` is each box's top height in metres (negative buries it), `xy` an
+    (n, 2) array of centres.
+    """
+    import numpy as _np
+    tops = _np.asarray(tops, dtype=float)
+    xy = _np.asarray(xy, dtype=float).reshape(-1, 2)
+    n = len(tops)
+    if len(xy) != n:
+        raise ValueError(f"{n} tops but {len(xy)} centres")
+    spec, notes = build_spec(terrain=terrain, n_boxes=n, **kw)
+    by_name = {g.name: g for g in spec.worldbody.geoms}
+    for i in range(n):
+        g = by_name[f"tbox{i}"]
+        g.pos = [float(xy[i, 0]), float(xy[i, 1]),
+                 float(tops[i]) - BOX_HALF[2] if tops[i] >= 0.0
+                 else -BOX_HALF[2] - 1.0]
+    return spec.compile(), notes
+
+
 def joint_order(m: mujoco.MjModel, P: dict):
     """qpos/qvel/actuator indices for the twelve joints, in robot_params order.
 
