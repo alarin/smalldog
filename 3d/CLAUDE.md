@@ -55,7 +55,10 @@ name → (workplane, qty, note) and drives both the export loop and the BOM;
 - **Units are mm** everywhere: geometry, FEA (N, MPa), exports.
 - **Servo interface is measured, not assumed.** The numbers in the `S_*` / `HUB_*` block
   come from `ref/ST3215-3D/ST3215.step` via `tools/measure*.py`. If one looks wrong,
-  re-measure — do not adjust it to make a part fit.
+  re-measure — do not adjust it to make a part fit. **And the STEP is not the last word:**
+  `HUB_BOLT_D` is M3, measured on a hub that arrived, against the ⌀2.5 the STEP shows.
+  A vendor number that a real part contradicts loses; mark it in the README's source
+  column so the next reader knows which rows have met hardware.
 - **The ST3215 case has no threaded side holes.** The whole sleeve+fork architecture
   exists because of that. Nothing may load the servo through a printed thread or a
   single-shear horn.
@@ -68,7 +71,7 @@ name → (workplane, qty, note) and drives both the export loop and the BOM;
   at the moment in the assembly order when that nut goes in, and that is what fixes the
   assembly order in `README.md` (the LiDAR pedestal has to be bolted to the deck before
   the deck goes on the tray, because its screw heads end up inside the tray). At the
-  servo hubs the screw threads into the stock aluminium plate (both are tapped M2.5) —
+  servo hubs the screw threads into the stock aluminium plate (both are tapped M3) —
   there is no room for a nut there, and a hex pocket would eat over half the fork arm
   right under the screw head.
 - **A blind fastener path is invisible to every check in this repo, so the foot bolt has
@@ -82,14 +85,27 @@ name → (workplane, qty, note) and drives both the export loop and the BOM;
   span from the sole to the nut's far face is 28 mm — no head position could ever have
   reached, which is the tell that the number was never checked against the solid.
   `foot_bolt_check()` now probes the real solid along the axis and `build()` prints a
-  `foot bolt:` line; treat `!! FOOT BOLT` as a failure like `!! INTERFERENCE`. The
+  `foot bolt:` line; treat `!! FOOT BOLT` as a failure like `!! INTERFERENCE`.
+  **The same hole in the checks has now cost three fasteners, so there are three probes.**
+  `thrust_clear()` is the clamp screw against the annulus the distal fork sweeps, and
+  `fork_access()` is a driver-sized cylinder on each fork screw's axis against the part
+  the fork bolts onto — the roll joint's inboard arm has 0.6 mm of air behind it, and it
+  is `fork_access_bores()` in `chassis_bottom` that makes those four screws reachable at
+  all. Note where that cut lives: on the ASSEMBLED chassis, because the path crosses two
+  solids that get unioned and cutting either alone lets the union fill the other back in.
+  `DRIVER_REACH` is a breakout distance and not a key length, for a reason the docstring
+  gives. When you add a fastener, ask the three questions separately: does the hole reach,
+  does the head clear, and can a driver get to it. The
   length follows from `FOOT_CB_Z`, `FOOT_NUT_Z` and `M3_NUT_H` — if you move any of
   those, `FOOT_BOLT_L` and the BOM line in `README.md` move with them. Fixed 2026-08-31.
 - **Nothing goes into 23 < r < 34 of a joint axis over the sleeve's length.** The distal
   fork's spine sweeps that annulus, and the hip bracket's inboard web already comes to
-  r = 22.0. It is the binding constraint on the sleeve thrust clamp — the lug corner sits
-  at 21.6, and it is why the fastener is specified as M3×10: a longer one puts its *head*
-  outside the radius.
+  r = 22.0. It is the binding constraint on the sleeve thrust clamp, and **screws count**:
+  the lug corner sits at 21.6 and always cleared, but an M3×10 cap head reaches 24.2 and
+  bound the first assembled leg over ±2…38° of travel. The fastener is specified headless
+  for that reason — `THRUST_HEAD_*` — and `thrust_clear()` prints the margin on every run
+  (`clamp clear:`), with `thrust_bolts()` in the static side of all three `rom_scan` calls.
+  A check over the printed solids alone cannot see this: the part sticking out is hardware.
 - **Do not slit the sleeve.** Its `-x` end wall is the tube's only crossing of y=0 — the
   cable window has already eaten the `+x` one — so a C-clamp slit there opens the whole
   sleeve-plus-link box section. This was tried and measured: `thigh_A` inter-layer SF at

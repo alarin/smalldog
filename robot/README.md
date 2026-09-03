@@ -14,7 +14,10 @@ robot at all.
 | `bench/sweep.py` | drives one servo through the identification trajectories |
 | `bench/fit_bam.py` | those csv files → `rl/params/st3215.json` |
 | `bench/runlog.py` | the csv format, defined once and used from both ends |
-| `runtime/` | the 50 Hz loop and the safety layer — step 7, not written yet |
+| `runtime/calib.py` | which servo is which joint, where its zero is, which way it turns |
+| `runtime/safety.py` | the limits, and the one place that decides to cut torque |
+| `runtime/loop.py` | the 50 Hz tick, controller-agnostic — step 7 |
+| `runtime/walk.py` | the CLI that runs the trot on the robot |
 
 Nothing here needs hardware to be exercised:
 
@@ -23,6 +26,10 @@ python -m feetech.bus --selftest      # packets, checksums, sign-magnitude, Sync
 python bench/bus_probe.py --dry-run   # the timing harness
 python bench/sweep.py --dry-run --traj all
 python bench/fit_bam.py --selftest    # generate a known servo, then find it again
+python runtime/calib.py --selftest    # ids, centres, signs, the clamp, the round trip
+python runtime/safety.py --selftest   # every limit trips, and only when it should
+python runtime/loop.py --selftest     # 2 s of the real loop against a loopback bus
+python runtime/walk.py --dry-run --profile   # ... and the whole trot on top of it
 ```
 
 ## The 50 Hz budget
@@ -49,6 +56,90 @@ that number is an input to the training randomisation, not a diagnostic.
 `SYNC_READ` is not in every firmware; the driver falls back to sequential reads
 and reports which path it took, so the timing is never quietly measured on a
 protocol the runtime will not use.
+
+## The runtime, in order
+
+`runtime/` is the loop that lives in the budget above. It is deliberately ignorant
+of what is driving it: `loop.Runtime` takes
+
+```python
+source(dt, feedback) -> 12 joint angles, in robot_params.json's joint order
+```
+
+and does the bus, the timing and the safety layer around it. Today that source is
+`smalldog_walker`'s analytic trot, imported — not copied — from `ros2/`, which is
+pure Python and pulls in no part of ROS. Tomorrow it is the ONNX policy out of
+`rl/`. Neither gets its own idea of what a soft limit is.
+
+**Nothing here has run against a servo yet.** Every number below is either
+arithmetic or a default chosen to be conservative; the `--selftest`s prove the
+loop's own bookkeeping, not the robot.
+
+### Bring-up, the order it has to happen in
+
+1. **Program the ids.** `python runtime/calib.py --ids` prints the map the rest of
+   the tree assumes — `fl_roll` = 1 through `rr_knee` = 12, in `robot_params.json`
+   order. Set them with the Feetech tool over the URT-1 **before assembly**
+   (`3d/README.md`, "Assembly order", step 2): once a servo is inside a sleeve
+   inside a leg, it is still on the bus, but it is a bad time to discover two of
+   them answer to 4.
+
+2. **`python runtime/walk.py --preflight`.** Pings all twelve, reads the control
+   registers, and checks the host — including `latency_timer`, which ships at 16 ms
+   on FTDI and would eat most of the 20 ms tick on its own. Nothing moves.
+
+3. **`python runtime/calib.py --capture`.** Torque off; hold the robot at the
+   model's mechanical zero — legs straight down — and read. This is the only thing
+   that ties the servo's counts to the model's radians, and it is a property of
+   *this* assembly: the hub bolts on in any of four positions.
+
+4. **`python runtime/calib.py --sign all`.** Moves each joint 8.6° and asks a human
+   which way it went, because the bus cannot answer it — the servo reports its own
+   counts happily whichever way round the fork went on. A wrong sign on one knee is
+   a leg that drives itself into the floor the moment torque arrives, so it is
+   asked rather than assumed. The prompts are written against the model's
+   convention (+X forward, +Y left, +Z up, identical axes on all four legs): a
+   positive **roll** swings the foot to the robot's left, a positive **pitch**
+   swings it backward, a positive **knee** folds the shin back and shortens the leg.
+
+5. **`--stand` before `--profile` before the keyboard.** Standing is the first real
+   question and it is not "does it walk": it is whether twelve ST3215 hold 2.5 kg at
+   the commanded height without cooking. Watch the peaks the run prints.
+
+`calib.json` is a measurement of one physical robot and belongs in git — the Pi and
+the mac have no other way to agree about which servo is `fl_knee`.
+
+### What the loop does not do yet
+
+- **No IMU**, so `TrotGait.feedback()` is not called and this is the blind
+  open-loop trot. That is a supported mode, not a degradation hack: the gait falls
+  back to it on its own if the sensors stop. Measured cost, from `ros2/README.md`'s
+  own terrain sweep: 1.8° of heading drift over 1.2 m on flat ground, against 1.65 m
+  of sideways travel on relief. Flat floor, blind, is fine; rough ground is not.
+- **Foot contact is available without the IMU and is nearly free here.**
+  `smalldog_walker/contact.py` gets contact from the knee servo's load minus what
+  the same leg reads at the same phase in free air, and its one stated objection was
+  cost — four extra round trips per tick. This loop retires that: it already
+  SyncReads all fifteen feedback bytes from all twelve servos every tick, load
+  included. `walk.py --baseline` records the free-air curve with the robot hanging,
+  `--contact` uses it. The threshold is in Feetech's Present Load units and has to
+  be re-found on hardware, so both are opt-in.
+- **The servo model is still the vendor's.** `rl/params/st3215.json` says
+  `fitted: false` out loud. That does not block the analytic trot — the trot
+  commands positions and the servo's own loop decides the current — but it blocks
+  the RL policy, which was trained against the datasheet servo and says so in its
+  own run notes.
+- **The guard's limits are not measured.** `safety.Limits` defaults to 65 °C, 2.0 A
+  held for 0.3 s, 9.5 V and 0.35 rad of tracking error. The first three want
+  checking against what a real footfall does; the last against the servo's actual
+  lag at the gait's joint rates.
+
+### Margins worth knowing
+
+The trot stays inside the soft limits on its own — the runtime's clamp never bit
+over a sweep of commands up to 0.45 m/s — but the knee gets close: 95.3° against a
+99.1° soft limit at the top of that range. At the demo's 0.20 m/s there is room.
+The clamp stays anyway, because it has to hold for a source that is *not* the trot.
 
 ## The bench, in order
 
@@ -121,7 +212,10 @@ Non-printed, and the bench does not work without them:
 - **a clamp.** The stand only holds itself down by 1.4× with the heavy arm out
   horizontal — the two slots in the base take an M6 or a G-clamp, and
   `bench_rig.py` prints that ratio on every run;
-- 4 × M2.5 × 6 into the driven hub, 2 × M3 × 10 + nuts for the thrust clamp.
+- 4 × M3 × 6 into the driven hub, 2 × M3 × 10 **set screws** + nuts for the thrust
+  clamp. Headless is the robot's spec and the reason is on the robot, not here — a
+  cap head fouls the fork spine (`3d/README.md`, *The thrust clamp*). The bench has no
+  fork, so either works on the stand; use the same screw so there is one box of them.
 
 Bolt the arm on so it **hangs straight down** at the servo's centre position.
 That is not a preference: `fit_bam.py` regresses against `m·g·r·sin(q)`, so q = 0

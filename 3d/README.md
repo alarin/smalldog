@@ -28,7 +28,7 @@ the scripts in [tools/](tools/):
 | driven hub plate (25T side) | ⌀19.2, outer face **+20.30** from the case mid-plane | STEP |
 | passive hub plate | ⌀19.2, outer face **−16.95** (recessed 0.55 into the case base, ⌀25 pocket) | STEP |
 | hub-to-hub mounting span | **37.25 mm** | drawing |
-| hub fixing | 4 × ⌀2.5 **tapped M2.5** on a **⌀14** bolt circle, at 0/90/180/270° | STEP |
+| hub fixing | 4 × **tapped M3** on a **⌀14** bolt circle, at 0/90/180/270° | **hardware** — the STEP says ⌀2.5 and is wrong |
 | hub plate thickness | driven **2.50** (z 17.80…20.30), passive **2.20** (−16.95…−14.75) | STEP |
 | case side faces | **no threaded holes** — the case is gripped by form, not by screws | STEP |
 
@@ -62,7 +62,8 @@ way and the case drives itself onto one thrust bolt at the back while the opposi
 leg stops it at the front; turn it the other way and the other pair does the same. The
 play is closed by geometry, not by friction — which is why there are two bolts and not
 one. Each threads into an M3 nut in a side-loaded channel in the lug, so nothing threads
-into plastic. **Fit M3 × 10 and no longer** — see the radius rule below.
+into plastic. **Fit M3 × 10 set screws** — grub screws, no head — and see the radius rule
+below, which is what the head broke.
 
 The obvious clamp is to slit the sleeve into a C and squeeze it, and it is the wrong one
 here. The −x end wall is the tube's **only** crossing of y = 0 — the cable window has
@@ -73,12 +74,87 @@ it back (0.5). The thrust clamp leaves the ring intact and costs nothing.
 
 Everything either clamp may add has to stay inside **r < 23 mm** of the joint axis: the
 distal fork's spine sweeps the annulus 23…34 over the sleeve's whole length, and the hip
-bracket's inboard web already comes to r = 22.0. The lug corner sits at 21.6, and a screw
-longer than 10 mm puts its head outside that. The ROM scan is unchanged by the clamp —
-roll ±90, pitch ±90, knee ±110 with and without it.
+bracket's inboard web already comes to r = 22.0. The lug corner sits at 21.6 and has never
+been the problem. **The screw is.**
+
+The first assembled leg bound on its own clamp, and the arithmetic reproduces it. The bolt
+is a jack, so its tip ends on the case with the case pushed fully forward — x = −9.76 —
+and an M3 × 10 therefore has its bearing face 0.65 mm proud of the lug. Add a DIN 912 cap
+head to that and the head's corner is at **r = 24.2**, inside an annulus that starts at
+23.0. The foul is not marginal and not at the edge of travel: it runs from about ±2° to
+±38° of joint rotation, a band that contains `STAND_PITCH` and that every stride crosses.
+
+Nothing is lost by deleting the head. The nut is captive in the lug, the tip presses the
+case and the reaction goes into `THRUST_SEAT`; the head bears on nothing at any point of
+that load path and is purely a driving feature. A headless M3 × 10 reaches r = 20.96 —
+inside the lug's own 21.57, so the lug goes back to being the binding term with 1.43 mm to
+spare. The ⌀3.4 clearance hole runs a millimetre past the lug's outer face, so a hex key
+still reaches the screw with the fork in place. For the record, the two alternatives: an
+ISO 7380 button head comes to 22.98, which is 0.02 mm and not a clearance, and a
+countersunk head sitting unsunk on the face comes to 23.08 and fouls.
+
+The length rule survives, at a different threshold — headless, M3 × 12 still clears by
+0.14 and M3 × 14 does not clear at all.
+
+`thrust_clear()` is that check, closed form, printed on every run as `clamp clear:`, and
+`thrust_bolts()` puts the screws into the static side of all three `rom_scan` calls so the
+boolean sweep sees them too. Neither existed before this: every printed solid passed, and
+the joint still bound, because the thing sticking out was a screw and no screw was in the
+model. The ROM scan is unchanged by the clamp itself — roll ±90, pitch ±90, knee ±110 with
+and without it.
 
 Range of motion is measured by swept boolean interference against the real solids
 (`rom_scan()` in the script), not estimated.
+
+### Reaching the fork screws
+
+The fork's two arms are bolted to the hubs **last**, and there is no order in which they
+could be bolted first: the arms straddle the sleeve, so the fork goes on radially over a
+servo that is already in its bore. Each arm's four screws are then driven from *outside*
+it, along the joint axis. Whether a driver fits there is a property of whatever happens to
+be sitting behind that arm — the fork is identical at all three joints, its neighbours are
+not.
+
+**At the roll joint the inboard arm has 0.6 mm.** The passive-hub arm's outer face is at
+x = 68.1 and `roll_module`'s root gusset ends at 67.5. Behind that sits 2.8 mm of solid
+wall, and behind *that* the gusset's own hollow, which opens into the tray. So the four
+inboard screws on every `hip_bracket` are unreachable with the leg on the robot, and there
+is no assembly order that avoids it.
+
+`fork_access()` is the check, and it is the third of a family: `foot_bolt_check()` probes
+a bolt path through its own part, `thrust_clear()` probes a screw head against a swept
+annulus, and this one probes a **driver** against the neighbouring part. All three exist
+because the same defect kept arriving by the same route — `isValid()` is happy with a
+screw nobody can turn, `interference()` only looks at the static body, and `rom_scan` only
+looks at what moves. A fastener whose *access* is blocked is invisible to all three.
+
+**The fix is four ⌀6 bores per leg**, cut coaxially with the screws by
+`fork_access_bores()` and applied to the *assembled* chassis rather than to `roll_module`
+— the path crosses two solids that get unioned, the tray's own front wall at x 60.2…63 and
+the gusset's inner skin at 64.7…67.5, and cutting either one alone lets the union fill the
+other back in.
+
+They stop **exactly** on the tray's inner face, and that is not tidiness. One millimetre
+further in and the outboard bore starts eating the tray's *side* wall: its inner face is at
+`BODY_W/2 - WALL` = 43.2 and that screw's axis is at y = 43.0, so at ⌀6 the bore would
+reach y = 46 and come out tangent to the outer skin — the zero-thickness sliver this
+project has already been bitten by once. Inside the tray the front wall is full width and
+the bore is wholly within it, so there is nothing to graze.
+
+That same 0.2 mm is why `DRIVER_REACH` is a **breakout** distance, not a key length. No
+straight run of any diameter reaches the outboard screw from inside the tray: a 2.5 mm key
+on its axis is 1.05 mm inside the side wall and would want a groove down the whole length
+of it. What works is a ball end — ⌀6 around a ⌀2.5 key over 7.9 mm of bore is **23.9° of
+tilt**, inside the ~25° a ball end takes, and 20° carries the far end of the key 14 mm
+inboard over its own length. The bore is the part the CAD has to get right; the angle is
+the user's wrist.
+
+⌀6 also passes an M3 head, so the screws go in through the bores rather than being
+pre-placed in the arm and held with grease while the fork slides on.
+
+Not yet measured: this removes material from the gusset's inner skin and the tray's front
+wall, and `fea.py --all` against the previous run is what says whether the root can still
+carry the leg. Read the inter-layer SF on `hip_bracket_A` before printing a chassis.
 
 ## Geometry
 
@@ -443,19 +519,53 @@ splittable at all: the fork is what puts the servo shaft in double shear.
 
 ## Fasteners
 
+Counts are per robot and come off the geometry, not off a memory of it: 12 joints, each
+one `sleeve()` + one `fork()`, four `DECK_SCREWS` × 2, `CAM_FOOT_Y`, `LIDAR_N`, `HUB_N`.
+
+**Structural — the robot stands and walks on these:**
+
 | | qty |
 |---|---|
-| M2.5 × 6 (fork → driven hub, 4 per joint) | 48 |
-| M2.5 × 7 (fork → passive hub, 4 per joint) | 48 |
-| M3 × 10 + M3 nut (sleeve thrust clamp, 2 per joint — **not longer**) | 24 |
-| M3 × 12 + M3 nut (deck → tray bosses) | 8 |
-| M3 × 16 + M3 nut (LiDAR pedestal → deck) | 4 |
-| M3 × 12 (Unitree L2 → pedestal, into the L2's own M3 threads) | 4 |
-| M3 × 24 (LiDAR guard + deck → tray boss, replaces the front two deck screws) | 2 |
-| M3 × 24 (GPS mast + deck → tray boss, replaces the rear two deck screws) | 2 |
-| cable tie, 2.5 mm (GPS receiver → platform) | 2 |
+| M3 × 6 (fork → driven hub, 4 per joint) | 48 |
+| M3 × 7 (fork → passive hub, 4 per joint) | 48 |
+| M3 × 10 **set screw** (grub, hex socket) + M3 nut (sleeve thrust clamp, 2 per joint) | 24 |
 | M3 × 30 socket head + M3 nut (foot → shin ankle) | 4 |
-| M2.5 × 10 + M2.5 nut (Orange Pi) | 4 |
+| M3 × 12 + M3 nut (deck → tray bosses) | 8 |
+
+**Payload — none of it is needed to walk:**
+
+| | qty |
+|---|---|
+| M2.5 × 8 + M2.5 nut (Orange Pi → deck standoffs) | 4 |
+| M2.5 × 6 + M2.5 nut (BMI088 → the IMU tabs, from below) | 2 |
+| M3 × 20 + M3 nut (camera mount → the chassis gusset) | 2 |
+| M3 × 16 + M3 nut (LiDAR pedestal → deck, from underneath) | 4 |
+| M3 × 12 (Unitree L2 → pedestal, into the L2's own M3 threads) | 4 |
+| M3 × 24 (GPS mast + deck → tray boss, **replaces** the rear two deck screws) | 2 |
+| cable tie, 2.5 mm (GPS receiver → platform) | 2 |
+
+Four of those lengths are derived rather than chosen, and three of them have a ceiling as
+well as a floor — a longer screw is not the safe direction:
+
+- **the thrust clamp, headless.** Not a length at all but a head: a cap head puts its
+  corner at r = 24.2 inside the fork spine's 23.0 and binds the joint over ±2…38°. See
+  *The thrust clamp*. Headless, the length ceiling is M3 × 12; × 14 fouls.
+- **the hub screws, M3 and not M2.5.** `HUB_BOLT_D` is measured on a hub that arrived;
+  the vendor STEP's ⌀2.5 is not what the part has. Driven: 4.0 arm + ≤2.5 hub, so 6.5 is
+  the ceiling. Passive: 4.0 arm + 0.95 pedestal + ≤2.2 hub, so 7.15 is. Past the hub they
+  bottom on the servo case, which the vendor FAQ says stalls and burns it. M3 × 7 is a
+  rare length; a 1 mm washer under the head of an M3 × 8 gets there, an M3 × 6 leaves
+  ~1 mm in the thread.
+- **the Orange Pi standoffs, M2.5 × 8 and not × 10.** The clearance hole runs from the
+  deck's *top* face upward — it does not pass through the deck — so the screw has
+  `OPI_STAND_H` + the board, 7.0 + 1.6 = 8.6 mm, and no more. Ten bottoms on the deck and
+  lifts the board off the standoff. The nut sits 1.5…3.5 above the deck, so 8 clears it.
+- **the camera, M3 × 20.** Head counterbore at `top` − 6 = 25.96, nut floor at
+  `CAM_LEDGE` − `CAM_NUT_DZ` = 7.36: 18.6 mm to full engagement. M3 × 16 reaches 9.96 and
+  the nut's top face is at 10.06, i.e. it does not enter the nut at all.
+- **the IMU, M2.5 × 6.** 1.6 of board + 1.75 of tab reaches the nut, 2.0 more clears it —
+  5.35. It stands 0.65 proud of the deck's top face, under the Pi's 7 mm standoffs.
+  The board thickness is `IMU_BOARD` and is still **verify**; so is this length.
 
 **Nothing threads into plastic anywhere on the robot.** Every screw above that is not going
 into the stock aluminium lands in a nut, and every one of those nuts sits in a side-loaded
@@ -463,9 +573,11 @@ slot (`nut_slot()` in the script) whose two walls hold the nut's flats so it can
 The slot always opens toward the face that is still reachable at the point in the assembly
 order where that nut goes in — outward for the LiDAR legs, toward the middle of the tray
 for the corner deck bosses, along +x for the mid pair (inboard of them is the pack),
-outboard for the Orange Pi standoffs, and above the foot's top face for the ankle bolt. No heat-set inserts.
+outboard for the Orange Pi standoffs, forward under the chin for the camera gusset, toward
+x = 0 into the deck window for the IMU tabs, and above the foot's top face for the ankle
+bolt. No heat-set inserts.
 
-No nuts at the hubs: the ⌀2.5 holes in both aluminium plates are tapped M2.5, so the screw
+No nuts at the hubs: the holes in both aluminium plates are tapped M3, so the screw
 goes in from the outside of the fork arm and threads into metal. There is no room for a nut
 anyway — 0.30 mm behind the driven hub, and the 0.55 mm base recess behind the passive one.
 Do not fit longer screws: past the hub they bottom out on the servo case, which the vendor
@@ -476,10 +588,16 @@ FAQ says stalls and burns the servo.
 1. Print `servo_gauge`, check a real ST3215 slides into the sleeve and the ⌀14 pattern lines up.
 2. Set servo IDs 1…12 over the bus **before** assembly (URT-1 + Feetech tool).
 3. Per joint: two M3 nuts into the thrust lug's channels → slide the servo into the sleeve
-   → run both thrust bolts in, evenly, until the case stops rocking → fit both aluminium
+   → run both thrust set screws in with a hex key, evenly, until the case stops rocking
+   (they are headless on purpose — a cap head fouls the fork spine, see *The thrust
+   clamp*) → fit both aluminium
    hubs to the servo → bolt the fork arms to the hubs (bottom arm's ⌀23 pad enters the
    case-base recess). The thrust bolts come first: once the fork is on, its spine sweeps
-   over the lug.
+   over the lug. **The fork cannot go on before the servo** — its arms straddle the
+   sleeve — so its screws are always last. At the hips the four inboard ones are reached
+   from **inside the tray**, through the ⌀6 bores in the front wall, with a **ball-end**
+   hex key tilted inboard; do them with the deck off and before the battery goes in. See
+   *Reaching the fork screws*, and run `mini_dog.py` for the `fork access:` line.
 4. Legs: hip bracket → thigh → shin → press the TPU foot onto the ⌀18 spigot, then the M3
    up through the foot into the nut in the ankle slot. The slot sits above the foot's top
    face, so the nut goes in with the foot already fitted, and the foot stays removable.
@@ -673,7 +791,12 @@ frame above.
 
 ## Verify before printing the whole set
 
-1. `servo_gauge` fit — the one thing that can invalidate everything else.
+1. `servo_gauge` fit — the one thing that can invalidate everything else. It checks the
+   bore and the ⌀14 bolt circle; it cannot check the *thread*, which is why the hub came
+   back M3 after the gauge had already passed. Try a real screw through a real hole.
+   It also cannot check *access*: it is half a sleeve with one arm and nothing behind it.
+   `fork access:` in `mini_dog.py`'s report is what covers that, and it wants reading
+   before `chassis_bottom` goes on the printer.
 2. Orange Pi 5 Pro hole pattern (currently 92 × 54).
 3. ~~Unitree L2 base bolt circle~~ — measured from the manual drawing: ⌀51, 4 × M3 ▽6 at
    22.5°, ⌀60 spigot, ⌀75 base, 75 × 75 × 65 mm, 230 g. Cable exit still to confirm on a

@@ -23,6 +23,8 @@ the robot's Orange Pi. There is no shared filesystem between them and no scp —
 repository is the only thing that crosses**, so a result that has to reach another
 machine gets committed.
 
-Work out which machine you are on before running anything. On the WSL2 box, read
+Work out which machine you are on before running anything. On the mac, read
+[`MAC.md`](MAC.md) first — it is the queue of CAD changes that have not yet been through
+CadQuery, and two of them move printed geometry. On the WSL2 box, read
 [`WSL.md`](WSL.md) first: it says which of the per-tree verification steps that machine
 can actually run, which environment they run in, and which it cannot build at all.

@@ -56,7 +56,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
 import mini_dog as md                                                # noqa: E402
-from mini_dog import (ARM_R, ARM_T, HUB_BC, HUB_N, HUB_TOP_Z, M25_CLR, S_AX, S_L, S_W,
+from mini_dog import (ARM_R, ARM_T, HUB_BC, HUB_N, HUB_TOP_Z, M3_CLR, S_AX, S_L, S_W,
                       SLEEVE_LEN, SLEEVE_W, THRUST_L, bxc, cyl)      # noqa: E402
 from export_sim import MP                                            # noqa: E402
 
@@ -138,15 +138,15 @@ def wedge(pts, z0, z1):
 
 def hub_face(z0, z1):
     """the driven hub's bolt pattern, exactly as fork() cuts it: @6.4 over the central
-    output-shaft screw so a driver still reaches it, and 4 x M2.5 clearance on the @14
-    circle.  The screws are M2.5 x 6 and thread into the stock aluminium - see the note
+    output-shaft screw so a driver still reaches it, and 4 x M3 clearance on the @14
+    circle.  The screws are M3 x 6 and thread into the stock aluminium - see the note
     in fork(); a longer one bottoms out on the case and the vendor FAQ says that burns
     servos."""
     d = cyl(ARM_R, z1-z0, (0, 0, z0))
     d = d.cut(cyl(3.2, 40, (0, 0, z0-10)))
     for i in range(HUB_N):
         th = math.radians(90*i)
-        d = d.cut(cyl(M25_CLR, 40, (HUB_BC/2*math.cos(th), HUB_BC/2*math.sin(th), z0-10)))
+        d = d.cut(cyl(M3_CLR, 40, (HUB_BC/2*math.cos(th), HUB_BC/2*math.sin(th), z0-10)))
     return d
 
 

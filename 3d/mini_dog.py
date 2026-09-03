@@ -27,7 +27,12 @@ OUT  = os.path.join(HERE, "out")
 S_L, S_W, S_H = 45.22, 24.72, 35.00   # case: length x width x height(along the axis)
 S_AX          = 10.11                 # axis offset from the output-side end face
 HUB_D         = 19.20                 # both aluminium hub plates
-HUB_BC        = 14.00                 # 4x M2.5 clearance holes, at 0/90/180/270 deg
+HUB_BC        = 14.00                 # 4x HUB_BOLT_D clearance holes, at 0/90/180/270
+HUB_BOLT_D    = 3.00                  # M3, and this one is measured on a real hub rather
+                                      # than read off the vendor STEP, which says @2.5 and
+                                      # is wrong.  The BOLT CIRCLE is right - the printed
+                                      # gauge dropped onto the real hub before this was
+                                      # found - so only the hole size and the screw move.
 HUB_N         = 4
 HUB_TOP_Z     = +20.30                # driven-hub outer face  (case top  +17.50)
 HUB_BOT_Z     = -16.95                # passive-hub outer face (case base -17.50, recessed)
@@ -79,13 +84,48 @@ NUT_CLR    = 0.25                     # slide fit on a nut pocket's flats
 #
 # Everything here stays inside r < SPINE_R0 of the joint axis: the distal fork's spine
 # sweeps the annulus SPINE_R0..~34 over the sleeve's whole length, and the hip bracket's
-# inboard web already comes to r = 22.0, so the lug corner is held at 21.6.  Fit M3x10 and
-# no longer - the head has to stay inside that radius too.
+# inboard web already comes to r = 22.0, so the lug corner is held at 21.6.
 THRUST_Y    = 5.50                    # the two bolts, either side of the axis
 THRUST_YL   = 10.00                   # lug half-width; the nut channels open on its faces
 THRUST_Z    = 7.00                    # lug half-height
 THRUST_L    = 6.00                    # how far the lug stands off the -x end wall
 THRUST_SEAT = 3.00                    # lug behind each nut - this is what takes the preload
+# The SCREW, and it is a set screw rather than a cap screw for a measured reason.  The lug
+# clears the spine with 1.4 mm to spare; its screw does not, and the screw is the part that
+# reaches furthest out.  Found on the first assembled leg, which bound on its own clamp,
+# then reproduced in the arithmetic below: an M3x10 DIN 912 cap head, standing 0.65 proud
+# with the case jacked forward, puts its corner at r = 24.2 against a spine that sweeps
+# from 23.0 - so the joint fouls between about 2 and 38 deg of travel, a band that contains
+# STAND_PITCH and that every stride crosses.  An ISO 7380 button head comes to 22.98, which
+# is 0.02 mm and not a clearance.  Headless comes to 20.96 and clears by 2.0.
+#
+# Nothing is lost by removing the head.  The bolt is a JACK: the nut is captive in the lug,
+# the tip presses the case, the reaction goes into THRUST_SEAT - the head bears on nothing
+# at any point, and is only ever a driving feature.  The clearance hole is @3.4 and runs a
+# millimetre past the lug's outer face, so a hex key still reaches the screw with the fork
+# in place.  thrust_clear() is the check that was missing; it prints on every run.
+# A screw you cannot reach is a screw that is not fitted.  The fork's two arms are bolted
+# to the hubs LAST, with the servo already in its sleeve - the arms straddle the sleeve, so
+# there is no order in which the fork goes on first - and each arm's four screws are driven
+# from OUTSIDE it, along the joint axis.  Whether a driver fits there is a property of the
+# neighbouring part, not of the fork, so fork_access() probes it against the real solid.
+DRIVER_D      = 5.00                  # hex driver shank, and the room to turn it
+DRIVER_REACH  = 7.50                  # straight run needed to BREAK OUT of the material
+                                      # into open space.  Not a key length: at the roll
+                                      # joint no straight 25 mm run exists at any diameter
+                                      # and none can be made - the outboard screw's axis
+                                      # passes 0.2 mm inside the tray's own side wall, so
+                                      # a straight key would need a groove down the whole
+                                      # length of it.  What is achievable, and what the
+                                      # bores below deliver, is a clear tunnel through the
+                                      # material; a ball-end key does the last 20 deg.
+FORK_ACCESS_D  = 6.00                 # the bore: @6 around a @2.5 key through ~11 mm is
+                                      # ~21 deg of tilt, inside a ball end's ~25, and it
+                                      # also passes an M3 head so the screw goes in this
+                                      # way rather than being pre-placed in the arm.
+THRUST_BOLT_L = 10.00                 # M3 x 10: 9.35 of it is lug + nut + reach to the case
+THRUST_HEAD_D = 3.00                  # set screw, so the head IS the thread OD ...
+THRUST_HEAD_H = 0.00                  # ... and so it stands nothing proud of the shank
 
 # =====================================================================================
 # 3. robot
@@ -671,7 +711,7 @@ def hub_plate(top=True):
         h = h.cut(cyl(HUB_CTR_D/2, HUB_T_BOT+2, (0,0,z0-1)))
     for i in range(HUB_N):
         th = math.radians(90*i)
-        h = h.cut(cyl(2.50/2, 12, (HUB_BC/2*math.cos(th), HUB_BC/2*math.sin(th), z0-1)))
+        h = h.cut(cyl(HUB_BOLT_D/2, 12, (HUB_BC/2*math.cos(th), HUB_BC/2*math.sin(th), z0-1)))
     return h
 
 def hubs():
@@ -738,6 +778,27 @@ def sleeve(length=SLEEVE_LEN, wall=SLEEVE_W, window=True, lighten=True, clamp=Tr
             s = s.cut(c)
     return s
 
+def thrust_bolts():
+    """The two clamp screws, in sleeve-local coordinates.
+
+    Hardware, with the same standing as hubs() and servo_dummy(): no printed part is cut
+    against it.  It exists because rom_scan sweeps solids rather than intentions, and the
+    screw reaches further out of the lug than the lug does - which is exactly how a leg
+    that passes every check in this file can still bind on its own clamp.
+
+    The tip sits on the case's -x face with the case jacked fully forward, which is where
+    a tightened jack screw leaves it and the shortest the screw can look."""
+    x_tip  = -S_AX + CLR                          # case -x face, pushed onto the front legs
+    x_head = x_tip - THRUST_BOLT_L
+    s = None
+    for sg in (1, -1):
+        b = cyl(3.0/2, THRUST_BOLT_L, (x_head, sg*THRUST_Y, 0), axis=(1,0,0))
+        if THRUST_HEAD_H > 0:
+            b = b.union(cyl(THRUST_HEAD_D/2, THRUST_HEAD_H,
+                            (x_head-THRUST_HEAD_H, sg*THRUST_Y, 0), axis=(1,0,0)))
+        s = b if s is None else s.union(b)
+    return s
+
 def fork(spine_r0=SPINE_R0, spine_r1=SPINE_R1, spine_w=SPINE_W):
     """distal-link end; link direction is servo -X."""
     def arm(z0, z1):
@@ -747,7 +808,7 @@ def fork(spine_r0=SPINE_R0, spine_r1=SPINE_R1, spine_w=SPINE_W):
         for i in range(HUB_N):
             th = math.radians(90*i)
             px, py = HUB_BC/2*math.cos(th), HUB_BC/2*math.sin(th)
-            a = a.cut(cyl(M25_CLR, 40, (px,py,z0-10)))
+            a = a.cut(cyl(M3_CLR, 40, (px,py,z0-10)))
         return a
     top = arm(HUB_TOP_Z, HUB_TOP_Z+ARM_T)
     bot = arm(ARM_BOT_TOP-ARM_T, ARM_BOT_TOP)
@@ -756,14 +817,17 @@ def fork(spine_r0=SPINE_R0, spine_r1=SPINE_R1, spine_w=SPINE_W):
     bot = bot.cut(cyl(3.2, 40, (0,0,z)))          # pedestal plugs the four M2.5 holes
     for i in range(HUB_N):
         th = math.radians(90*i)
-        bot = bot.cut(cyl(M25_CLR, 40, (HUB_BC/2*math.cos(th), HUB_BC/2*math.sin(th), z)))
+        bot = bot.cut(cyl(M3_CLR, 40, (HUB_BC/2*math.cos(th), HUB_BC/2*math.sin(th), z)))
     # No nut pockets here.  The screw is driven from the outside and threads into the
     # stock aluminium hub - the @2.5 holes in both plates are tapped, and there is nowhere
     # for a nut anyway: behind the driven hub sit 0.30 mm to the case top, behind the
     # passive one the 0.55 mm base recess.  A hex pocket would also take 2.2 of the 4.0 mm
     # arm exactly under the screw head, where the bolt load enters the part.
-    # Screws: M2.5x6 driven (4.0 arm + <=2.5 hub), M2.5x7 passive (4.0 + 0.95 pedestal
+    # Screws: M3x6 driven (4.0 arm + <=2.5 hub), M3x7 passive (4.0 + 0.95 pedestal
     # + <=2.2 hub).  Longer bottoms out on the case - the vendor FAQ warns it burns servos.
+    # M3 and not M2.5: HUB_BOLT_D is measured on the hub, the STEP's @2.5 is not what
+    # arrived.  Only the hole grew - @2.9 to @3.4 - so a leg already printed can be
+    # drilled out rather than reprinted.
     spine = bxc(-spine_r1, -spine_r0, -spine_w/2, spine_w/2, ARM_BOT_TOP-ARM_T, HUB_TOP_Z+ARM_T)
     return top.union(bot).union(spine)
 
@@ -814,6 +878,38 @@ def roll_module():
                 .cut(bxc(xa-1, xm-3.4, -10.0, ROLL_Y+9.0, -11.0, 11.0)))
     return s
 
+def fork_access_bores(d=FORK_ACCESS_D):
+    """The four bores that let a driver reach the roll joint's inboard fork screws.
+
+    Coaxial with the screws by construction: the same HUB_BC circle fork() cuts, run from
+    the arm's outer face inward.  They have to be cut from the ASSEMBLED chassis and not
+    from roll_module(), because the path crosses two solids that are unioned - the tray's
+    own front wall at x 60.2..63 and the gusset's inner skin at 64.7..67.5 - and neither
+    of them alone blocks it.  Cut one at a time and the union fills the other back in.
+
+    They stop exactly on the tray's inner face, and that is not tidiness.  Run them one
+    millimetre further and the OUTBOARD bore starts eating the tray's SIDE wall, whose
+    inner face is at BODY_W/2-WALL = 43.2 while that screw's axis is at y = 43.0: at @6 it
+    would reach y = 46 and come out tangent to the outer skin, which is the zero-thickness
+    sliver this file has been bitten by before.  Inside the tray the wall is full-width and
+    the bore is wholly within it, so there is nothing to graze.
+
+    That 0.2 mm is also why DRIVER_REACH is a breakout distance and not a key length.  No
+    straight run of any diameter reaches that screw from inside the tray - a 2.5 mm key on
+    its axis is 1.05 mm inside the side wall and would need a groove down the whole length
+    of it.  What works is a ball end: @6 around a @2.5 key over 7.9 mm of bore is 23.9 deg
+    of tilt, inside the ~25 a ball end takes, and 20 deg of tilt carries the far end of the
+    key 14 mm inboard over its own length - clear of the wall by an order of magnitude.
+    The bore is the part that must be right; the angle is the user's wrist."""
+    z0 = (BODY_L/2 - WALL) - ROLL_X          # the tray's inner face, in servo-local z
+    b = None
+    for i in range(HUB_N):
+        th = math.radians(90*i)
+        c = cyl(d/2, (ARM_BOT_TOP - ARM_T) - z0,
+                (HUB_BC/2*math.cos(th), HUB_BC/2*math.sin(th), z0))
+        b = c if b is None else b.union(c)
+    return mv(b, ROLL_LOC)
+
 def chassis_bottom():
     s = (bxc(-BODY_L/2, BODY_L/2, -BODY_W/2, BODY_W/2, BODY_Z0, BODY_Z1)
          .cut(bxc(-BODY_L/2+WALL, BODY_L/2-WALL, -BODY_W/2+WALL, BODY_W/2-WALL,
@@ -821,6 +917,13 @@ def chassis_bottom():
     rm = roll_module()
     for f in (lambda w: w, mirY, mirX, lambda w: mirX(mirY(w))):
         s = s.union(f(rm))
+    # Driver access to the four inboard fork screws on every hip_bracket.  Without these
+    # they are not hard to fit, they are impossible: the arm's outer face is 0.6 mm off
+    # the root gusset and the fork can only go on after the servo is in its bore, so those
+    # screws are always last and always blind.  See README, "Reaching the fork screws".
+    ab = fork_access_bores()
+    for f in (lambda w: w, mirY, mirX, lambda w: mirX(mirY(w))):
+        s = s.cut(f(ab))
     # 6x 21700 cradle: two layers of three, cells along X, low and central.  Four fins on
     # BATT_PITCH, so each of the three channels comes out exactly CELL_D+CELL_FIT wide.
     for i in range(4):
@@ -1429,7 +1532,7 @@ def servo_gauge():
     a = a.cut(cyl(3.2, 20, (0,0,HUB_TOP_Z-1)))
     for i in range(HUB_N):
         th = math.radians(90*i)
-        a = a.cut(cyl(M25_CLR, 20, (HUB_BC/2*math.cos(th), HUB_BC/2*math.sin(th), HUB_TOP_Z-1)))
+        a = a.cut(cyl(M3_CLR, 20, (HUB_BC/2*math.cos(th), HUB_BC/2*math.sin(th), HUB_TOP_Z-1)))
     return g.union(a.translate((0, 46.0, -HUB_TOP_Z)))
 
 # =====================================================================================
@@ -1520,6 +1623,59 @@ def foot_bolt_check():
                       sol, gp_Pnt(PITCH_X, LEG_Y, z0 + (i+0.5)*dz), 1e-7).State() == TopAbs_IN)
     tip = FOOT_BOLT_L - FOOT_CB_Z                     # above FOOT_Z, from the shoulder
     return blocked, tip - (FOOT_NUT_Z + M3_NUT_H), (FOOT_NUT_Z + M3_NUT_H + 5.0) - tip
+
+def fork_access(reach=DRIVER_REACH):
+    """Can a driver actually reach each fork arm's four screws?  Returns
+    {(joint, side): blocked_mm3}, and 0.0 is the only passing value.
+
+    Third member of the same family as foot_bolt_check() and thrust_clear(), and it exists
+    for the same reason: `isValid()` is happy with a screw nobody can turn, interference()
+    only looks at the static body, and rom_scan only looks at what moves.  A fastener whose
+    ACCESS is blocked is invisible to all three, and the robot has now shipped that defect
+    twice - the foot bolt that opened inside the dome, and the clamp head inside the spine.
+
+    The probe is a driver-sized cylinder on each screw axis, run outward from the arm's
+    outer face, intersected with the part the fork bolts ONTO.  That neighbour is the whole
+    question: the fork is identical at all three joints, and what differs is what happens
+    to be sitting behind it."""
+    out = {}
+    for joint, loc, near in (("roll",  ROLL_LOC,  PARTS["chassis_bottom"][0]),
+                             ("pitch", PITCH_LOC, PARTS["hip_bracket_A"][0]),
+                             ("knee",  KNEE_LOC,  PARTS["thigh_A"][0])):
+        for side, face, sgn in (("driven",  HUB_TOP_Z + ARM_T,   +1.0),
+                                ("passive", ARM_BOT_TOP - ARM_T, -1.0)):
+            probe = None
+            for i in range(HUB_N):
+                th = math.radians(90*i)
+                c = cyl(DRIVER_D/2, reach,
+                        (HUB_BC/2*math.cos(th), HUB_BC/2*math.sin(th), face),
+                        axis=(0, 0, sgn))
+                probe = c if probe is None else probe.union(c)
+            try:
+                v = mv(probe, loc).val().intersect(near.val()).Volume()
+            except Exception:
+                v = 0.0
+            out[(joint, side)] = v
+    return out
+
+def thrust_clear():
+    """Furthest anything the thrust clamp adds gets from the joint axis, against the
+    SPINE_R0 the distal fork sweeps.  Returns (r, margin); margin has to stay positive.
+
+    Closed form, and deliberately so: no CadQuery, no sweep, no solids - so it costs
+    nothing to print on every run and it stays readable next to the numbers it is made of.
+    rom_scan sees the same thing through the boolean now that thrust_bolts() is in the
+    static side of every scan, but a sweep at `step` degrees can step straight over a
+    2 mm foul, and this cannot.
+
+    Both terms matter and they move independently.  The LUG is set by THRUST_L and
+    THRUST_YL and has always been fine.  The SCREW is set by THRUST_BOLT_L and the head,
+    and it is the one that put the first assembled leg into its own spine."""
+    x_out   = (-S_AX + CLR) - THRUST_BOLT_L - THRUST_HEAD_H
+    r_screw = math.hypot(x_out, THRUST_Y + max(THRUST_HEAD_D, 3.0)/2)
+    r_lug   = math.hypot(-S_AX - SLEEVE_W - THRUST_L, THRUST_YL)
+    r = max(r_screw, r_lug)
+    return r, SPINE_R0 - r
 
 PARTS, REPORT = {}, {}
 def build():
@@ -1650,6 +1806,26 @@ def main():
     else:
         print(f"  foot bolt:   M3 x {FOOT_BOLT_L:.0f} clears the sole, {reach:+.1f} mm past"
               f" the nut, {spare:+.1f} mm of shin bore to spare")
+    # The clamp screw against the fork spine it lives under.  This is the invariant the
+    # first assembled leg broke: every printed solid passed, and the joint still bound,
+    # because the thing sticking out was a screw and no screw was in the model.
+    r, margin = thrust_clear()
+    if margin < 0:
+        print(f"  !! THRUST CLAMP  reaches r = {r:.2f}, inside the {SPINE_R0:.1f} the fork"
+              f" spine sweeps - the joint binds on its own clamp screws")
+    else:
+        kind = "set screw" if THRUST_HEAD_H <= 0 else f"head @{THRUST_HEAD_D:.1f}"
+        print(f"  clamp clear: M3 x {THRUST_BOLT_L:.0f} {kind} reaches r = {r:.2f} vs the"
+              f" spine's {SPINE_R0:.1f} ({margin:+.2f} mm)")
+    # ... and whether a driver can reach the screws that hold the legs on at all.
+    acc = fork_access()
+    bad = {k: v for k, v in acc.items() if v > INTERF_TOL}
+    for (joint, side), v in bad.items():
+        print(f"  !! FORK ACCESS  {joint}/{side} arm: {v:.0f} mm3 of the driver's"
+              f" {DRIVER_REACH:.1f} mm run is solid - those four screws cannot be fitted")
+    if not bad:
+        print(f"  fork access: all six arms break out within {DRIVER_REACH:.1f} mm"
+              f" (roll/passive through @{FORK_ACCESS_D:.0f} bores)")
     v = gps_clear()
     if v > INTERF_TOL:
         print(f"  !! GPS MAST  {v:.1f} mm3 of gps_mount is inside the Orange Pi envelope")
@@ -1692,15 +1868,20 @@ def main():
     # gps_mount goes in MIRRORED: it stands over the rear pair of deck bosses and this
     # scan swings the FRONT-left leg, so mirroring it forward is exactly the rear-leg
     # scan against the real one - the legs are mirror images and the roll axis is x.
+    # The clamp screws go in on the STATIC side of every scan: they belong to the sleeve,
+    # which belongs to the proximal part, and it is the distal fork that sweeps over them.
     rom["hip_roll"] = rom_scan(hip_bracket(),
                                chassis_bottom().union(mirX(gps_mount()))
                                                .union(camera_mount())
                                                .union(camera_module())
-                                               .union(mv(servo_dummy(), ROLL_LOC)),
+                                               .union(mv(servo_dummy(), ROLL_LOC))
+                                               .union(mv(thrust_bolts(), ROLL_LOC)),
                                (ROLL_X, ROLL_Y, ROLL_Z), axis=(1,0,0), lo=-90, hi=90)
-    rom["hip_pitch"] = rom_scan(thigh(), hip_bracket().union(mv(servo_dummy(), PITCH_LOC)),
+    rom["hip_pitch"] = rom_scan(thigh(), hip_bracket().union(mv(servo_dummy(), PITCH_LOC))
+                                                     .union(mv(thrust_bolts(), PITCH_LOC)),
                                 (PITCH_X, LEG_Y, PITCH_Z))
-    rom["knee"] = rom_scan(shin(), thigh().union(mv(servo_dummy(), KNEE_LOC)),
+    rom["knee"] = rom_scan(shin(), thigh().union(mv(servo_dummy(), KNEE_LOC))
+                                          .union(mv(thrust_bolts(), KNEE_LOC)),
                            (PITCH_X, LEG_Y, KNEE_Z))
     for k, v in rom.items():
         print(f"    {k:10s} free {v[0]:+4d} .. {v[1]:+4d} deg  (0 = leg straight down)")
