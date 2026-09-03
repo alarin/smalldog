@@ -249,11 +249,26 @@ class Run:
 
 
 def load_runs(d, seconds, fit_hz):
-    runs = []
+    runs, dry = [], []
     for name, meta, cols in runlog.load_dir(d):
         if not cols["t"]:
             continue
+        # sweep.py --dry-run writes a real csv, with the real filename, into the
+        # real --out directory; only the metadata says it never touched a servo.
+        # Checking the rig before the bench session is the sane thing to do, so
+        # these files WILL appear. Refuse the mixed corpus loudly rather than
+        # fitting the ST3215 to a simulation of itself.
+        if meta.get("dry_run"):
+            dry.append(name)
+            continue
         runs.append(Run(name, meta, cols, seconds, fit_hz))
+    if dry:
+        raise SystemExit(
+            f"{len(dry)} dry-run file(s) in {d} — these were generated without a "
+            f"servo on the bus and are not measurements:\n  "
+            + "\n  ".join(sorted(dry))
+            + "\nMove or delete them, then fit. (sweep.py --dry-run --out "
+              "somewhere-else keeps them apart in the first place.)")
     if not runs:
         raise SystemExit(f"no csv in {d}")
     return runs

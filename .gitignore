@@ -54,3 +54,8 @@ rl/.jax_cache/
 # that no document cites. Every file under data/ should be a run some analysis
 # actually reads — bench/fit_bam.py loads the whole directory, so a junk run is
 # not inert, it is a data point.
+
+# The dry-run corpus is exactly that scratch case: sweep.py --dry-run writes
+# real-looking CSVs from a simulated servo, into its own directory so it cannot
+# be mistaken for a measurement (fit_bam.load_runs refuses them by name anyway).
+robot/bench/data-dryrun/

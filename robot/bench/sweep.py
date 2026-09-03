@@ -407,10 +407,18 @@ def main():
     ap.add_argument("--rate", type=float, default=200.0, help="logging rate, Hz")
     ap.add_argument("--temp-limit", type=float, default=60.0)
     ap.add_argument("--current-limit", type=float, default=2.5)
-    ap.add_argument("--out", default=os.path.join(HERE, "data"))
+    ap.add_argument("--out", default=None,
+                    help="default bench/data, or bench/data-dryrun under --dry-run")
     ap.add_argument("--check", action="store_true", help="preflight only, no motion")
     ap.add_argument("--dry-run", action="store_true")
     a = ap.parse_args()
+
+    # A dry run writes a real csv with the real filename. Landing it in the same
+    # directory as the measurements puts a simulation of the servo into the fit
+    # of the servo, so it goes somewhere else unless the operator says otherwise.
+    # fit_bam.py refuses the mixed corpus as well; this is the belt.
+    if a.out is None:
+        a.out = os.path.join(HERE, "data-dryrun" if a.dry_run else "data")
 
     if a.dry_run:
         from feetech.loopback import LoopbackBus
