@@ -126,11 +126,51 @@ def traj_reversal(qmax, base=0.6):
 
 
 def traj_freeswing(qmax, start=1.2):
-    """Drive to `start`, release, log the decay. Torque off after the first second."""
+    """Drive to `start`, release, log the decay. Torque off after the first second.
+
+    `start` is worth setting deliberately rather than taking the default. Gravity
+    torque is m*g*r*sin(start), so it peaks at pi/2 and the default 1.2 rad gives
+    only 93 % of that — which on a rig whose breakaway friction sits close to
+    m*g*r is the difference between a decay trace and a flat line. Measured on the
+    ST3215 bench: released at 1.19 rad (0.352 N*m) the arm did not move at all,
+    released at pi/2 (0.380 N*m) it did, every time.
+    """
     return ("freeswing", 12.0, lambda t: min(start, qmax), False)
 
 
-TRAJ = {"hold": traj_hold, "step": traj_step, "chirp": traj_chirp,
+#: Consecutive limit violations required before a run aborts. See the guard
+#: in run_one() for why one sample is not enough.
+ABORT_SAMPLES = 3
+
+def traj_stall(qmax, q_block=0.0):
+    """Push against a mechanically blocked output, in bursts.
+
+    This is the only trajectory where w = 0 while the duty is saturated, so the
+    back-EMF term vanishes and the current is exactly U/R. Every other trajectory
+    sees R only inside the product k_u*R, which is why fit_bam's seed_from_saturation
+    calls the big steps "the ONLY place in the data where R appears on its own" —
+    and on a rig whose load is light that place is empty: the arm reaches its target
+    before the current builds, and 1/R regresses to a slope of nothing. Measured on
+    this bench, peak current over the whole driven set was 0.24 A, 37 ADC counts,
+    and R came back 664 ohm.
+
+    Bursts, not a continuous stall. Locked rotor is 2.7 A at 12 V, ~32 W into a
+    servo whose case is its only heatsink, so each push is followed by a rest AT
+    THE BLOCKED POSITION, where the position error and therefore the current are
+    zero. `q_block` must be where the output is actually held; the caller reads it
+    off the encoder rather than assuming, because a rest command anywhere else is
+    just a stall in the other direction.
+    """
+    PUSH, REST, AMP = 0.8, 1.7, 0.5
+    def fn(t):
+        k, phase = int(t // (PUSH + REST)), t % (PUSH + REST)
+        if phase > PUSH:
+            return q_block                      # zero error -> zero current
+        return max(-qmax, min(qmax, q_block + (AMP if k % 2 == 0 else -AMP)))
+    return ("stall", 12.5, fn, True)
+
+
+TRAJ = {"hold": traj_hold, "stall": traj_stall, "step": traj_step, "chirp": traj_chirp,
         "triangle": traj_triangle, "reversal": traj_reversal,
         "freeswing": traj_freeswing}
 ORDER = ["freeswing", "hold", "step", "reversal", "triangle", "chirp"]
@@ -147,7 +187,8 @@ def run_one(servo, name, T, fn, torque_all, a, meta):
     as measurement noise. 200 Hz is already an order of magnitude above anything
     a servo whose no-load speed is 4.7 rad/s can do.
     """
-    rows, released, late = [], False, 0
+    rows, released, late, glitches = [], False, 0, 0
+    trip = {"temp": 0, "current": 0, "range": 0}
     period = 1.0 / a.rate
     servo.torque(True)
     servo.goal(fn(0.0))
@@ -170,14 +211,31 @@ def run_one(servo, name, T, fn, torque_all, a, meta):
                              q_rad=fb["q"], w_rad_s=fb["w"], current_a=fb["current"],
                              volt_v=fb["volt"], temp_c=fb["temp"],
                              load_raw=fb["load"], counts=fb["counts"]))
-            if fb["temp"] >= a.temp_limit:
-                print(f"  !! {fb['temp']} C at the limit, stopping")
-                break
-            if fb["current"] >= a.current_limit:
-                print(f"  !! {fb['current']:.2f} A at the limit, stopping")
-                break
-            if abs(fb["q"]) > a.qmax + 0.15:
-                print(f"  !! {fb['q']:+.2f} rad outside the bench range, stopping")
+            # One sample never aborts. Feetech's checksum is a single byte, so
+            # roughly one corrupt packet in 256 passes it, and a spurious 150 C
+            # byte ended a freeswing run 0.7 s in with the servo sitting at 27 C.
+            # ABORT_SAMPLES consecutive violations is 15 ms at 200 Hz — orders of
+            # magnitude below any real thermal or overcurrent event, and the
+            # servo's own PROTECTION_CURRENT and OVERLOAD_TORQUE still sit
+            # underneath this guard rather than being replaced by it.
+            hit = None
+            for key, bad, msg in (
+                    ("temp", fb["temp"] >= a.temp_limit,
+                     f"{fb['temp']} C at the limit"),
+                    ("current", fb["current"] >= a.current_limit,
+                     f"{fb['current']:.2f} A at the limit"),
+                    ("range", abs(fb["q"]) > a.qmax + 0.15,
+                     f"{fb['q']:+.2f} rad outside the bench range")):
+                if bad:
+                    trip[key] += 1
+                    if trip[key] >= ABORT_SAMPLES:
+                        hit = msg
+                else:
+                    if 0 < trip[key] < ABORT_SAMPLES:
+                        glitches += 1       # a lone violation: corruption, not an event
+                    trip[key] = 0
+            if hit:
+                print(f"  !! {hit}, stopping")
                 break
             deadline += period
             slack = deadline - time.perf_counter()
@@ -192,6 +250,10 @@ def run_one(servo, name, T, fn, torque_all, a, meta):
         print("  no samples")
         return
     rate = len(rows) / max(1e-9, rows[-1]["t"])
+    if glitches:
+        print(f"  {glitches} isolated limit violations were ignored as packet "
+              f"corruption — the one-byte checksum lets some through; a real "
+              f"event trips {ABORT_SAMPLES} samples running")
     if late:
         print(f"  {late} of {len(rows)} samples were late — the bus could not keep "
               f"{a.rate:g} Hz; the fit uses the timestamps, so this is a warning, "
@@ -253,6 +315,10 @@ def main():
                     help="the printed arm's own J about the axis, kg m^2, from CAD")
     ap.add_argument("--volts", type=float, default=12.0, help="PSU setting, V")
     ap.add_argument("--centre", type=int, default=2048, help="counts at q = 0")
+    ap.add_argument("--freeswing-start", type=float, default=1.2, metavar="RAD",
+                    help="angle the freeswing releases from; gravity torque is "
+                         "m*g*r*sin(RAD), so pi/2 is the most a given arm can "
+                         "offer (default 1.2)")
     ap.add_argument("--qmax", type=float, default=1.4, help="bench travel limit, rad")
     ap.add_argument("--rate", type=float, default=200.0, help="logging rate, Hz")
     ap.add_argument("--temp-limit", type=float, default=60.0)
@@ -307,7 +373,16 @@ def main():
     for name in (ORDER if a.traj == "all" else [a.traj]):
         if name not in TRAJ:
             raise SystemExit(f"unknown trajectory {name!r}")
-        tname, T, fn, torque_all = TRAJ[name](a.qmax)
+        if name == "freeswing":
+            tname, T, fn, torque_all = TRAJ[name](a.qmax, a.freeswing_start)
+        elif name == "stall":
+            # where the output is actually blocked, not where we wish it were
+            q_block = 0.0 if a.dry_run else servo.feedback()["q"]
+            print(f"  blocked at {q_block:+.4f} rad "
+                  f"({math.degrees(q_block):+.1f} deg); pushing +-0.5 rad about it")
+            tname, T, fn, torque_all = TRAJ[name](a.qmax, q_block)
+        else:
+            tname, T, fn, torque_all = TRAJ[name](a.qmax)
         print(f"\n{tname}: {T:g} s"
               + ("" if torque_all else "   (torque released after 1 s)"))
         if name == "freeswing" and not a.dry_run:

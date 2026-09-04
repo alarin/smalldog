@@ -124,6 +124,13 @@ class Run:
         self.t, self.dt = grid, dt
         self.q = g("q_rad")
         self.i = g("current_a")
+        # The servo's own PRESENT_SPEED. Worth carrying rather than always
+        # differentiating q: at the bench's 200 Hz one encoder count of position
+        # is 0.307 rad/s, while PRESENT_SPEED quantises at 0.0767 rad/s -- four
+        # times finer. Measured on an ST3215 free swing, where the reported trace
+        # stepped cleanly between 1.9175 and 1.9942 rad/s while dq/dt scattered
+        # over a 0.3 rad/s staircase.
+        self.w_meas = g("w_rad_s") if "w_rad_s" in cols else None
         self.volt = g("volt_v")
         tgt = np.asarray(cols["target_rad"])[keep]
         self.on = ~np.isnan(tgt)
@@ -136,6 +143,18 @@ class Run:
             + self.mass * self.radius ** 2
         self.u_bat = (self.volt if np.isfinite(self.volt).all() and self.volt.max() > 1
                       else np.full_like(grid, float(meta.get("psu_volts", 12.0))))
+        # PRESENT_LOAD is the duty the inner loop actually applied, 0-1000,
+        # sign-magnitude with bit 10 the direction. Take the magnitude BEFORE
+        # resampling or the sign bit smears into the value. This is the only
+        # direct evidence of saturation in the log: seed_from_saturation used to
+        # infer it from position error, which on a rig where the arm slews freely
+        # selects mostly unsaturated samples and drags R with them.
+        lr = cols.get("load_raw")
+        if lr is None or len(lr) != len(keep):
+            self.duty = None
+        else:
+            mag = (np.asarray(lr, dtype=np.int64) & 0x3FF)[keep].astype(float)
+            self.duty = np.interp(grid, t, mag / 1000.0)
         self.load = A.pendulum_load(self.mass, self.radius)
 
     def predict(self, p: A.Params, dt_int):
@@ -285,6 +304,38 @@ def seed_from_holds(runs, p: A.Params) -> A.Params:
     if len(tau) < 4:
         return p
     tau, cur, err, iu = map(np.asarray, (tau, cur, err, iu))
+    # A hold only measures torque per amp if the MOTOR is holding the arm. Where
+    # static friction is comparable to m*g*r the gearbox holds it instead: the
+    # motor torque at rest is indeterminate anywhere in a band of width 2*tau_s,
+    # the current falls to nothing, and the regression divides a full gravity
+    # torque by ~0. This is a property of the RIG, not the servo, and no weighting
+    # fixes it — the information is absent.
+    #
+    # Test it on the answer rather than on tau_c, which is still its prior this
+    # early in the seeding: kt_eff times the stall current U/R is the implied
+    # stall torque, and if that is far past the datasheet the holds are measuring
+    # friction. Measured on the ST3215 bench: m*g*r = 0.380 N*m against tau_s in
+    # 0.352..0.380, kt_eff = 10.3 N*m/A, implied stall 32 N*m against a spec 2.94.
+    # Decline to seed and leave k_u at its prior, exactly as the reversal leaves
+    # the dead zone when its threshold is never bracketed.
+    good0 = np.asarray(cur) > 1e-3
+    if good0.sum() >= 4:
+        M0 = np.column_stack([np.asarray(cur)[good0], np.ones(int(good0.sum()))])
+        kt0 = float(np.linalg.lstsq(M0, np.asarray(tau)[good0], rcond=None)[0][0])
+        spec_stall = A.Params().k_u * 12.0
+        implied = kt0 * 12.0 / p.R
+        if implied > 3.0 * spec_stall:
+            mgr_max = max((r.mass * 9.80665 * r.radius for r in runs
+                           if r.trajectory == "hold"), default=0.0)
+            print(f"  holds: torque per amp comes out {kt0:.2f} N*m/A, an implied "
+                  f"stall of {implied:.1f} N*m against a spec {spec_stall:.2f} — "
+                  f"friction, not the motor, is holding this arm\n"
+                  f"         (m*g*r = {mgr_max:.3f} N*m). The torque constant is "
+                  f"not identifiable from these holds; leaving it at its prior. "
+                  f"Load the arm so m*g*r comfortably exceeds the joint's static "
+                  f"friction and re-run.")
+            return p
+
     d = dict(p.__dict__)
     # Both regressions carry an intercept, and leaving it out is not a detail.
     # The standing error is deadband + i*R/(kp*U): forcing the line through the
@@ -332,17 +383,34 @@ def seed_from_saturation(runs, p: A.Params) -> A.Params:
     the largest residuals in the set, are exactly what a robust loss discounts.
     Left to itself the fit throws away the one measurement that pins R.
     """
+    # If ANY run in the set actually pins the duty, trust that everywhere and let
+    # the runs that never saturate contribute nothing. Falling back per-run is
+    # worse than useless: the runs with no saturated samples are exactly the ones
+    # whose position-error samples are unsaturated, so the fallback tops up the
+    # regression with the very rows it is meant to exclude. Measured: 567 genuinely
+    # pinned samples give R = 3.88 ohm, and topping them up to 928 with inferred
+    # ones gives 7.92.
+    have_duty = any(r.duty is not None and (r.duty > 0.99).sum() >= 10 for r in runs)
     i, w, u = [], [], []
     for r in runs:
         if not r.on.any():
             continue
-        big = np.abs(r.target - r.q) > 0.15          # well past saturation
+        if have_duty and (r.duty is None or (r.duty > 0.99).sum() < 10):
+            continue
+        # Prefer the measured duty: "past saturation" is what this regression
+        # needs, and a large position error only implies it when the joint cannot
+        # slew away from the error. On a lightly loaded arm it usually can, so the
+        # error test admits fast-moving low-current samples whose back-EMF term
+        # is large -- and 1/R comes back an order of magnitude wrong.
+        big = (r.duty > 0.99) if have_duty else (np.abs(r.target - r.q) > 0.15)
         big &= r.on & (np.abs(r.i) > 1e-3)
         if big.sum() < 10:
             continue
-        # r.q is measured; differentiate it for speed rather than trusting the
-        # servo's own Present Speed, which is coarse and lags.
-        wq = np.gradient(r.q, r.dt)
+        # Speed enters this regression as the whole k_e/R column, and it trades
+        # off directly against 1/R -- so its noise lands straight on R. Prefer the
+        # servo's reported speed, which is the finer of the two at this rate (see
+        # Run.w_meas); differentiate only when the log predates it.
+        wq = r.w_meas if r.w_meas is not None else np.gradient(r.q, r.dt)
         i.append(np.abs(r.i[big])); w.append(np.abs(wq[big])); u.append(r.u_bat[big])
     if not i:
         print("  saturation: no samples with the duty pinned — the steps never "
@@ -502,8 +570,8 @@ def fit(runs, holdout=None, dt_int=1e-4, max_nfev=200, base=None,
     print(f"\nseeding from {len(train)} runs "
           f"({', '.join(sorted({r.trajectory for r in train}))})")
     base = seed_from_freeswing(train, base)
+    base = seed_from_saturation(train, base)   # R first: the holds divide by it
     base = seed_from_holds(train, base)
-    base = seed_from_saturation(train, base)
     base = seed_from_reversal(train, base)
 
     free = [r for r in train if r.trajectory == "freeswing"]
@@ -797,8 +865,18 @@ def main():
                   "has absorbed noise or the trajectory set is too narrow.")
 
     print(f"\nfitted:")
-    for n, _, _ in FIT:
+    # FIT names the fit-space coordinates (kt_eff, g_kp, g_ke, g_R); `p` is a
+    # Params, which carries the physical ones. Report both: the physical values
+    # are what ships, and the combinations are what the bench actually measured,
+    # so a reader can tell a well-determined ratio from a split that rests on a
+    # poorly-conditioned g_R.
+    for n in ("R", "k_e", "k_u", "kp", "J_m", "tau_c", "b_v",
+              "deadband", "punch", "theta_bl"):
         print(f"  {n:<12} {getattr(p, n):.5f}")
+    print(f"  {'kt_eff':<12} {p.k_u * p.R:.5f}   (= k_u*R, the hold slope)")
+    print(f"  {'g_kp':<12} {p.kp / p.R:.5f}   (= kp/R)")
+    print(f"  {'g_ke':<12} {p.k_e / p.R:.5f}   (= k_e/R)")
+    print(f"  {'g_R':<12} {1.0 / p.R:.5f}   (= 1/R, from the saturated steps)")
     print(f"  {'k_w':<12} {p.k_w:.5f}   (derived, = k_u*k_e)")
     print(f"  stall  {p.stall_torque(12.0):.2f} N*m @ 12 V, "
           f"{p.stall_torque(9.9):.2f} @ 9.9 V   (spec 2.94 @ 12)")
