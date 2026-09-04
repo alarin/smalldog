@@ -88,13 +88,17 @@ name → (workplane, qty, note) and drives both the export loop and the BOM;
   `foot bolt:` line; treat `!! FOOT BOLT` as a failure like `!! INTERFERENCE`.
   **The same hole in the checks has now cost three fasteners, so there are three probes.**
   `thrust_clear()` is the clamp screw against the annulus the distal fork sweeps, and
-  `fork_access()` is a driver-sized cylinder on each fork screw's axis against the part
-  the fork bolts onto — the roll joint's inboard arm has 0.6 mm of air behind it, and it
-  is `fork_access_bores()` in `chassis_bottom` that makes those four screws reachable at
-  all. Note where that cut lives: on the ASSEMBLED chassis, because the path crosses two
-  solids that get unioned and cutting either alone lets the union fill the other back in.
-  `DRIVER_REACH` is a breakout distance and not a key length, for a reason the docstring
-  gives. When you add a fastener, ask the three questions separately: does the hole reach,
+  `fork_access()` is a key-sized cylinder on each fork screw's real line, run **until it
+  stands in open air**, against the part the fork bolts onto — the roll joint's inboard
+  arm has 0.6 mm of air behind it, and it is `fork_access_channels()` in `chassis_bottom`
+  that makes those four screws reachable at all: two ⌀6 channels leaning `KEY_TILT`
+  outboard through the tray's front corner, which serve all four screws because the hub
+  circle turns with the leg (`fork_channels_cover()`). Note where that cut lives: on the
+  ASSEMBLED chassis, because the path crosses solids that get unioned and cutting any one
+  alone lets the union fill the others back in. The first version was four coaxial bores
+  into the tray with a probe that stopped inside the bore; it passed with one screw in
+  four reachable. A probe has to end in air, not in a hole.
+  When you add a fastener, ask the three questions separately: does the hole reach,
   does the head clear, and can a driver get to it. The
   length follows from `FOOT_CB_Z`, `FOOT_NUT_Z` and `M3_NUT_H` — if you move any of
   those, `FOOT_BOLT_L` and the BOM line in `README.md` move with them. Fixed 2026-08-31.
@@ -170,7 +174,7 @@ name → (workplane, qty, note) and drives both the export loop and the BOM;
   small but never negative.
 - **A boolean that fails on a degenerate contact comes back INVERTED, not broken, and
   `isValid()` still says True.** This is the OCC silent-failure note above generalised off
-  the shin lofts, and it shipped: `fork_access_bores()` cut its four @6 bores before the
+  the shin lofts, and it shipped: `fork_access_bores()` - since replaced by `fork_access_channels()`, which cuts through the corner instead - cut its four @6 bores before the
   rear connector pads were unioned on, and those pads start at exactly the plane the bores
   end on - `xw+WALL` = -60.2 against the bores' `BODY_L/2-WALL` = 60.2. They share **no
   volume at all**; the pad's inner face is welded straight onto the bore's circular

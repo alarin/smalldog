@@ -128,33 +128,50 @@ because the same defect kept arriving by the same route — `isValid()` is happy
 screw nobody can turn, `interference()` only looks at the static body, and `rom_scan` only
 looks at what moves. A fastener whose *access* is blocked is invisible to all three.
 
-**The fix is four ⌀6 bores per leg**, cut coaxially with the screws by
-`fork_access_bores()` and applied to the *assembled* chassis rather than to `roll_module`
-— the path crosses two solids that get unioned, the tray's own front wall at x 60.2…63 and
-the gusset's inner skin at 64.7…67.5, and cutting either one alone lets the union fill the
-other back in.
+**The first fix was four ⌀6 bores per leg, coaxial with the screws and driven from inside
+the tray — and measured on the solid it reached one screw of four.** The corner deck boss
+at (52, 38) stood in front of two; the outboard bore's axis ran 0.2 mm inside the tray's
+own side wall, so its ⌀6 came out through the skin with nothing left; and a bore coaxial
+with the screw only lets a key tilt (D − d)/2 over its length — 12.5°, not the 24° that
+was claimed. `fork_access()` passed through all of it because its probe stopped inside the
+bore. `MAC.md` of 2026-09-03 has the measurements. That investigation also found that no
+path *into* the tray can work at all: the battery cradle's front end stop is full height
+and spans y ±37, and every screw axis meets it within 18 mm.
 
-They stop **exactly** on the tray's inner face, and that is not tidiness. One millimetre
-further in and the outboard bore starts eating the tray's *side* wall: its inner face is at
-`BODY_W/2 - WALL` = 43.2 and that screw's axis is at y = 43.0, so at ⌀6 the bore would
-reach y = 46 and come out tangent to the outer skin — the zero-thickness sliver this
-project has already been bitten by once. Inside the tray the front wall is full width and
-the bore is wholly within it, so there is nothing to graze.
+**The fix that stands is two channels per leg, leaning outboard, and turning the leg
+between screws.** Two facts make it work:
 
-That same 0.2 mm is why `DRIVER_REACH` is a **breakout** distance, not a key length. No
-straight run of any diameter reaches the outboard screw from inside the tray: a 2.5 mm key
-on its axis is 1.05 mm inside the side wall and would want a groove down the whole length
-of it. What works is a ball end — ⌀6 around a ⌀2.5 key over 7.9 mm of bore is **23.9° of
-tilt**, inside the ~25° a ball end takes, and 20° carries the far end of the key 14 mm
-inboard over its own length. The bore is the part the CAD has to get right; the angle is
-the user's wrist.
+- The four screws sit on the ⌀14 hub circle, and that circle **turns with the leg**. A
+  channel at one position on the circle serves every screw within a quarter turn of it,
+  so two channels 90° apart serve all four. With the outboard arm still unbolted the fork
+  turns freely on the passive hub — the leg is turned by hand, no servo command, no
+  torque-off. `fork_channels_cover()` is the closed-form check: the worst screw is 90° from
+  its nearest channel, against the `FORK_TURN` = 90° the hip has.
+- Leaving the screw head at `KEY_TILT` = 20° *outboard* puts the key in open air past the
+  tray's front corner almost at once, without entering the tray. The "out" channel (world
+  y = `ROLL_Y` + 7, z = 0) crosses the gusset's inner skin and the tray's corner post and
+  is outside at x = 60 — 8 mm of material. The "top" channel (y = `ROLL_Y`, z = +7)
+  crosses the gusset skin, the front wall, the corner deck boss at z 4…10 (its M3 hole
+  starts at z = 11, its nut slot at 19) and the side wall, and comes out through the side
+  vent at x = 41 — 29 mm. A ball-end key works to ~25°; the 5° is margin.
 
-⌀6 also passes an M3 head, so the screws go in through the bores rather than being
-pre-placed in the arm and held with grease while the fork slides on.
+`fork_access_channels()` cuts them — ⌀`FORK_ACCESS_D` = 6, `FORK_ACCESS_L` = 55 mm along
+the leaning line — on the *assembled* chassis and last: the "top" channel crosses four
+solids that are unioned in separately, and cutting any one alone lets the union fill the
+others back in. `fork_access()` now runs a ⌀5 probe along the same two lines for the same
+55 mm, i.e. **until it stands in open air**, and a straight 40 mm behind the five arms
+that have air behind them; a boolean that fails counts as blocked, not as clear.
 
-Not yet measured: this removes material from the gusset's inner skin and the tray's front
-wall, and `fea.py --all` against the previous run is what says whether the root can still
-carry the leg. Read the inter-layer SF on `hip_bracket_A` before printing a chassis.
+Because neither channel enters the tray, the legs go on and off **with the deck on and the
+battery in**. On a chassis already printed they are a drill job: ⌀6, from outside, aimed
+20° inboard of the body's long axis at the screw — "out" enters the side wall 3 mm behind
+the front face at axis height, "top" enters through the side vent 22 mm behind the front
+face and 18 mm below the top edge. Stop at the gusset face (8 and 29 mm in) or the drill
+meets the servo.
+
+`fea.py` does not cover `chassis_bottom`, so the corner post and the bored boss get no
+number from it; the side wall already carries 22 × 18 vents beside the "top" exit. What is
+measured is `hip_bracket_A`'s inter-layer SF, unchanged because the bracket is.
 
 ## Geometry
 
@@ -595,10 +612,14 @@ FAQ says stalls and burns the servo.
    hubs to the servo → bolt the fork arms to the hubs (bottom arm's ⌀23 pad enters the
    case-base recess). The thrust bolts come first: once the fork is on, its spine sweeps
    over the lug. **The fork cannot go on before the servo** — its arms straddle the
-   sleeve — so its screws are always last. At the hips the four inboard ones are reached
-   from **inside the tray**, through the ⌀6 bores in the front wall, with a **ball-end**
-   hex key tilted inboard; do them with the deck off and before the battery goes in. See
-   *Reaching the fork screws*, and run `mini_dog.py` for the `fork access:` line.
+   sleeve — so its screws are always last. At the hips bolt the **inboard** arm first,
+   through the two ⌀6 channels in the tray's front corner, with a **ball-end** 2.5 mm key
+   leaning 20° outboard: turn the leg by hand until an arm hole shows at the bottom of a
+   channel, nudge the passive hub into line with the screw tip, drive the M3 × 7, turn the
+   leg a quarter turn to the next hole and repeat — between them the two channels reach
+   all four. Then line the outboard arm up with the driven hub and drive its four in open
+   air. Deck and battery stay where they are. See *Reaching the fork screws*, and run
+   `mini_dog.py` for the `fork access:` line.
 4. Legs: hip bracket → thigh → shin → press the TPU foot onto the ⌀18 spigot, then the M3
    up through the foot into the nut in the ankle slot. The slot sits above the foot's top
    face, so the nut goes in with the foot already fitted, and the foot stays removable.

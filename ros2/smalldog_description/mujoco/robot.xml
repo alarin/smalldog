@@ -31,7 +31,7 @@
   <worldbody>
     <body name="base_link" pos="0 0 0.1807" childclass="mujoco">
       <freejoint name="base_freejoint"/>
-      <inertial pos="0.006450 -0.000041 0.022008" mass="1.55963" fullinertia="0.00310650 0.00651718 0.00610457 0.00000661 -0.00077062 0.00000052"/>
+      <inertial pos="0.006458 -0.000041 0.022004" mass="1.55917" fullinertia="0.00310500 0.00651792 0.00610293 0.00000662 -0.00077046 0.00000053"/>
       <geom class="visual" type="mesh" mesh="base_link"/>
       <geom class="servo" type="mesh" mesh="fl_roll_servo"/>
       <geom class="servo" type="mesh" mesh="fr_roll_servo"/>

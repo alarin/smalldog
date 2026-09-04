@@ -11,8 +11,8 @@ split"):
 
 Five commits changed `3d/` from a session that had no CadQuery. The ladder in
 `3d/CLAUDE.md`, "Verifying a change", has now been run against all five. **Four of them are
-green. `7e30e75` is not, and it never could have been** — see the last section, which is
-the only part of this file still live.
+green. `7e30e75` was not, and it never could have been** — the section on it is kept as
+the record of why; what replaced it, on 2026-09-04, is the last section of this file.
 
 ## What the ladder said
 
@@ -59,7 +59,7 @@ became a 2.5 × 14.9 × 6.9 mm sliver, the ROM read `hip_roll +0 .. +0`, every
 The cut now happens last, after everything that adds material near it, and `build()` fails
 a part whose volume is not positive. Both are written up in `3d/CLAUDE.md`.
 
-## Still live — `7e30e75`'s bores do not do what they were cut to do
+## `7e30e75`'s bores did not do what they were cut to do (superseded 2026-09-04)
 
 Measured on the repaired solid, front-left hip, ⌀2.5 key swept over tilt and direction:
 
@@ -120,4 +120,52 @@ geometry is fixed. A red line that is true beats a green one that is not.
 * ~~**The hip's inboard fork screws are fitted from inside the tray**, through the ⌀6 bores,
   with a **ball-end** hex key tilted inboard.~~ **Not true as built** — see the section
   above. One of the four is reachable; three are behind a deck boss, and the outboard one
-  has no wall left. Do not print a chassis against this note.
+  has no wall left. Do not print a chassis against this note. **Replaced** by the two corner
+  channels of the last section: inboard arm first, ball-end key leaning 20° outboard, a
+  quarter turn of the leg between screws, deck and battery in place.
+
+## Fixed 2026-09-04: two channels through the corner, and the leg turns
+
+The four bores are gone. What replaced them is in `3d/README.md`, "Reaching the fork
+screws", and rests on two facts the bores ignored: the screw circle **turns with the leg**,
+so two channels a quarter turn apart serve all four screws; and a key leaning 20°
+*outboard* is in open air past the tray's front corner after 8 mm, without entering the
+tray — where the battery cradle's end stop closes every straight path within 18 mm anyway.
+`fork_access_channels()` cuts them on the assembled chassis, last; `fork_access()` now
+follows the same two lines for their whole 55 mm, i.e. to open air, and a failed boolean
+counts as blocked. `fork_channels_cover()` is the closed-form turn check.
+
+The ladder, with the unchanged tree as the control beside it (same seeds, same day):
+
+| step | result |
+|---|---|
+| 1 `mini_dog.py` | every part valid, volumes positive; ROM −90/+90, −90/+90, −110/+110; `body clear`, `imu clear +0.80`, `foot bolt` ok, `clamp clear +1.43` |
+| | `fork access: five arms open within 40 mm; roll/passive through 2 @6 channels leaning 20 deg, every screw within 90 deg of one` |
+| 2 bboxes | unchanged; `chassis_bottom` 240.18 → 239.8 cm³ (−0.5 g, the bores' 2.9 g put back and the channels taken out) |
+| 3 render | three PNGs plus a corner close-up with the key in the channels |
+| 4 `fea.py --all` | `hip_bracket_A` 46.7 / 23.3 / 7.8 / 2.4, `thigh_A` 18.7 / 9.4 / 3.1 / 1.2, `shin_A` 58.8 / 29.4 / 9.8 / 4.8 inter-layer — identical to 2026-09-03; nothing in the FEA set was touched, and `chassis_bottom` is not in it |
+| 5 `export_sim.py --check` | `4 feet down, upright +1.00`, base z 187, 2.495 kg, terrain the same, camera axis (+0.99 −0.00 +0.10), urdf/mjcf leg mass agree |
+| 6 ROS 2 | regenerated |
+
+| | control, unchanged tree | after |
+|---|---|---|
+| flat trot | 782.4 mm | 781.8 mm |
+| terrain, seeds 7…12 | 625 ±95 mm | 631 ±55 mm |
+| course | 5/7, corridor 2893 mm | 4/7, corridor 2639 mm |
+
+The flat arm moved 0.6 mm and the terrain sweep's means differ by 6 mm against spreads of
+95 and 55 — the same distribution. The course flipped from 5/7 to 4/7 (the wall at
+2600 mm), which is the flip `3d/CLAUDE.md` already documents on the *unchanged* tree: it is
+a report, not a pass/fail, and −0.5 g on the base link is what it flips on. Total mass is
+2.495 kg to three decimals either side.
+
+What the chassis gives up: a ⌀6 hole through the front corner post at axis height, and a
+⌀6 hole through the lower half of each corner deck boss (z 4…10, under its M3 hole at
+z ≥ 11) that runs on out through the side wall into the vent. `fea.py` cannot put a number
+on either; the side wall carries 22 × 18 vents already.
+
+**A chassis already printed does not need reprinting.** Drill both, ⌀6, from outside,
+aimed 20° inboard of the body's long axis at the screw head — "out" enters the side wall
+3 mm behind the front face at axis height, "top" enters through the side vent 22 mm behind
+the front face and 18 mm below the top edge — and stop at the gusset face (8 and 29 mm in):
+past it is the servo.

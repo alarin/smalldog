@@ -6,9 +6,9 @@
   <material name="servo"><color rgba="0.12 0.12 0.14 1"/></material>
   <link name="base_link">
     <inertial>
-      <origin xyz="0.006450 -0.000041 0.022008" rpy="0 0 0"/>
-      <mass value="1.55963"/>
-      <inertia ixx="0.00310650" ixy="0.00000661" ixz="-0.00077062" iyy="0.00651718" iyz="0.00000052" izz="0.00610457"/>
+      <origin xyz="0.006458 -0.000041 0.022004" rpy="0 0 0"/>
+      <mass value="1.55917"/>
+      <inertia ixx="0.00310500" ixy="0.00000662" ixz="-0.00077046" iyy="0.00651792" iyz="0.00000053" izz="0.00610293"/>
     </inertial>
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0"/>

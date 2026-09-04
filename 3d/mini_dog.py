@@ -109,20 +109,38 @@ THRUST_SEAT = 3.00                    # lug behind each nut - this is what takes
 # there is no order in which the fork goes on first - and each arm's four screws are driven
 # from OUTSIDE it, along the joint axis.  Whether a driver fits there is a property of the
 # neighbouring part, not of the fork, so fork_access() probes it against the real solid.
+#
+# At the pitch and knee that is a plain key with open air behind it.  At the roll joint the
+# inboard arm faces the chassis with 0.6 mm to spare, and the first answer - four @6 bores
+# coaxial with the screws, driven from inside the tray - reached one screw of four: a deck
+# boss stood in front of two, the outboard bore's axis ran 0.2 mm inside the tray's own
+# side wall, and a coaxial bore only lets a key tilt 12 deg.  Behind the front wall the
+# battery cradle's end stop closes EVERY path that stays inside the tray within 18 mm.
+#
+# What works is two things together.  The screws sit on the @14 hub circle and that circle
+# TURNS WITH THE LEG, so a channel at one position on it serves every screw within a
+# quarter turn of that position, and two channels 90 deg apart serve all four - with the
+# outboard arm still unbolted the leg is turned by hand, no servo involved.  And the
+# channels do not go into the tray at all: they leave the screw head leaning KEY_TILT
+# OUTBOARD and stand in open air past the tray's front corner after 9 mm (the "out" screw)
+# and 29 mm (the "top" one, which passes under the corner deck boss's screw hole and comes
+# out through the side vent).  fork_access_channels() cuts them and fork_access() probes
+# them to open air; the leg goes on and off with the deck on and the pack in.
 DRIVER_D      = 5.00                  # hex driver shank, and the room to turn it
-DRIVER_REACH  = 7.50                  # straight run needed to BREAK OUT of the material
-                                      # into open space.  Not a key length: at the roll
-                                      # joint no straight 25 mm run exists at any diameter
-                                      # and none can be made - the outboard screw's axis
-                                      # passes 0.2 mm inside the tray's own side wall, so
-                                      # a straight key would need a groove down the whole
-                                      # length of it.  What is achievable, and what the
-                                      # bores below deliver, is a clear tunnel through the
-                                      # material; a ball-end key does the last 20 deg.
-FORK_ACCESS_D  = 6.00                 # the bore: @6 around a @2.5 key through ~11 mm is
-                                      # ~21 deg of tilt, inside a ball end's ~25, and it
-                                      # also passes an M3 head so the screw goes in this
-                                      # way rather than being pre-placed in the arm.
+KEY_D         = 2.50                  # the key itself, for an M3 socket head
+KEY_TILT      = 20.0                  # deg off the screw axis the roll channels lean.  A
+                                      # ball-end key works to ~25; the 5 deg is margin
+KEY_REACH     = 40.0                  # straight run a plain key wants behind a screw, at
+                                      # the five arms that have open air behind them
+FORK_ACCESS_D = 6.00                  # the channel bore, around KEY_D
+FORK_ACCESS_L = 55.0                  # ... and how far it is cut: well past the point
+                                      # where it is in open air, so the probe stands in
+                                      # air too and not in a bore that leads nowhere
+FORK_CHANNELS = ((-HUB_BC/2, 0.0),    # servo-local: the "out" screw, world y ROLL_Y+7, z 0
+                 (0.0, -HUB_BC/2))    # ... and the "top" one, world y ROLL_Y, z +7.  The
+                                      # lean is toward local -x, i.e. outboard (world +y)
+FORK_TURN     = 90.0                  # deg the leg is turned between screws: a quarter
+                                      # turn, which is also what rom_scan allows the hip
 THRUST_BOLT_L = 10.00                 # M3 x 10: 9.35 of it is lug + nut + reach to the case
 THRUST_HEAD_D = 3.00                  # set screw, so the head IS the thread OD ...
 THRUST_HEAD_H = 0.00                  # ... and so it stands nothing proud of the shank
@@ -878,35 +896,36 @@ def roll_module():
                 .cut(bxc(xa-1, xm-3.4, -10.0, ROLL_Y+9.0, -11.0, 11.0)))
     return s
 
-def fork_access_bores(d=FORK_ACCESS_D):
-    """The four bores that let a driver reach the roll joint's inboard fork screws.
+def fork_channel_dir():
+    """servo-local unit vector along a roll channel: away from the inboard arm (local -z),
+    leaning KEY_TILT toward local -x, which is outboard on the robot (world +y)."""
+    t = math.radians(KEY_TILT)
+    return (-math.sin(t), 0.0, -math.cos(t))
 
-    Coaxial with the screws by construction: the same HUB_BC circle fork() cuts, run from
-    the arm's outer face inward.  They have to be cut from the ASSEMBLED chassis and not
-    from roll_module(), because the path crosses two solids that are unioned - the tray's
-    own front wall at x 60.2..63 and the gusset's inner skin at 64.7..67.5 - and neither
-    of them alone blocks it.  Cut one at a time and the union fills the other back in.
+def fork_access_channels(d=FORK_ACCESS_D, length=FORK_ACCESS_L):
+    """The two channels that let a key reach the roll joint's inboard fork screws.
 
-    They stop exactly on the tray's inner face, and that is not tidiness.  Run them one
-    millimetre further and the OUTBOARD bore starts eating the tray's SIDE wall, whose
-    inner face is at BODY_W/2-WALL = 43.2 while that screw's axis is at y = 43.0: at @6 it
-    would reach y = 46 and come out tangent to the outer skin, which is the zero-thickness
-    sliver this file has been bitten by before.  Inside the tray the wall is full-width and
-    the bore is wholly within it, so there is nothing to graze.
+    Each starts on a screw head - one of FORK_CHANNELS on the hub circle, at the arm's
+    outer face FORK_Y0 - and runs `length` along fork_channel_dir(), which puts its far
+    end in open air outboard of the tray's front corner with room to spare.  They are NOT
+    coaxial with the screws: a coaxial bore lets the key tilt (D-d)/2 over its length, 12
+    deg for @6 around @2.5 through 8 mm, and 12 deg does not get a key past the tray's
+    side wall.  Cut along the leaning line, the bore IS the key's path and the tilt is
+    whatever KEY_TILT says.
 
-    That 0.2 mm is also why DRIVER_REACH is a breakout distance and not a key length.  No
-    straight run of any diameter reaches that screw from inside the tray - a 2.5 mm key on
-    its axis is 1.05 mm inside the side wall and would need a groove down the whole length
-    of it.  What works is a ball end: @6 around a @2.5 key over 7.9 mm of bore is 23.9 deg
-    of tilt, inside the ~25 a ball end takes, and 20 deg of tilt carries the far end of the
-    key 14 mm inboard over its own length - clear of the wall by an order of magnitude.
-    The bore is the part that must be right; the angle is the user's wrist."""
-    z0 = (BODY_L/2 - WALL) - ROLL_X          # the tray's inner face, in servo-local z
+    Measured on the solid, front-left, "out" channel: through the gusset's inner skin and
+    the tray's corner post, in air at x = 60 (8 mm of material).  "top" channel: gusset
+    skin, front wall, the corner deck boss at z 4..10 - under its M3 hole, which starts at
+    z = 11 - the side wall, and out through the side vent at x = 41 (29 mm).  Neither
+    enters the tray's interior, which is why the battery can stay in.
+
+    Cut from the ASSEMBLED chassis, last: the "top" channel crosses four solids that are
+    unioned in separately, and the union would fill any one of them back in if it were cut
+    alone.  Only two of the four screw positions get a channel, on purpose - see
+    FORK_CHANNELS and fork_channels_cover()."""
     b = None
-    for i in range(HUB_N):
-        th = math.radians(90*i)
-        c = cyl(d/2, (ARM_BOT_TOP - ARM_T) - z0,
-                (HUB_BC/2*math.cos(th), HUB_BC/2*math.sin(th), z0))
+    for px, py in FORK_CHANNELS:
+        c = cyl(d/2, length, (px, py, FORK_Y0), axis=fork_channel_dir())
         b = c if b is None else b.union(c)
     return mv(b, ROLL_LOC)
 
@@ -975,24 +994,26 @@ def chassis_bottom():
     ky, kl, kd = CAM_KEY                      # ... and the pocket its far end keys into
     s = s.cut(bxc(CAM_FOOT_X-3.0-CLR, CAM_FOOT_X+3.0+CLR, ky-kl/2-CLR, ky+kl/2+CLR,
                   CAM_LEDGE-kd-CLR, CAM_LEDGE+1.0))
-    # Driver access to the four inboard fork screws on every hip_bracket.  Without these
-    # they are not hard to fit, they are impossible: the arm's outer face is 0.6 mm off
-    # the root gusset and the fork can only go on after the servo is in its bore, so those
-    # screws are always last and always blind.  See README, "Reaching the fork screws".
+    # Key access to the inboard fork screws on every hip_bracket.  Without these they are
+    # not hard to fit, they are impossible: the arm's outer face is 0.6 mm off the root
+    # gusset and the fork can only go on after the servo is in its bore, so those screws
+    # are always last and always blind.  See README, "Reaching the fork screws".
     #
-    # LAST, and that is not tidiness either.  These bores end exactly on the tray's inner
-    # face at x = +-60.2, and the rear connector pads are unioned on starting from exactly
-    # that plane - the XT30 pad spans y 16..34, z +-6.3, and the rear bore at y = 29 opens
-    # inside it.  They share no volume at all: the pad's inner face is welded straight onto
-    # the bore's circular opening, and OCC's fuse on that degenerate contact returned a
-    # solid of volume -257 mm3.  isValid() said True, so nothing downstream noticed - the
-    # whole chassis collapsed to a 2.5 x 14.9 x 6.9 mm sliver, the ROM scan read hip_roll
-    # as +0..+0, and every interference pair fired at once.  Cut after everything that
-    # adds material and the union never sees a bored face.  (build() now also fails a part
-    # whose volume is not positive, which is the check that would have named this.)
-    ab = fork_access_bores()
+    # LAST, and that is not tidiness either.  The bores these replaced ended exactly on the
+    # tray's inner face at x = +-60.2, and the rear connector pads are unioned on starting
+    # from exactly that plane - the XT30 pad spans y 16..34, z +-6.3, and the rear bore at
+    # y = 29 opened inside it.  They shared no volume at all: the pad's inner face was
+    # welded straight onto the bore's circular opening, and OCC's fuse on that degenerate
+    # contact returned a solid of volume -257 mm3.  isValid() said True, so nothing
+    # downstream noticed - the whole chassis collapsed to a 2.5 x 14.9 x 6.9 mm sliver, the
+    # ROM scan read hip_roll as +0..+0, and every interference pair fired at once.  The
+    # channels now run out through the corner instead of in through the wall, but the rule
+    # stands: cut after everything that adds material, and the union never sees a bored
+    # face.  (build() also fails a part whose volume is not positive, which is the check
+    # that would have named this.)
+    ch = fork_access_channels()
     for f in (lambda w: w, mirY, mirX, lambda w: mirX(mirY(w))):
-        s = s.cut(f(ab))
+        s = s.cut(f(ch))
     return s.cut(env_all())
 
 # =====================================================================================
@@ -1635,9 +1656,24 @@ def foot_bolt_check():
     tip = FOOT_BOLT_L - FOOT_CB_Z                     # above FOOT_Z, from the shoulder
     return blocked, tip - (FOOT_NUT_Z + M3_NUT_H), (FOOT_NUT_Z + M3_NUT_H + 5.0) - tip
 
-def fork_access(reach=DRIVER_REACH):
-    """Can a driver actually reach each fork arm's four screws?  Returns
-    {(joint, side): blocked_mm3}, and 0.0 is the only passing value.
+def fork_channels_cover(turn=FORK_TURN):
+    """How far, in degrees on the hub circle, the worst-placed screw has to be turned to
+    sit under the nearest channel.  Closed form, like thrust_clear(): the screws are at
+    HUB_N even stations, the channels at FORK_CHANNELS, and the leg turns by hand with its
+    outboard arm still free.  Returns (worst, turn - worst); the margin must not go
+    negative.  Two channels a quarter turn apart give 90 exactly, which is the limit -
+    a third channel would buy slack, and there is nowhere on that corner to put one."""
+    ch = [math.degrees(math.atan2(y, x)) for x, y in FORK_CHANNELS]
+    worst = 0.0
+    for i in range(HUB_N):
+        s = 360.0*i/HUB_N
+        worst = max(worst, min(abs((c - s + 180.0) % 360.0 - 180.0) for c in ch))
+    return worst, turn - worst
+
+def fork_access():
+    """Can a key actually reach each fork arm's screws?  Returns {(joint, side):
+    blocked_mm3}, and 0.0 is the only passing value (a boolean that fails returns -1, and
+    that fails too - an unknown is not a pass).
 
     Third member of the same family as foot_bolt_check() and thrust_clear(), and it exists
     for the same reason: `isValid()` is happy with a screw nobody can turn, interference()
@@ -1645,27 +1681,36 @@ def fork_access(reach=DRIVER_REACH):
     ACCESS is blocked is invisible to all three, and the robot has now shipped that defect
     twice - the foot bolt that opened inside the dome, and the clamp head inside the spine.
 
-    The probe is a driver-sized cylinder on each screw axis, run outward from the arm's
-    outer face, intersected with the part the fork bolts ONTO.  That neighbour is the whole
-    question: the fork is identical at all three joints, and what differs is what happens
-    to be sitting behind it."""
+    The probe is a DRIVER_D cylinder on the key's real line, intersected with the part the
+    fork bolts ONTO.  That neighbour is the whole question: the fork is identical at all
+    three joints, and what differs is what happens to be sitting behind it.  Five of the
+    six arms have open air behind them, and there the line is the screw axis, for
+    KEY_REACH.  The roll joint's inboard arm has the chassis, and there the probe follows
+    the two channels - the same FORK_CHANNELS positions, the same KEY_TILT lean - for their
+    whole FORK_ACCESS_L, which ends in open air.  A probe that stops inside the bore passes
+    on a bore that leads nowhere; that was the previous version of this function, and
+    MAC.md of 2026-09-03 is what it cost."""
     out = {}
     for joint, loc, near in (("roll",  ROLL_LOC,  PARTS["chassis_bottom"][0]),
                              ("pitch", PITCH_LOC, PARTS["hip_bracket_A"][0]),
                              ("knee",  KNEE_LOC,  PARTS["thigh_A"][0])):
         for side, face, sgn in (("driven",  HUB_TOP_Z + ARM_T,   +1.0),
                                 ("passive", ARM_BOT_TOP - ARM_T, -1.0)):
+            if joint == "roll" and side == "passive":
+                lines = [((px, py, face), fork_channel_dir(), FORK_ACCESS_L)
+                         for px, py in FORK_CHANNELS]
+            else:
+                lines = [((HUB_BC/2*math.cos(math.radians(90*i)),
+                           HUB_BC/2*math.sin(math.radians(90*i)), face),
+                          (0.0, 0.0, sgn), KEY_REACH) for i in range(HUB_N)]
             probe = None
-            for i in range(HUB_N):
-                th = math.radians(90*i)
-                c = cyl(DRIVER_D/2, reach,
-                        (HUB_BC/2*math.cos(th), HUB_BC/2*math.sin(th), face),
-                        axis=(0, 0, sgn))
+            for p, ax, L in lines:
+                c = cyl(DRIVER_D/2, L, p, axis=ax)
                 probe = c if probe is None else probe.union(c)
             try:
                 v = mv(probe, loc).val().intersect(near.val()).Volume()
             except Exception:
-                v = 0.0
+                v = -1.0
             out[(joint, side)] = v
     return out
 
@@ -1760,7 +1805,7 @@ def main():
         # Volume, not just isValid().  A boolean that fails on a degenerate contact - two
         # coincident faces, a tangency - comes back inverted rather than broken: OCC raises
         # nothing and isValid() still says True, and the part is then a sliver with negative
-        # volume.  See chassis_bottom's fork_access_bores() note for the one that shipped.
+        # volume.  See chassis_bottom's fork_access_channels() note for the one that shipped.
         ok = shp.isValid() and shp.Volume() > 0.0
         cq.exporters.export(wp, os.path.join(OUT, "step", f"{name}.step"))
         ax, ang = PRINT_ORIENT[name]
@@ -1834,13 +1879,18 @@ def main():
               f" spine's {SPINE_R0:.1f} ({margin:+.2f} mm)")
     # ... and whether a driver can reach the screws that hold the legs on at all.
     acc = fork_access()
-    bad = {k: v for k, v in acc.items() if v > INTERF_TOL}
+    bad = {k: v for k, v in acc.items() if v > INTERF_TOL or v < 0}
     for (joint, side), v in bad.items():
-        print(f"  !! FORK ACCESS  {joint}/{side} arm: {v:.0f} mm3 of the driver's"
-              f" {DRIVER_REACH:.1f} mm run is solid - those four screws cannot be fitted")
-    if not bad:
-        print(f"  fork access: all six arms break out within {DRIVER_REACH:.1f} mm"
-              f" (roll/passive through @{FORK_ACCESS_D:.0f} bores)")
+        print(f"  !! FORK ACCESS  {joint}/{side} arm: {v:.0f} mm3 of the key's run to open"
+              f" air is solid - those four screws cannot be fitted")
+    worst, spare = fork_channels_cover()
+    if spare < 0:
+        print(f"  !! FORK ACCESS  roll/passive arm: a screw is {worst:.0f} deg from the"
+              f" nearest channel and the leg only turns {FORK_TURN:.0f}")
+    if not bad and spare >= 0:
+        print(f"  fork access: five arms open within {KEY_REACH:.0f} mm; roll/passive"
+              f" through {len(FORK_CHANNELS)} @{FORK_ACCESS_D:.0f} channels leaning"
+              f" {KEY_TILT:.0f} deg, every screw within {worst:.0f} deg of one")
     v = gps_clear()
     if v > INTERF_TOL:
         print(f"  !! GPS MAST  {v:.1f} mm3 of gps_mount is inside the Orange Pi envelope")
