@@ -167,5 +167,40 @@ on either; the side wall carries 22 × 18 vents already.
 **A chassis already printed does not need reprinting.** Drill both, ⌀6, from outside,
 aimed 20° inboard of the body's long axis at the screw head — "out" enters the side wall
 3 mm behind the front face at axis height, "top" enters through the side vent 22 mm behind
-the front face and 18 mm below the top edge — and stop at the gusset face (8 and 29 mm in):
+the front face and 18 mm below the top edge — and stop at the gusset face (8 and 28 mm in):
 past it is the servo.
+
+## Same day: the screws arrived, and their heads were not in the model
+
+ISO 7380 M3 × 6 button heads, 2 mm hex socket — so the key for the channels is **2 mm**,
+not 2.5. And the head is 1.65 mm tall against an inboard arm that had **0.6 mm** of air
+to the gusset: the hip would have bound on its own screw heads before it turned a degree,
+and no check saw it, because like the thrust clamp's cap head the part in the way was
+hardware. Fix: `FORK_GAP` 0.6 → 1.1 (the gusset face moves back half a millimetre), a
+`FORK_CB` = 1.2 counterbore in the passive arm, `fork_screws()` on the moving side of every
+`rom_scan`, and `head_clear()` printing the margins. The counterbore also makes the
+passive screw an M3 × 6 — it was an M3 × 7, a length nobody stocks. Reach into the case:
+0.5 mm spare passive, 0.8 driven (which engages 2.0 of its hub's 2.5).
+
+The ladder again, against the channel commit `89e5149` as the control:
+
+| step | result |
+|---|---|
+| 1 `mini_dog.py` | all valid; ROM **with the heads swept** still −90/+90, −90/+90, −110/+110; `head clear: +0.65 mm off the gusset; tip +0.50 / +0.80 short of the case`; every other line unchanged |
+| 2 mass | `chassis_bottom` 239.8 → 239.1 cm³ (the gusset's half millimetre), `hip_bracket` 25.1 → 25.0 (the counterbores); total 2.495 → 2.493 kg |
+| 4 `fea.py --all` | `hip_bracket_A` 46.8 / 23.4 / 7.8 / 2.4 inter-layer against 46.7 / 23.3 / 7.8 / 2.4 — the counterbore is on the passive arm, the stall peak is not; `thigh_A` 18.8 / 9.4 / 3.1 / 1.2, `shin_A` 60.0 / 30.0 / 10.0 / 4.9, both a rounding step up with the 2 g |
+| 5 `export_sim.py --check` | `4 feet down, upright +1.00`, base z 187, camera axis (+0.99 −0.00 +0.10), urdf/mjcf leg mass agree |
+| 6 ROS 2 | regenerated — every hip, thigh and shin mesh moved, because `fork()` is one part and the counterbore is in all twelve |
+
+| | `89e5149` | after |
+|---|---|---|
+| flat trot | 781.8 mm | 781.1 mm |
+| terrain, seeds 7…12 | 631 ±55 mm | 657 ±35 mm |
+| course | 4/7, corridor 2639 mm | **3/7, corridor 2209 mm** |
+
+Flat and terrain are the same walker. The course has now read 5/7, 4/7 and 3/7 on three
+models 0.5 g and 2 g apart, all within the day, on the same seed — a monotone-looking
+sequence of three chaotic samples. `3d/CLAUDE.md` already says the unchanged tree reads
+both 5/7 and 4/7, and the terrain sweep, which is the arm that is read over seeds, moved
++26 mm on a ±35 spread. It is flagged here, not acted on: the fix for a course number is
+a gait change, and there is no CAD change on the table that would put 2 g back.

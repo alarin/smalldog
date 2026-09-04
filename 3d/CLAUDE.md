@@ -110,6 +110,11 @@ name → (workplane, qty, note) and drives both the export loop and the BOM;
   for that reason — `THRUST_HEAD_*` — and `thrust_clear()` prints the margin on every run
   (`clamp clear:`), with `thrust_bolts()` in the static side of all three `rom_scan` calls.
   A check over the printed solids alone cannot see this: the part sticking out is hardware.
+  The hub screws were the same defect a second time: an ISO 7380 head is 1.65 mm tall and
+  the hip's inboard arm had 0.6 mm of air to the gusset. `fork_screws()` now puts all
+  eight heads on the moving side of every `rom_scan`, the passive arm is counterbored
+  `FORK_CB` against `FORK_GAP`, and `head_clear()` prints the head's air and the tip's
+  distance to the case on every run. Found 2026-09-04, when the screws arrived.
 - **Do not slit the sleeve.** Its `-x` end wall is the tube's only crossing of y=0 — the
   cable window has already eaten the `+x` one — so a C-clamp slit there opens the whole
   sleeve-plus-link box section. This was tried and measured: `thigh_A` inter-layer SF at

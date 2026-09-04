@@ -127,7 +127,8 @@ THRUST_SEAT = 3.00                    # lug behind each nut - this is what takes
 # out through the side vent).  fork_access_channels() cuts them and fork_access() probes
 # them to open air; the leg goes on and off with the deck on and the pack in.
 DRIVER_D      = 5.00                  # hex driver shank, and the room to turn it
-KEY_D         = 2.50                  # the key itself, for an M3 socket head
+KEY_D         = 2.00                  # the key: ISO 7380 M3 button heads take 2 mm, not
+                                      # the 2.5 a DIN 912 cap head would
 KEY_TILT      = 20.0                  # deg off the screw axis the roll channels lean.  A
                                       # ball-end key works to ~25; the 5 deg is margin
 KEY_REACH     = 40.0                  # straight run a plain key wants behind a screw, at
@@ -141,6 +142,22 @@ FORK_CHANNELS = ((-HUB_BC/2, 0.0),    # servo-local: the "out" screw, world y RO
                                       # lean is toward local -x, i.e. outboard (world +y)
 FORK_TURN     = 90.0                  # deg the leg is turned between screws: a quarter
                                       # turn, which is also what rom_scan allows the hip
+# The hub screws as bought: ISO 7380 button heads, M3 x 6, one length for all 96.  The
+# head is the part that matters and it was never in the model: 1.65 tall on an arm whose
+# outer face has FORK_GAP of air to the chassis gusset.  A cap head is 3.0 and would not
+# fit either.  So the PASSIVE arm - the one that faces the gusset at the hip, and the same
+# arm at every joint, because fork() is one part - carries a counterbore FORK_CB deep, and
+# the two numbers are set against each other: deeper hides more head but leaves less arm
+# for the screw to pass before it runs out of thread into the servo case.  With FORK_CB =
+# 1.2 the head stands 0.45 proud in 1.1 of air, and the M3 x 6 reaches 2.25 of the hub's
+# 2.2 with 0.55 - the case's own base recess - still to spare.  fork_screws() is the
+# hardware, in every rom_scan on the moving side; head_clear() prints the margin.
+HUB_SCREW_L   = 6.00
+HUB_HEAD_D    = 5.70                  # ISO 7380 M3: dk max 5.7
+HUB_HEAD_H    = 1.65                  # ... k max 1.65
+FORK_CB       = 1.20                  # counterbore in the passive arm's outer face
+FORK_GAP      = 1.10                  # air between the hip fork's inboard arm and the
+                                      # chassis gusset; was 0.6 before the heads existed
 THRUST_BOLT_L = 10.00                 # M3 x 10: 9.35 of it is lug + nut + reach to the case
 THRUST_HEAD_D = 3.00                  # set screw, so the head IS the thread OD ...
 THRUST_HEAD_H = 0.00                  # ... and so it stands nothing proud of the shank
@@ -817,6 +834,33 @@ def thrust_bolts():
         s = b if s is None else s.union(b)
     return s
 
+def fork_screws():
+    """The eight hub screw HEADS of one fork, in servo-local coordinates - hardware, with
+    the same standing as thrust_bolts(): no printed part is cut against it, it exists so
+    that rom_scan sweeps what is actually there.  The driven arm's four stand HUB_HEAD_H
+    proud of its outer face; the passive arm's four sit FORK_CB into it.  The shanks are
+    inside the arm and the hub and cannot touch anything, so they are not modelled - the
+    length is checked in closed form in head_clear()."""
+    s = None
+    for i in range(HUB_N):
+        th = math.radians(90*i)
+        px, py = HUB_BC/2*math.cos(th), HUB_BC/2*math.sin(th)
+        for z0 in (HUB_TOP_Z + ARM_T, FORK_Y0 + FORK_CB - HUB_HEAD_H):
+            h = cyl(HUB_HEAD_D/2, HUB_HEAD_H, (px, py, z0))
+            s = h if s is None else s.union(h)
+    return s
+
+def head_clear():
+    """The passive-arm screw head against the chassis gusset at the hip, and the M3 x 6
+    against the servo case on both arms.  Returns (gap, spare_passive, spare_driven), all
+    of which must stay positive.  Closed form, like thrust_clear(), for the same reason:
+    a sweep steps over sub-millimetre fouls and this cannot."""
+    gap   = FORK_GAP - (HUB_HEAD_H - FORK_CB)
+    reach = HUB_SCREW_L - (ARM_T - FORK_CB) - (HUB_BOT_Z - ARM_BOT_TOP) - HUB_T_BOT
+    spare_p = (HUB_BOT_Z + S_H/2) - reach                 # the base recess, minus the tip
+    spare_d = (HUB_TOP_Z - HUB_T_TOP - S_H/2) - (HUB_SCREW_L - ARM_T - HUB_T_TOP)
+    return gap, spare_p, spare_d
+
 def fork(spine_r0=SPINE_R0, spine_r1=SPINE_R1, spine_w=SPINE_W):
     """distal-link end; link direction is servo -X."""
     def arm(z0, z1):
@@ -835,17 +879,24 @@ def fork(spine_r0=SPINE_R0, spine_r1=SPINE_R1, spine_w=SPINE_W):
     bot = bot.cut(cyl(3.2, 40, (0,0,z)))          # pedestal plugs the four M2.5 holes
     for i in range(HUB_N):
         th = math.radians(90*i)
-        bot = bot.cut(cyl(M3_CLR, 40, (HUB_BC/2*math.cos(th), HUB_BC/2*math.sin(th), z)))
+        px, py = HUB_BC/2*math.cos(th), HUB_BC/2*math.sin(th)
+        bot = bot.cut(cyl(M3_CLR, 40, (px, py, z)))
+        # counterbore for the button head, from the outer face - see FORK_CB.  The top
+        # arm gets none: there the M3 x 6 has only 0.3 mm behind the hub before the case.
+        bot = bot.cut(cyl((HUB_HEAD_D+0.5)/2, FORK_CB+1.0, (px, py, z)))
     # No nut pockets here.  The screw is driven from the outside and threads into the
     # stock aluminium hub - the @2.5 holes in both plates are tapped, and there is nowhere
     # for a nut anyway: behind the driven hub sit 0.30 mm to the case top, behind the
     # passive one the 0.55 mm base recess.  A hex pocket would also take 2.2 of the 4.0 mm
     # arm exactly under the screw head, where the bolt load enters the part.
-    # Screws: M3x6 driven (4.0 arm + <=2.5 hub), M3x7 passive (4.0 + 0.95 pedestal
-    # + <=2.2 hub).  Longer bottoms out on the case - the vendor FAQ warns it burns servos.
+    # Screws: ISO 7380 M3 x 6 everywhere.  Driven: 4.0 arm + <=2.5 hub, 6.0 engages 2.0 of
+    # the hub with 0.3 to the case top.  Passive: (4.0 - FORK_CB) arm + 0.95 pedestal
+    # + 2.2 hub = 5.95, so 6.0 is through the hub with the 0.55 base recess to spare.
+    # Longer bottoms out on the case - the vendor FAQ warns it burns servos.  (It was
+    # M3 x 7 on the passive side, a length nobody stocks, before the counterbore.)
     # M3 and not M2.5: HUB_BOLT_D is measured on the hub, the STEP's @2.5 is not what
     # arrived.  Only the hole grew - @2.9 to @3.4 - so a leg already printed can be
-    # drilled out rather than reprinted.
+    # drilled out rather than reprinted; the counterbore can be spot-faced the same way.
     spine = bxc(-spine_r1, -spine_r0, -spine_w/2, spine_w/2, ARM_BOT_TOP-ARM_T, HUB_TOP_Z+ARM_T)
     return top.union(bot).union(spine)
 
@@ -892,8 +943,8 @@ def roll_module():
     for z0, z1 in ((12.36, 15.36), (-15.36, -12.36)):
         s = s.union(bxc(xa, xm+SLEEVE_W+1.0, -14.0, 21.5, z0, z1))   # narrow past the fork arm
         s = s.union(bxc(ROLL_X-SLEEVE_LEN/2, xb, -14.0, ROLL_Y+13.11, z0, z1))
-    s = s.union(bxc(xa, xm-0.6, -14.0, ROLL_Y+13.11, -15.36, 15.36)  # root gusset
-                .cut(bxc(xa-1, xm-3.4, -10.0, ROLL_Y+9.0, -11.0, 11.0)))
+    s = s.union(bxc(xa, xm-FORK_GAP, -14.0, ROLL_Y+13.11, -15.36, 15.36)  # root gusset
+                .cut(bxc(xa-1, xm-FORK_GAP-WALL, -10.0, ROLL_Y+9.0, -11.0, 11.0)))
     return s
 
 def fork_channel_dir():
@@ -1877,6 +1928,15 @@ def main():
         kind = "set screw" if THRUST_HEAD_H <= 0 else f"head @{THRUST_HEAD_D:.1f}"
         print(f"  clamp clear: M3 x {THRUST_BOLT_L:.0f} {kind} reaches r = {r:.2f} vs the"
               f" spine's {SPINE_R0:.1f} ({margin:+.2f} mm)")
+    # The hub screws themselves: the passive head against the gusset, the tip against the
+    # case.  Same kind of defect as the clamp screw - the part in the way is hardware.
+    gap, sp, sd = head_clear()
+    if min(gap, sp, sd) < 0:
+        print(f"  !! HUB SCREWS  head gap {gap:+.2f}, tip spare passive {sp:+.2f} /"
+              f" driven {sd:+.2f} mm - a negative one is a screw that fouls")
+    else:
+        print(f"  head clear:  ISO 7380 M3 x {HUB_SCREW_L:.0f} head {gap:+.2f} mm off the"
+              f" gusset; tip {sp:+.2f} (passive) / {sd:+.2f} (driven) mm short of the case")
     # ... and whether a driver can reach the screws that hold the legs on at all.
     acc = fork_access()
     bad = {k: v for k, v in acc.items() if v > INTERF_TOL or v < 0}
@@ -1935,18 +1995,24 @@ def main():
     # scan against the real one - the legs are mirror images and the roll axis is x.
     # The clamp screws go in on the STATIC side of every scan: they belong to the sleeve,
     # which belongs to the proximal part, and it is the distal fork that sweeps over them.
-    rom["hip_roll"] = rom_scan(hip_bracket(),
+    # ... and the hub screw HEADS go on the MOVING side: they belong to the fork, and at
+    # the hip the passive arm's four sweep FORK_GAP from the gusset (see head_clear()).
+    rom["hip_roll"] = rom_scan(hip_bracket().union(mv(fork_screws(), ROLL_LOC)),
                                chassis_bottom().union(mirX(gps_mount()))
                                                .union(camera_mount())
                                                .union(camera_module())
                                                .union(mv(servo_dummy(), ROLL_LOC))
                                                .union(mv(thrust_bolts(), ROLL_LOC)),
                                (ROLL_X, ROLL_Y, ROLL_Z), axis=(1,0,0), lo=-90, hi=90)
-    rom["hip_pitch"] = rom_scan(thigh(), hip_bracket().union(mv(servo_dummy(), PITCH_LOC))
-                                                     .union(mv(thrust_bolts(), PITCH_LOC)),
+    rom["hip_pitch"] = rom_scan(thigh().union(mv(fork_screws(), PITCH_LOC)),
+                                hip_bracket().union(mv(servo_dummy(), PITCH_LOC))
+                                             .union(mv(thrust_bolts(), PITCH_LOC))
+                                             .union(mv(fork_screws(), ROLL_LOC)),
                                 (PITCH_X, LEG_Y, PITCH_Z))
-    rom["knee"] = rom_scan(shin(), thigh().union(mv(servo_dummy(), KNEE_LOC))
-                                          .union(mv(thrust_bolts(), KNEE_LOC)),
+    rom["knee"] = rom_scan(shin().union(mv(fork_screws(), KNEE_LOC)),
+                           thigh().union(mv(servo_dummy(), KNEE_LOC))
+                                  .union(mv(thrust_bolts(), KNEE_LOC))
+                                  .union(mv(fork_screws(), PITCH_LOC)),
                            (PITCH_X, LEG_Y, KNEE_Z))
     for k, v in rom.items():
         print(f"    {k:10s} free {v[0]:+4d} .. {v[1]:+4d} deg  (0 = leg straight down)")

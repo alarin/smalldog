@@ -166,12 +166,21 @@ Because neither channel enters the tray, the legs go on and off **with the deck 
 battery in**. On a chassis already printed they are a drill job: ⌀6, from outside, aimed
 20° inboard of the body's long axis at the screw — "out" enters the side wall 3 mm behind
 the front face at axis height, "top" enters through the side vent 22 mm behind the front
-face and 18 mm below the top edge. Stop at the gusset face (8 and 29 mm in) or the drill
+face and 18 mm below the top edge. Stop at the gusset face (8 and 28 mm in) or the drill
 meets the servo.
 
+**The screw heads were not in the model either**, and they are the same defect as the
+thrust clamp's cap head: the arm's outer face had 0.6 mm to the gusset and an ISO 7380
+button head is 1.65 tall — the joint would have bound on its own screws before it turned
+a degree. `FORK_GAP` is now 1.1, the passive arm's four holes carry a `FORK_CB` = 1.2
+counterbore, and `fork_screws()` puts all eight heads on the moving side of every
+`rom_scan`. See the hub-screw bullet under *Fasteners* for how the counterbore's depth is
+set against the M3 × 6's reach into the servo case.
+
 `fea.py` does not cover `chassis_bottom`, so the corner post and the bored boss get no
-number from it; the side wall already carries 22 × 18 vents beside the "top" exit. What is
-measured is `hip_bracket_A`'s inter-layer SF, unchanged because the bracket is.
+number from it; the side wall already carries 22 × 18 vents beside the "top" exit. What
+`fea.py` does see is the counterbore, which takes 1.2 of the 4.0 mm passive arm under
+the head — read `hip_bracket_A`'s inter-layer SF against the run before it.
 
 ## Geometry
 
@@ -544,8 +553,7 @@ one `sleeve()` + one `fork()`, four `DECK_SCREWS` × 2, `CAM_FOOT_Y`, `LIDAR_N`,
 
 | | qty |
 |---|---|
-| M3 × 6 (fork → driven hub, 4 per joint) | 48 |
-| M3 × 7 (fork → passive hub, 4 per joint) | 48 |
+| M3 × 6 **ISO 7380 button head**, 2 mm hex socket (fork → both hubs, 8 per joint) | 96 |
 | M3 × 10 **set screw** (grub, hex socket) + M3 nut (sleeve thrust clamp, 2 per joint) | 24 |
 | M3 × 30 socket head + M3 nut (foot → shin ankle) | 4 |
 | M3 × 12 + M3 nut (deck → tray bosses) | 8 |
@@ -568,12 +576,19 @@ well as a floor — a longer screw is not the safe direction:
 - **the thrust clamp, headless.** Not a length at all but a head: a cap head puts its
   corner at r = 24.2 inside the fork spine's 23.0 and binds the joint over ±2…38°. See
   *The thrust clamp*. Headless, the length ceiling is M3 × 12; × 14 fouls.
-- **the hub screws, M3 and not M2.5.** `HUB_BOLT_D` is measured on a hub that arrived;
-  the vendor STEP's ⌀2.5 is not what the part has. Driven: 4.0 arm + ≤2.5 hub, so 6.5 is
-  the ceiling. Passive: 4.0 arm + 0.95 pedestal + ≤2.2 hub, so 7.15 is. Past the hub they
-  bottom on the servo case, which the vendor FAQ says stalls and burns it. M3 × 7 is a
-  rare length; a 1 mm washer under the head of an M3 × 8 gets there, an M3 × 6 leaves
-  ~1 mm in the thread.
+- **the hub screws, M3 × 6 button heads, and one length for both arms.** M3 and not
+  M2.5: `HUB_BOLT_D` is measured on a hub that arrived; the vendor STEP's ⌀2.5 is not what
+  the part has. Past the hub a screw bottoms on the servo case, which the vendor FAQ says
+  stalls and burns it, so both arms have a ceiling. Driven: 4.0 arm + 2.5 hub + 0.3 to the
+  case top = 6.8; an M3 × 6 engages 2.0 of the hub's 2.5 with 0.8 to spare. Passive: the
+  arm carries a `FORK_CB` = 1.2 counterbore, so 2.8 arm + 0.95 pedestal + 2.2 hub = 5.95,
+  and the M3 × 6 is through the hub with 0.5 of the case's 0.55 base recess to spare
+  (`head_clear()` prints both). The counterbore is there for the **head**, not the length:
+  an ISO 7380 head is 1.65 tall and the hip's inboard arm has `FORK_GAP` = 1.1 of air to
+  the gusset, so the head sits 1.2 into the arm and stands 0.45 proud, 0.65 clear. That
+  the heads were never in the model until the screws arrived is the same defect as the
+  thrust clamp's cap head; `fork_screws()` now sweeps them in every `rom_scan`. The
+  passive side was M3 × 7 before the counterbore — a length nobody stocks.
 - **the Orange Pi standoffs, M2.5 × 8 and not × 10.** The clearance hole runs from the
   deck's *top* face upward — it does not pass through the deck — so the screw has
   `OPI_STAND_H` + the board, 7.0 + 1.6 = 8.6 mm, and no more. Ten bottoms on the deck and
@@ -613,9 +628,10 @@ FAQ says stalls and burns the servo.
    case-base recess). The thrust bolts come first: once the fork is on, its spine sweeps
    over the lug. **The fork cannot go on before the servo** — its arms straddle the
    sleeve — so its screws are always last. At the hips bolt the **inboard** arm first,
-   through the two ⌀6 channels in the tray's front corner, with a **ball-end** 2.5 mm key
-   leaning 20° outboard: turn the leg by hand until an arm hole shows at the bottom of a
-   channel, nudge the passive hub into line with the screw tip, drive the M3 × 7, turn the
+   through the two ⌀6 channels in the tray's front corner, with a **ball-end 2 mm** key
+   (ISO 7380 M3 takes 2 mm) leaning 20° outboard: turn the leg by hand until an arm hole
+   shows at the bottom of a channel, nudge the passive hub into line with the screw tip,
+   drive the M3 × 6 into its counterbore, turn the
    leg a quarter turn to the next hole and repeat — between them the two channels reach
    all four. Then line the outboard arm up with the driven hub and drive its four in open
    air. Deck and battery stay where they are. See *Reaching the fork screws*, and run
