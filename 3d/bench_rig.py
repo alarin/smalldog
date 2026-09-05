@@ -68,7 +68,12 @@ OUT = os.path.join(HERE, "out", "bench")
 # In use: servo-local +Z is the (horizontal) axis, servo-local +X points straight DOWN.
 # So the case hangs under the axis, the thrust lug and its two M3 jack screws end up on
 # top where a hex key reaches them, and the cable window at x = +34 faces the floor.
-AXIS_H     = 150.0      # axis to the base's underside.  > ARM_L_R + the tip hardware.
+AXIS_H     = 190.0      # axis to the base's underside.  > ARM_L_R + TIP_REACH, and the
+                        # binding case is the free swing, which decays THROUGH the
+                        # hanging position - so this is clearance the weight needs at
+                        # the bottom of its arc, not just somewhere in it.  Was 150,
+                        # which suited a compact weight reaching TIP_R past the bolt;
+                        # a 140 mm disc reaches 70, and 90 + 70 = 160 fouled the base.
 BASE_T     = 8.0
 BASE_Y0    = -78.0      # behind the column ...
 BASE_Y1    = +58.0      # ... and out under the arm: this half is what stops it tipping
@@ -98,16 +103,46 @@ ARM_S_R    = 45.0       # light arm: the direct J_m measurement.  Small on purpo
                         # for ~2x that and no more.
 ARM_L_R    = 90.0       # heavy arm: the holds, where a big torque is exactly what is
                         # wanted.  0.35 kg here is 0.31 N*m, ~11 % of the 2.94 stall.
-ARM_S_BOLT = 5.30       # M5 clearance at the light tip
-ARM_L_BOLT = 8.40       # M8 clearance at the heavy tip
+ARM_S_BOLT = 6.40       # M6 clearance, both tips.  It was M5 light / M8 heavy; the
+ARM_L_BOLT = 6.40       # bench runs one bolt through both, and an M6 rattling in an
+                        # 8.4 mm hole let the weight sit 1.2 mm off the design radius.
 TIP_W      = 22.0       # tip pad width; the weight bolts flat to the +z face
 TIP_L      = 20.0
-TIP_R      = 16.0       # how far the tip hardware may reach past the bolt axis
+TIP_R      = 16.0       # how far the printed tip PAD reaches past the bolt axis
+TIP_REACH  = 70.0       # ... and how far the WEIGHT does, which is a different number
+                        # and the one AXIS_H has to clear.  They were the same while the
+                        # weight was a compact stack; they are not for a barbell disc,
+                        # and the clearance check below reads this one.  Measured on the
+                        # disc actually in use: 140 mm outside diameter.
 ROOT_W     = 26.0       # beam width at the hub disc, tapering to TIP_W at the tip
 
 # what to hang on each arm.  Not geometry - the numbers to type into sweep.py, and the
 # reason the tips are sized the way they are.  Both are WEIGHED, not assumed.
-ARM_MASS   = {"bench_arm_s": 0.25, "bench_arm_l": 0.35}
+ARM_MASS   = {"bench_arm_s": 1.053, "bench_arm_l": 1.053}   # one disc, moved between
+
+# The disc, measured.  TIP_ICM is the one that cannot be assumed: at 1053 g in 206 cm3
+# its density is 5.1 g/cm3, so it is not solid - a thin web, a raised hub, or cutouts -
+# and the uniform-annulus formula below is a guess about mass distribution, not a fact.
+# It matters because the two-arm free swing recovers J_m + I_cm as a SUM and never J_m
+# alone, so I_cm has to come from outside the bench.  Hang the disc on a nail through
+# its own bore and time 20 swings: it is a physical pendulum about the bore edge, and
+#     I_cm = m*g*Ri*(T/2pi)^2 - m*Ri^2
+# separates 0.00269 (uniform) from 0.00516 (rim-heavy) as 17.5 s against 23.8 s.
+TIP_M      = 1.053      # kg, weighed
+TIP_OD     = 140.0
+TIP_BORE   = 29.0
+TIP_THK    = 14.0
+TIP_ICM    = 0.5*TIP_M*((TIP_OD/2000)**2 + (TIP_BORE/2000)**2)   # PLACEHOLDER - measure
+
+# The disc's bore is 29 mm and the tip bolt is M6, so nothing locates it: it can sit
+# 11.5 mm off centre, which is 13 % of ARM_L_R and 26 % of ARM_S_R, and it can move
+# WHILE swinging, which costs repeatability rather than just accuracy.  Two of these
+# clamp it, one per side.  The sleeves must not meet in the middle or the bolt clamps
+# bushing-to-bushing and the disc stays loose - hence the gap.
+BUSH_GAP   = 0.6        # total axial gap left between the two sleeves
+BUSH_CLR   = 0.3        # sleeve OD under the bore, for a slip fit
+BUSH_FLG_D = 34.0       # flange has to be bigger than the bore, M6 washers are not
+BUSH_FLG_T = 3.0
 
 # Fill factor = printed mass / solid-volume mass, MEASURED the way mini_dog's PRINT_FILL
 # is: sliced alone in OrcaSlicer for the Qidi Q2 (0.2 layer, 4 walls, 30 % gyroid, no
@@ -117,9 +152,15 @@ ARM_MASS   = {"bench_arm_s": 0.25, "bench_arm_l": 0.35}
 BENCH_FILL = {"bench_stand": 0.54, "bench_arm_s": 0.72, "bench_arm_l": 0.70}
 
 G = 9.80665
-TAU_C_EST  = 0.05       # rl/params/st3215.json's Coulomb friction prior, the number
-                        # the free swing's driving torque has to beat.  A prior, not a
-                        # measurement - which is exactly why the arms carry margin on it.
+TAU_C_EST  = 0.28       # MEASURED, 2026-09-04, on the servo this stand holds: energy
+                        # balance over six free-swing drops, 0.278..0.281 N*m.  It was
+                        # 0.05 here and in rl/params/st3215.json, taken from the vendor
+                        # sheet - and the arms' "margin on the prior" was margin on a
+                        # number 6x too small, so the first rig could not move its own
+                        # weight.  The static breakaway is higher still and brackets
+                        # tightly: the arm did not move at 0.352 N*m and did at 0.380,
+                        # which is what a release has to clear before it swings at all.
+TAU_S_EST  = 0.38       # static breakaway.  This, not TAU_C_EST, gates the free swing.
 
 
 # =====================================================================================
@@ -236,11 +277,62 @@ def bench_arm(reach, bolt_d):
     return a
 
 
+def tip_bushing():
+    """Half of a two-piece sleeve that centres the disc on the M6 tip bolt.
+
+    Print two.  The sleeve fills the disc's bore, the flange gives the bolt a face
+    bigger than that bore to pull against, and the pair is deliberately SHORTER than
+    the disc so the clamp closes on the disc and not on itself.  Nothing here is
+    structural in the usual sense - the load is 10 N over 29 mm of bearing length -
+    but the location is: the whole point is that the weight cannot move while it
+    swings, because a radius that changes mid-run is not a radius fit_bam can be told.
+    """
+    sleeve_l = TIP_THK/2 - BUSH_GAP/2
+    b = cyl((TIP_BORE-BUSH_CLR)/2, sleeve_l, (0.0, 0.0, 0.0))
+    b = b.union(cyl(BUSH_FLG_D/2, BUSH_FLG_T, (0.0, 0.0, -BUSH_FLG_T)))
+    return b.cut(cyl(ARM_L_BOLT/2, sleeve_l+BUSH_FLG_T+2, (0.0, 0.0, -BUSH_FLG_T-1)))
+
+
+# The Qidi Q2's bed, and the reason a plate exists at all: four parts, one of them
+# 217 mm long, and OrcaSlicer's auto-arrange is free to rotate the stand off the face
+# it has to print on.  Laying them out here fixes the orientation in the file.
+BED = (256.0, 256.0)
+PLATE_GAP = 7.0         # skirt room between neighbours
+
+
+def plate(parts):
+    """Every part, dropped to z = 0 and shuffled into rows that fit BED.
+
+    Row-packed longest-first rather than nested: the stand is 217 x 136 and eats a
+    whole row whatever else happens, so cleverness buys nothing and a layout that can
+    be read off the numbers is worth more than one that cannot.
+    """
+    items = []
+    for name, (wp, qty, _note) in parts.items():
+        sh = wp.val()
+        bb = sh.BoundingBox()
+        flat = sh.translate(cq.Vector(-bb.xmin, -bb.ymin, -bb.zmin))
+        for _ in range(qty):
+            items.append((name, flat, bb.xlen, bb.ylen))
+    items.sort(key=lambda it: -it[3])                     # tallest row first
+
+    placed, x, y, row_h = [], PLATE_GAP, PLATE_GAP, 0.0
+    for name, sh, w, h in items:
+        if x + w + PLATE_GAP > BED[0]:
+            x, y, row_h = PLATE_GAP, y + row_h + PLATE_GAP, 0.0
+        placed.append((name, sh.translate(cq.Vector(x, y, 0)), x, y, w, h))
+        x += w + PLATE_GAP
+        row_h = max(row_h, h)
+    used_y = y + row_h + PLATE_GAP
+    return placed, used_y
+
+
 PARTS = {}
 def build():
     PARTS["bench_stand"]  = (bench_stand(), 1, "PETG, 4 walls, 30% gyroid - flat, no support")
     PARTS["bench_arm_s"]  = (bench_arm(ARM_S_R, ARM_S_BOLT), 1, "PETG, 4 walls, 40% - light arm")
     PARTS["bench_arm_l"]  = (bench_arm(ARM_L_R, ARM_L_BOLT), 1, "PETG, 5 walls, 40% - heavy arm")
+    PARTS["bench_bushing"] = (tip_bushing(), 2, "PETG, 4 walls, 40% - centres the disc, print 2")
     return PARTS
 
 
@@ -344,10 +436,10 @@ def report():
     print(f"\n  axial gap sleeve -> arm: {HUB_TOP_Z - SLEEVE_LEN/2:.1f} mm"
           f"   (the arm's full-circle swing depends on this being > 0)")
     for name, reach in (("bench_arm_s", ARM_S_R), ("bench_arm_l", ARM_L_R)):
-        clr = AXIS_H - (reach + TIP_R)
-        flag = "" if clr > 10.0 else "   !! the arm hangs into the base"
-        print(f"  {name}: reach {reach:.0f} mm, hanging clearance to the base "
-              f"{clr:.0f} mm{flag}")
+        clr = AXIS_H - (reach + TIP_REACH)
+        flag = "" if clr > 10.0 else "   !! the weight hangs into the base"
+        print(f"  {name}: arm {reach:.0f} + weight {TIP_REACH:.0f} = "
+              f"{reach+TIP_REACH:.0f} mm, clearance under the axis {clr:.0f} mm{flag}")
 
     # will it stand up?  The heavy arm out at +y is a real tipping moment about the
     # base's front edge, and the answer is "only just" - which is what the clamp slots
@@ -357,10 +449,13 @@ def report():
     c = MP.of(PARTS["bench_stand"][0].val(), rho("bench_stand")).c
     over = m_st*(BASE_Y1-c[1]) + md.SERVO_KG*(BASE_Y1-0.0)
     tip = ARM_MASS["bench_arm_l"]*(ARM_L_R-BASE_Y1)
+    ratio = over/tip
+    verdict = ("it stands on its own, but clamp it anyway" if ratio > 2.0 else
+               "marginal - clamp it" if ratio > 1.0 else
+               "!! IT WILL GO OVER unclamped.  The two base slots are not optional")
     print(f"\n  tipping, heavy arm horizontal at +y: {tip*G/1000:.3f} N*m over the base's"
           f" front edge\n  against {over*G/1000:.3f} N*m of stand + servo holding it down"
-          f"  ->  {over/tip:.2f}x."
-          f"\n  Under ~2x, so it gets clamped: two slots in the base, M6 or a G-clamp.")
+          f"  ->  {ratio:.2f}x.\n  {verdict}: two slots in the base, M6 or a G-clamp.")
 
     print(f"\n  what to hang on each arm, and what sweep.py is then told")
     print(f"  {'arm':<14}{'tip':>7}{'radius':>8}{'m*g*r':>8}{'/tau_c':>8}"
@@ -377,20 +472,31 @@ def report():
         # tip mass costs one line - sweep.py's --mass only ever enters as m*g*r.
         rcom = math.hypot(mp.c[0], mp.c[1])/1000.0
         meff = mt + m0*rcom/r
-        J = J0 + mt*r*r
+        J = J0 + TIP_ICM + mt*r*r        # the disc's own I_cm is not negligible here
         tau = meff*G*r
         T = 2*math.pi*math.sqrt((md.MJ_ARMATURE + J)/tau)
         share = J/(md.MJ_ARMATURE + J)
-        flag = "" if share < 0.35 else "  !! over fit_bam's third"
+        flag = ("  !! under breakaway, it will not move" if tau <= TAU_S_EST
+                else "  !! J_load past fit_bam's third" if share >= 0.35 else "")
         print(f"  {name:<14}{mt*1000:5.0f} g{reach:8.0f}{tau:8.3f}"
               f"{tau/TAU_C_EST:8.1f}x{share*100:11.0f} %{T:8.2f} s{flag}")
+        # --arm-inertia is everything the fit must NOT attribute to the motor: the
+        # printed arm and the disc's own I_cm.  sweep.py adds mass*radius^2 itself.
         lines.append(f"  python bench/sweep.py --traj all --mass {meff:.3f} "
-                     f"--radius {r:.3f} --arm-inertia {J0:.6f} --volts 12.6")
-    print(f"\n  ({'tau_c'} is only estimated at {TAU_C_EST} N*m, hence the margin column:"
-          f"\n   fit_bam.py cannot read a release whose drive m*g*r*sin(q0) - tau_c is not"
-          f"\n   comfortably positive.  J_arm share is J_load/(J_m + J_load), the ratio it"
-          f"\n   warns on above 35 %, against MJ_ARMATURE = {md.MJ_ARMATURE} kg*m2 - itself"
-          f"\n   the guess the free swing exists to replace.)")
+                     f"--radius {r:.3f} --arm-inertia {J0+TIP_ICM:.6f} --centre 1686")
+    print(f"\n  (tau_c = {TAU_C_EST} N*m and breakaway = {TAU_S_EST} N*m are MEASURED on"
+          f"\n   this servo, not priors.  Breakaway is the gate: a release below it does"
+          f"\n   not move at all, which is a flat CSV rather than a bad fit.  J_arm share"
+          f"\n   is J_load/(J_m + J_load) against MJ_ARMATURE = {md.MJ_ARMATURE} kg*m2, and"
+          f"\n   fit_bam warns past 35 % because J_m is then a small difference of two"
+          f"\n   large numbers.  Both arms are over it here and that is not an oversight:"
+          f"\n   0.38 N*m of breakaway FORCES about a kilogram, and m*r^2 alone then"
+          f"\n   passes 35 % on both arms whatever the weight is shaped like.  The disc's"
+          f"\n   own I_cm = {TIP_ICM:.5f} adds to that unevenly - 56 % of J_load on the short"
+          f"\n   arm, 24 % on the long - so going compact helps the short arm and barely"
+          f"\n   touches the long one.  The share is a property of this SERVO's friction,"
+          f"\n   not of the weight, and it is why the disc's I_cm has to be measured"
+          f"\n   rather than improved away.)")
     print(f"\n  from robot/, once the weights are on.  WEIGH them, and weigh the printed"
           f"\n  arm too - --arm-inertia below is a slicer fill factor away from the truth,"
           f"\n  and it is the one number here the fit subtracts rather than fits:")
@@ -399,7 +505,7 @@ def report():
 
 
 def main():
-    for d in ("step", "stl"):
+    for d in ("step", "stl", "3mf"):
         os.makedirs(os.path.join(OUT, d), exist_ok=True)
     build()
     ok = checks()
@@ -409,7 +515,22 @@ def main():
         bb = sh.BoundingBox()                       # print orientation IS the model frame
         cq.exporters.export(cq.Workplane(obj=sh.translate(cq.Vector(0, 0, -bb.zmin))),
                             os.path.join(OUT, "stl", name + ".stl"))
+        cq.exporters.export(cq.Workplane(obj=sh.translate(cq.Vector(0, 0, -bb.zmin))),
+                            os.path.join(OUT, "3mf", name + ".3mf"),
+                            exportType=cq.exporters.ExportTypes.THREEMF)
         del qty, note
+
+    placed, used_y = plate(PARTS)
+    cq.exporters.export(
+        cq.Workplane(obj=cq.Compound.makeCompound([s for _, s, *_ in placed])),
+        os.path.join(OUT, "3mf", "bench_plate.3mf"),
+        exportType=cq.exporters.ExportTypes.THREEMF)
+    print(f"\n  plate for the Qidi Q2 ({BED[0]:.0f} x {BED[1]:.0f} mm bed), "
+          f"{len(placed)} objects, {used_y:.0f} mm of bed used in y"
+          + ("" if used_y <= BED[1] else "   !! DOES NOT FIT"))
+    for name, _s, x, y, w, h in placed:
+        print(f"    {name:<15} at ({x:5.1f}, {y:5.1f})  {w:5.1f} x {h:5.1f}")
+
     report()
     print(f"\n  -> {os.path.relpath(OUT, HERE)}/{{step,stl}}")
     sys.exit(0 if ok else 1)
