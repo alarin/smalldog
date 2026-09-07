@@ -78,11 +78,29 @@ loop's own bookkeeping, not the robot.
 ### Bring-up, the order it has to happen in
 
 1. **Program the ids.** `python runtime/calib.py --ids` prints the map the rest of
-   the tree assumes — `fl_roll` = 1 through `rr_knee` = 12, in `robot_params.json`
-   order. Set them with the Feetech tool over the URT-1 **before assembly**
+   the tree assumes: **`<leg><joint>`**, the leg counted round the robot from the
+   front right and the joint counted down the leg, so the twelve ids are
+   11-13, 21-23, 31-33, 41-43.
+
+   | leg | 1 front right | 2 front left | 3 rear left | 4 rear right |
+   |---|---|---|---|---|
+   | 1 roll (at the body) | 11 | 21 | 31 | 41 |
+   | 2 pitch | 12 | 22 | 32 | 42 |
+   | 3 knee (at the ground) | 13 | 23 | 33 | 43 |
+
+   The leg digit is the builder's numbering and deliberately **not**
+   `robot_params.json`'s `fl, fr, rl, rr` order — `calib.py`'s `LEG_DIGIT` is the
+   one place the two are tied together, and the map is written down there rather
+   than derived, because there is nothing to derive it from. Two things fall out
+   of the scheme and both are worth having: no id lands in 1..12, so a servo still
+   carrying the factory default of **1** answers as nobody instead of impersonating
+   a joint; and the ids run to 43, so anything sweeping the bus has to go past 43
+   (`python feetech/bus.py --scan` does).
+
+   Set them with the Feetech tool over the URT-1 **before assembly**
    (`3d/README.md`, "Assembly order", step 2): once a servo is inside a sleeve
    inside a leg, it is still on the bus, but it is a bad time to discover two of
-   them answer to 4.
+   them answer to 22.
 
 2. **`python runtime/walk.py --preflight`.** Pings all twelve, reads the control
    registers, and checks the host — including `latency_timer`, which ships at 16 ms

@@ -359,7 +359,7 @@ def main():
     ap.add_argument("--endian", default="little", choices=("little", "big"))
     ap.add_argument("--selftest", action="store_true")
     ap.add_argument("--ping", type=int)
-    ap.add_argument("--scan", action="store_true", help="ping ids 1..20")
+    ap.add_argument("--scan", action="store_true", help="ping ids 1..53")
     ap.add_argument("--dump", type=int, metavar="ID")
     a = ap.parse_args()
 
@@ -370,7 +370,9 @@ def main():
     if a.ping is not None:
         print("present" if bus.ping(a.ping) else "no answer")
     if a.scan:
-        print("found:", [i for i in range(1, 21) if bus.ping(i)])
+        # past 43: the robot's ids are <leg><joint> and the top one is rr_knee = 43,
+        # so a sweep that stops at 20 finds three legs' worth of nothing.
+        print("found:", [i for i in range(1, 54) if bus.ping(i)])
     if a.dump is not None:
         print(f"servo {a.dump} — every register in registers.py")
         for name in sorted(dir(R)):

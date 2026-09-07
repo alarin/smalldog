@@ -10,10 +10,13 @@ calib.py — which servo is which joint, where its zero is, and which way it tur
 Three numbers per joint, and none of them can be derived from the CAD:
 
   **id**       which servo answers for this joint. Free choice, so it is made once
-               here — `fl_roll` = 1 through `rr_knee` = 12, in the order
-               `robot_params.json` lists the joints — and the servos get programmed
-               to match before assembly (`3d/README.md`, "Assembly order", step 2).
-               Print `--ids` and set them with the Feetech tool over the URT-1.
+               here — `<leg><joint>`, the leg counted from the front right (1) round
+               to the front left (2), rear left (3), rear right (4), and the joint
+               from the body (1 = roll) down to the ground (3 = knee). So the ids
+               are 11..13, 21..23, 31..33, 41..43 and `fr_roll` = 11, `rr_knee` = 43.
+               The servos get programmed to match before assembly (`3d/README.md`,
+               "Assembly order", step 2). Print `--ids` and set them with the
+               Feetech tool over the URT-1.
 
   **centre**   the count the servo reads at the model's mechanical zero — legs
                straight down. The hub can be bolted onto the output in any of four
@@ -79,9 +82,30 @@ def kind(joint: str) -> str:
     return joint.split("_")[1]
 
 
+#: Leg number in the id scheme below. Chosen by the builder, not by the model:
+#: it counts round the robot starting at the front right, so it does NOT match
+#: `robot_params.json`'s fl/fr/rl/rr order and must not be derived from it.
+LEG_DIGIT  = {"fr": 1, "fl": 2, "rl": 3, "rr": 4}
+#: ... and the joint's own digit, 1 at the body, 3 at the ground.
+JOINT_DIGIT = {"roll": 1, "pitch": 2, "knee": 3}
+
+
 def default_ids(joint_names) -> dict:
-    """1..12 in `robot_params.json` order. The servos are programmed to match."""
-    return {n: i + 1 for i, n in enumerate(joint_names)}
+    """`<leg><joint>` — 11..13, 21..23, 31..33, 41..43.
+
+    The digits are readable on the robot: the first counts the legs from the
+    front right (1) to the front left (2), the rear left (3) and the rear right
+    (4); the second counts a leg's servos from the body (1 = roll) down to the
+    ground (3 = knee). So id 32 is the rear-left pitch, and nothing has to be
+    looked up to say so.
+
+    Two things follow that are worth keeping. No id is in 1..12, so a servo
+    still carrying the factory default of 1 can never be mistaken for a joint —
+    it answers, and it answers as nobody. And the ids are not contiguous, so
+    anything that scans the bus has to sweep past 43, not past 12.
+    """
+    return {n: LEG_DIGIT[n.split("_")[0]] * 10 + JOINT_DIGIT[kind(n)]
+            for n in joint_names}
 
 
 class Calibration:
@@ -113,7 +137,7 @@ class Calibration:
         joints = list(p["joint_names"])
         soft = {n: p["joint_soft_limits_rad"][kind(n)] for n in joints}
         return cls(joints, soft=soft, params=p,
-                   note="defaults: ids 1..12 in robot_params order, centre 2048, "
+                   note="defaults: ids <leg><joint> (11..43), centre 2048, "
                         "sign +1. NOT a measurement — run --capture and --sign.")
 
     @classmethod
@@ -272,9 +296,13 @@ def _selftest() -> int:
 
     c = Calibration.default()
     chk("12 joints", len(c.joints), 12)
-    chk("ids 1..12", c.ids, list(range(1, 13)))
-    chk("fl_roll is 1", c.id["fl_roll"], 1)
-    chk("rr_knee is 12", c.id["rr_knee"], 12)
+    chk("ids <leg><joint>", sorted(c.ids),
+        [10 * l + j for l in (1, 2, 3, 4) for j in (1, 2, 3)])
+    chk("fr_roll is 11", c.id["fr_roll"], 11)
+    chk("fl_roll is 21", c.id["fl_roll"], 21)
+    chk("rl_knee is 33", c.id["rl_knee"], 33)
+    chk("rr_knee is 43", c.id["rr_knee"], 43)
+    chk("no id collides with the factory default 1", 1 in c.ids, False)
 
     # the soft limits come from robot_params.json, per joint kind
     p = load_params()
@@ -306,7 +334,7 @@ def _selftest() -> int:
     chk("captured centre is the new zero", c.attach(bus)["fl_roll"].to_rad(1900), 0.0)
 
     # torque must be off after a capture: the pose is set by hand
-    chk("capture leaves torque off", bus.io.get(1, R.TORQUE_ENABLE), 0)
+    chk("capture leaves torque off", bus.io.get(c.id["fl_roll"], R.TORQUE_ENABLE), 0)
 
     # probe_sign: "n" flips, "y" keeps, and torque is off either way
     was = c.sign["fl_pitch"]

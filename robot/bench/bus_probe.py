@@ -2,7 +2,7 @@
 bus_probe.py — what the bus actually costs, on this machine, with this adapter.
 
     python bench/bus_probe.py --port /dev/ttyUSB0 --ids 1
-    python bench/bus_probe.py --port /dev/ttyUSB0 --ids 1,2,3,4,5,6,7,8,9,10,11,12
+    python bench/bus_probe.py --port /dev/ttyUSB0 --ids 11,12,13,21,22,23,31,32,33,41,42,43
     python bench/bus_probe.py --dry-run            # no hardware, exercises the code
 
 Run this BEFORE step 4, not after. The command delay it measures is an input to
