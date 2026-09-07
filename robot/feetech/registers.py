@@ -16,9 +16,16 @@ Two encoding traps, both of which produce plausible-looking wrong numbers:
     2048 as well — the trap only bites off-centre, which is where you stop
     looking. `Bus(endian=...)` exists for this; the default is STS.
 
-  * **Sign-magnitude.** Speed, load, current and offset are NOT two's complement:
-    bit 15 is the sign and the low 15 bits are the magnitude. Read one as two's
-    complement and a small negative speed comes back as ~32768.
+  * **Sign-magnitude, and not all at the same bit.** Speed, load, current and
+    offset are NOT two's complement, and the trap has two floors. Read one as
+    two's complement and a small negative speed comes back as ~32768 — that is
+    the obvious half. The second is that the sign is at bit 15 for speed and
+    current but at **bit 10 for load** and **bit 11 for offset**, because those
+    two registers are narrower than 16 bits: load is per-mille of torque and
+    offset is +-2047. Assume bit 15 for all of them and the wrong ones do not
+    fail, they just come back positive and plausible — a load of -388 reads as
+    +1412 and an offset of -1997 reads as +4045. `SIGN_BIT` below is the map,
+    and three of its five entries are measured rather than transcribed.
 
 Units are the servo's own. Conversion to SI lives in `Servo`, not here, so this
 file stays a pure transcription.
@@ -79,8 +86,27 @@ PRESENT_CURRENT     = 69     # 2, sign-magnitude
 #: the extra transactions.
 FEEDBACK_START, FEEDBACK_LEN = PRESENT_POSITION, 15
 
-#: Registers whose value is sign-magnitude rather than two's complement.
-SIGN_MAGNITUDE = {PRESENT_SPEED, PRESENT_LOAD, PRESENT_CURRENT, OFFSET, GOAL_SPEED}
+#: Sign-magnitude registers, mapped to **which bit carries the sign**. It is not
+#: bit 15 for all of them, and assuming so is how a -388 load reads back as +1412.
+#: Three of these were measured on a real ST3215 on 2026-09-07, not transcribed:
+#:
+#:   PRESENT_SPEED  bit 15. Driving one knee each way gave raw 1200 and 33968,
+#:                  and 33968 - 32768 = 1200.
+#:   PRESENT_LOAD   bit 10. The same two moves gave raw 1412 and 392, and
+#:                  1412 - 1024 = 388. The magnitude is the vendor's 0..1000
+#:                  per-mille of torque, so it never needs more than ten bits.
+#:   OFFSET         bit 11, range +-2047. Twelve servos centred by their own
+#:                  middle-position command came back reading 3049, 4045, 3995
+#:                  and 3900 where the arithmetic predicted -1001, -1997, -1947
+#:                  and -1852: 2048 apart, every one.
+#:
+#: GOAL_SPEED and PRESENT_CURRENT are still the vendor's word — **verify**. The
+#: current one is nearly harmless because `Servo.decode` takes its absolute
+#: value; the goal-speed one would be a sign error on every write that used it.
+SIGN_BIT = {PRESENT_SPEED: 0x8000, GOAL_SPEED: 0x8000, PRESENT_CURRENT: 0x8000,
+            PRESENT_LOAD: 0x400, OFFSET: 0x800}
+#: The keys alone, for anything that only asks "is this register signed at all".
+SIGN_MAGNITUDE = set(SIGN_BIT)
 
 #: Width in bytes; anything not listed is one byte.
 WIDTH = {MIN_ANGLE_LIMIT: 2, MAX_ANGLE_LIMIT: 2, MAX_TORQUE: 2, STARTUP_FORCE: 2,

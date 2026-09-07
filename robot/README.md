@@ -57,6 +57,41 @@ that number is an input to the training randomisation, not a diagnostic.
 and reports which path it took, so the timing is never quietly measured on a
 protocol the runtime will not use.
 
+**Measured, twelve servos, mac + CDC adapter, 2026-09-07:** ping 0.27 ms, a
+15-byte feedback read 0.47 ms, a 12-servo SyncRead 3.32 ms, and a full tick
+(SyncRead then SyncWrite) **p50 ~3.4 ms, p99 ~4.0 ms** against a 20 ms budget.
+The wire arithmetic above said 3.16 ms and the host adds about 0.3. Do not read
+the mean the bus *scan* prints as this number: a scan spends most of its time
+timing out on ids that do not exist, and its 9.2 ms mean is that artefact, not
+the bus.
+
+**There is also a rare transport stall of about 24 ms that is not understood and
+is not the checksum defect below.** It shows up as a single SyncRead taking ~22 ms
+where p95 is 3.9, and it costs 0 to 3 missed deadlines per 500 ticks — measured at
+3/500 before the slot-9 fix and 0/500 and 2/500 after it, so the fix did not cause
+it and did not cure it. It is almost certainly host-side (USB frame scheduling on
+a mac CDC adapter) rather than the wire, which means the number to trust is the one
+measured **on the Orange Pi**, not this one. Re-measure there before reading
+anything into it; a stall that survives the move is worth chasing, one that does
+not was the mac's.
+
+**One frame in twelve arrives with a bad checksum, and it is a slot, not a servo.**
+Whoever answers in **slot 9 of 12** gets the top two bits of its trailing checksum
+byte set on about a quarter of SyncReads — `0x22` arrives as `0xe2`. The payload is
+byte-identical to a good frame; only that last byte is wrong. Addressed on its own
+the same servo is perfect over hundreds of reads, and rotating the id list moves the
+fault to whoever now sits in slot 9. A UART sends LSB first, so bits 6–7 are the
+last on the wire, which is what a talker releasing the half-duplex line a bit-time
+early looks like against an idle-high line. `Bus.sync_read` therefore drops that
+frame and re-reads **only that id** (0.47 ms) instead of raising, which used to
+throw away eleven good frames and cost a full twelve-servo re-read on a quarter of
+the ticks. That is a systematic 2 ms off the typical tick, not a cure for the stall
+above — the two are separate and the stall outlives the fix. The
+re-read is a re-read, never a repair: masking the two bits back off would be
+believing a frame precisely because it is corrupt. `--profile` prints the count as
+`N checksum (M re-read)`; M rising with N is this defect behaving as understood,
+while timeouts or a rising `bus_errors` is something else.
+
 ## The runtime, in order
 
 `runtime/` is the loop that lives in the budget above. It is deliberately ignorant
@@ -71,9 +106,12 @@ and does the bus, the timing and the safety layer around it. Today that source i
 pure Python and pulls in no part of ROS. Tomorrow it is the ONNX policy out of
 `rl/`. Neither gets its own idea of what a soft limit is.
 
-**Nothing here has run against a servo yet.** Every number below is either
-arithmetic or a default chosen to be conservative; the `--selftest`s prove the
-loop's own bookkeeping, not the robot.
+**The runtime has now met twelve real servos** (2026-09-07, the mac, all twelve on
+one bus at 12 V). What that run settled is recorded below and in
+`runtime/calib.json`; what it did *not* touch is anything load-bearing — the robot
+was inverted and unloaded the whole time, so `safety.Limits` is still unmeasured and
+`rl/params/st3215.json` still says `fitted: false`. The bench, not the robot, is
+what retires those.
 
 ### Bring-up, the order it has to happen in
 
@@ -106,10 +144,25 @@ loop's own bookkeeping, not the robot.
    registers, and checks the host — including `latency_timer`, which ships at 16 ms
    on FTDI and would eat most of the 20 ms tick on its own. Nothing moves.
 
-3. **`python runtime/calib.py --capture`.** Torque off; hold the robot at the
-   model's mechanical zero — legs straight down — and read. This is the only thing
-   that ties the servo's counts to the model's radians, and it is a property of
-   *this* assembly: the hub bolts on in any of four positions.
+3. **Centre the servos, then `python runtime/calib.py --capture`.** Torque off;
+   hold the robot at the model's mechanical zero — legs straight down — and read.
+   This is the only thing that ties the servo's counts to the model's radians, and
+   it is a property of *this* assembly: the hub bolts on in any of four positions.
+
+   **Capturing alone is not enough, and the first assembly proved it.** As built,
+   six of the twelve joints sat within 330 counts of the 0/4095 encoder wrap and
+   could not reach their own soft limits — `fr_knee` needed ±1128 counts and had
+   16. `Servo.to_counts` clamps at 0 and 4095 without complaint, so a capture there
+   bakes in joints that stop mid-command with nothing reporting it, and wrapping in
+   software is worse: with `MIN/MAX_ANGLE_LIMIT` at 0/4095 the servo drives to the
+   absolute count, so a wrapped goal sends the leg the long way round through its
+   whole ROM. The cure is the servo's own middle-position calibration — write
+   **128 to `TORQUE_ENABLE`** while the joint is held at mechanical zero, and it
+   computes the `OFFSET` itself. Park each servo's `GOAL_POSITION` on its present
+   position first, so a firmware that reads the write as a plain torque-enable holds
+   still instead of snapping. The write gets no reply — the servo is busy burning
+   EEPROM — so verify by reading back, not by the ack. Then `--capture` records the
+   residual and every joint has ±2047 counts to work in.
 
 4. **`python runtime/calib.py --sign all`.** Moves each joint 8.6° and asks a human
    which way it went, because the bus cannot answer it — the servo reports its own
@@ -119,6 +172,19 @@ loop's own bookkeeping, not the robot.
    convention (+X forward, +Y left, +Z up, identical axes on all four legs): a
    positive **roll** swings the foot to the robot's left, a positive **pitch**
    swings it backward, a positive **knee** folds the shin back and shortens the leg.
+
+   **Those prompts are in the robot's frame, and bring-up happens with the robot
+   upside down.** Belly-up, left and right reverse — and rear-left and rear-right
+   swap with them, which is the second-order version of the same mistake. On the
+   first assembly three of the twelve answers came back wrong, all of them roll,
+   all from this; pitch and knee were untouched because their prompts ask about
+   fore/aft, which the flip leaves alone. Answering was not the problem, *seeing*
+   was. So do not settle roll by eye: command one axis on all four legs at once and
+   compare the legs against each other, which never requires naming a side. For the
+   absolute sense, mark a side first — twitch the knees of legs 2 and 3 — and then
+   ask whether a positive roll goes toward the marked side. The map this robot
+   came out with is worth knowing before the next one: **roll splits front/rear
+   (+1,+1,−1,−1) while pitch and knee split left/right (+1,−1,+1,−1).**
 
 5. **`--stand` before `--profile` before the keyboard.** Standing is the first real
    question and it is not "does it walk": it is whether twelve ST3215 hold 2.5 kg at

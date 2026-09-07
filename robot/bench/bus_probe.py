@@ -160,8 +160,12 @@ def main():
     out["tick_budget_ms"] = 1e3 * period
     print(f"  missed deadlines: {late} of {len(work)}"
           f"   ({100.0*late/max(1,len(work)):.1f} %)")
-    out["errors"] = {"timeouts": bus.n_timeout, "checksum": bus.n_checksum}
+    out["errors"] = {"timeouts": bus.n_timeout, "checksum": bus.n_checksum,
+                     "repaired": bus.n_repaired}
     print(f"  bus errors: {out['errors']}")
+    if bus.n_repaired:
+        print(f"  ...the {bus.n_repaired} repaired are single frames dropped for a bad"
+              f" checksum and re-read alone; see Bus.sync_read for the slot-9 defect")
 
     print("\nfor step 4's randomisation: sample the command delay from the measured"
           f"\n  tick work — p50 {out['tick_work']['p50_ms']:.2f} ms, "

@@ -333,8 +333,8 @@ class Runtime:
         b = r["bus"]
         if b.get("n"):
             s.append(f"  bus p50 {b['p50_ms']:.2f} ms, p99 {b['p99_ms']:.2f} ms, "
-                     f"{b['timeouts']} timeouts, {b['checksum_errors']} checksum, "
-                     f"sync_read={b['sync_read']}")
+                     f"{b['timeouts']} timeouts, {b['checksum_errors']} checksum "
+                     f"({b.get('repaired', 0)} re-read), sync_read={b['sync_read']}")
         s.append("  " + self.guard.report())
         return "\n".join(s)
 
@@ -390,9 +390,15 @@ def _selftest(seconds=2.0) -> int:
         q = rt.engage([0.0] * 12, ramp_s=0.2)
         chk("engage leaves torque on", rt.torque_on)
         chk("engage reaches the target", max(abs(v) for v in q) < 1e-6)
-        chk("torque enable reached the servos", bus.io.get(1, R.TORQUE_ENABLE) == 1)
+        # Every id, and taken from `calib.ids` rather than written down: this
+        # asked about id 1 until the ids became <leg><joint> and 1 stopped
+        # existing, at which point the selftest raised KeyError instead of
+        # failing a check. Derive the ids and it cannot rot that way again.
+        chk("torque enable reached the servos",
+            all(bus.io.get(i, R.TORQUE_ENABLE) == 1 for i in calib.ids))
         rt.run(sine, seconds=seconds)
-    chk("the context manager cuts torque", bus.io.get(1, R.TORQUE_ENABLE) == 0)
+    chk("the context manager cuts torque",
+        all(bus.io.get(i, R.TORQUE_ENABLE) == 0 for i in calib.ids))
     chk("torque_on is false after the exit", rt.torque_on is False)
 
     r = rt.report()
@@ -428,7 +434,8 @@ def _selftest(seconds=2.0) -> int:
     except Tripped:
         refused = True
     chk("engage refuses a pose it cannot read", refused)
-    chk("... without having enabled torque", partial.get(1, R.TORQUE_ENABLE) == 0)
+    chk("... without having enabled torque",
+        all(partial.get(i, R.TORQUE_ENABLE) == 0 for i in calib.ids[:-1]))
 
     # a trip must cut torque and propagate
     hot = FollowingLoopback(calib.ids, temp=90.0)
@@ -440,7 +447,8 @@ def _selftest(seconds=2.0) -> int:
     except Tripped:
         tripped = True
     chk("an over-temperature servo trips the engage", tripped)
-    chk("... and torque is off afterwards", hot.get(1, R.TORQUE_ENABLE) == 0)
+    chk("... and torque is off afterwards",
+        all(hot.get(i, R.TORQUE_ENABLE) == 0 for i in calib.ids))
 
     print("loop:", "ok" if ok else "FAILED")
     return 0 if ok else 1

@@ -73,7 +73,9 @@ class Bus:
         # buffer. Auto-detected on the first reply rather than configured: a
         # wrong guess here looks exactly like a servo answering garbage.
         self.discard_echo = discard_echo
-        self.n_tx = self.n_timeout = self.n_checksum = 0
+        # n_repaired: frames dropped for a bad checksum and re-read on their own.
+        # Not an error count — see sync_read for what it means when it rises.
+        self.n_tx = self.n_timeout = self.n_checksum = self.n_repaired = 0
         self._times: list[float] = []
         self._sync_read_ok: bool | None = None
 
@@ -87,15 +89,17 @@ class Bus:
     def value(self, addr: int, raw: bytes) -> int:
         """Decode one register's bytes, honouring width and sign-magnitude."""
         v = raw[0] if len(raw) == 1 else self._from_u16(raw[:2])
-        if addr in R.SIGN_MAGNITUDE and len(raw) >= 2:
-            v = -(v & 0x7FFF) if v & 0x8000 else v
+        bit = R.SIGN_BIT.get(addr)
+        if bit and len(raw) >= 2:
+            v = -(v & (bit - 1)) if v & bit else v
         return v
 
     def encode(self, addr: int, v: int) -> bytes:
         if R.WIDTH.get(addr, 1) == 1:
             return bytes([v & 0xFF])
-        if addr in R.SIGN_MAGNITUDE and v < 0:
-            v = (-v) | 0x8000
+        bit = R.SIGN_BIT.get(addr)
+        if bit and v < 0:
+            v = (-v) | bit
         return self._u16(v)
 
     # ------------------------------------------------------------ transport
@@ -176,16 +180,46 @@ class Bus:
         self.n_tx += 1
 
     def sync_read(self, addr: int, n: int, ids: list[int]) -> dict[int, bytes]:
-        """Broadcast one read; every servo answers in turn. Falls back if absent."""
+        """Broadcast one read; every servo answers in turn. Falls back if absent.
+
+        **One malformed frame is not a malformed bus.** Measured on the assembled
+        robot 2026-09-07: whichever servo answers in slot 9 of 12 gets the top two
+        bits of its checksum byte set on about a quarter of replies — the payload
+        arrives byte-identical and only the trailing byte is wrong, which is what a
+        talker releasing the half-duplex line a bit-time early looks like, since a
+        UART sends LSB first and an idle line reads as ones. Addressed on its own
+        the same servo is perfect over hundreds of reads, and rotating the id list
+        moves the fault to whoever now sits in slot 9, so it is the slot and not
+        the servo.
+
+        Raising for that discarded eleven good frames and made the caller re-read
+        all twelve — 5.6 ms instead of 3.3, on a quarter of the ticks, and a bus
+        error logged each time for one bad byte. So a frame that fails its checksum
+        is dropped and re-read **on its own**, which costs 0.47 ms and localises the
+        fault instead of blaming the bus. What still raises is a stream that cannot
+        be trusted at all: a short reply, a frame whose id byte is wrong (the bytes
+        have shifted, so every later frame is garbage), or every frame bad at once.
+
+        The re-read is a re-read, never a repair. The checksum's job is to say the
+        bytes are untrustworthy; masking the two bits back off would be believing a
+        frame precisely because it is corrupt.
+        """
         if self._sync_read_ok is not False:
             try:
-                out = self._sync_read(addr, n, ids)
-                self._sync_read_ok = True
-                return out
+                out, bad = self._sync_read(addr, n, ids)
             except BusError:
                 if self._sync_read_ok:
                     raise                      # it worked before: a real failure
                 self._sync_read_ok = False
+            else:
+                self._sync_read_ok = True
+                for i in bad:
+                    try:
+                        out[i] = self.read(i, addr, n)
+                        self.n_repaired += 1
+                    except BusError:
+                        pass                   # leave it missing; the caller sees None
+                return out
         return {i: self.read(i, addr, n) for i in ids}
 
     def _sync_read(self, addr, n, ids):
@@ -205,15 +239,24 @@ class Bus:
         if len(buf) < need:
             self.n_timeout += 1
             raise Timeout(f"sync_read: {len(buf)} of {need} bytes")
-        out = {}
+        out, bad = {}, []
         for k, i in enumerate(ids):
             f = buf[k * (6 + n):(k + 1) * (6 + n)]
             body = f[2:5 + n]
-            if f[:2] != b"\xff\xff" or checksum(body) != f[5 + n]:
+            if f[:2] != b"\xff\xff" or f[2] != i:
+                # the header or the id is not where it must be, so the stream has
+                # shifted and every frame after this one is garbage too. Nothing
+                # here is salvageable.
                 self.n_checksum += 1
-                raise Checksum(f"sync_read frame {k} (id {i}) is malformed")
+                raise Checksum(f"sync_read frame {k}: expected id {i}, stream misaligned")
+            if checksum(body) != f[5 + n]:
+                self.n_checksum += 1
+                bad.append(i)
+                continue
             out[i] = f[5:5 + n]
-        return out
+        if bad and not out:
+            raise Checksum(f"sync_read: all {len(ids)} frames malformed")
+        return out, bad
 
     # ---------------------------------------------------------------- stats
     def stats(self) -> dict:
@@ -226,11 +269,11 @@ class Bus:
                 "p50_ms": 1e3 * q(0.50), "p95_ms": 1e3 * q(0.95),
                 "p99_ms": 1e3 * q(0.99), "max_ms": 1e3 * t[-1],
                 "timeouts": self.n_timeout, "checksum_errors": self.n_checksum,
-                "sync_read": self._sync_read_ok}
+                "repaired": self.n_repaired, "sync_read": self._sync_read_ok}
 
     def reset_stats(self):
         self._times.clear()
-        self.n_tx = self.n_timeout = self.n_checksum = 0
+        self.n_tx = self.n_timeout = self.n_checksum = self.n_repaired = 0
 
 
 class Servo:
@@ -314,6 +357,22 @@ def _selftest() -> int:
     bus.io.set(1, R.PRESENT_SPEED, 300)
     check("sign-magnitude positive", bus.read(1, R.PRESENT_SPEED), 300)
 
+    # ... and the sign is NOT at bit 15 for all of them. Load is bit 10 and offset
+    # is bit 11, both measured on a real ST3215 (registers.py, SIGN_BIT). Decoding
+    # those at bit 15 does not raise: a -388 load returns +1412 and a -1997 offset
+    # returns +4045, which is why this is a test and not a comment.
+    bus.io.set(1, R.PRESENT_LOAD, 388 | 0x400)
+    check("load sign is bit 10", bus.read(1, R.PRESENT_LOAD), -388)
+    bus.io.set(1, R.PRESENT_LOAD, 388)
+    check("load positive", bus.read(1, R.PRESENT_LOAD), 388)
+    bus.io.set(1, R.OFFSET, 1997 | 0x800)
+    check("offset sign is bit 11", bus.read(1, R.OFFSET), -1997)
+    check("offset survives encode", bus.value(R.OFFSET, bus.encode(R.OFFSET, -1997)), -1997)
+    check("load survives encode",
+          bus.value(R.PRESENT_LOAD, bus.encode(R.PRESENT_LOAD, -388)), -388)
+    check("speed survives encode",
+          bus.value(R.GOAL_SPEED, bus.encode(R.GOAL_SPEED, -1200)), -1200)
+
     bus.sync_write(R.GOAL_POSITION, {1: 1000, 2: 2000})
     check("sync_write id 1", bus.read(1, R.GOAL_POSITION), 1000)
     check("sync_write id 2", bus.read(2, R.GOAL_POSITION), 2000)
@@ -331,6 +390,22 @@ def _selftest() -> int:
 
     got = bus.sync_read(R.PRESENT_POSITION, 2, [1, 2])
     check("sync_read id 1", bus.value(R.PRESENT_POSITION, got[1]), 2148)
+
+    # ONE bad frame in a SyncRead is dropped and re-read on its own, not taken as a
+    # dead bus. This is the defect measured on the assembled robot: whoever answers
+    # in slot 9 of 12 gets the top two bits of its checksum byte set on ~25 % of
+    # replies. Raising for it threw away eleven good frames and cost a full
+    # twelve-servo re-read on a quarter of the ticks.
+    bus.io.set(2, R.PRESENT_POSITION, 1234)
+    bus.reset_stats()
+    bus.io.corrupt_next = True                 # corrupts the FIRST reply of the burst
+    got = bus.sync_read(R.PRESENT_POSITION, 2, [1, 2])
+    check("a corrupt frame does not sink the whole read",
+          bus.value(R.PRESENT_POSITION, got[1]), 2148)
+    check("... and the good frame beside it is kept",
+          bus.value(R.PRESENT_POSITION, got[2]), 1234)
+    check("... and the re-read was counted", bus.stats()["repaired"], 1)
+    check("... and so was the checksum error", bus.stats()["checksum_errors"], 1)
 
     # A corrupted reply must raise, not return plausible nonsense.
     bus.io.corrupt_next = True
