@@ -234,6 +234,10 @@ class Runtime:
         if blind:
             raise Tripped(f"cannot read {', '.join(blind)} — refusing to take the weight "
                           f"from a pose that is a guess")
+        # Nothing is driving yet, so the temperature byte is trustworthy here in a
+        # way it is not once the motors run: refuse on a single hot reading rather
+        # than wait for the filter in Guard.update to agree.
+        self.guard.check_at_rest(fb)
         q0 = [fb[n]["q"] for n in self.calib.joints]
         self.send(q0)                                    # no jump when torque arrives
         self.bus.sync_write(R.TORQUE_ENABLE, {i: 1 for i in self.calib.ids})

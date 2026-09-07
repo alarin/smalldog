@@ -213,10 +213,37 @@ the mac have no other way to agree about which servo is `fl_knee`.
   commands positions and the servo's own loop decides the current — but it blocks
   the RL policy, which was trained against the datasheet servo and says so in its
   own run notes.
-- **The guard's limits are not measured.** `safety.Limits` defaults to 65 °C, 2.0 A
-  held for 0.3 s, 9.5 V and 0.35 rad of tracking error. The first three want
-  checking against what a real footfall does; the last against the servo's actual
-  lag at the gait's joint rates.
+- **The guard's limits are only partly measured.** `safety.Limits` defaults to 65 °C,
+  2.0 A held for 0.3 s, 9.5 V and 0.35 rad of tracking error. Current and voltage
+  still want a real footfall — the robot has only ever run unloaded and upside down,
+  where it draws 0.05 A. Two of them are no longer guesses:
+
+  **`PRESENT_TEMPERATURE` is unusable while the motor drives, and the guard now says
+  so.** Still, it is good to ±1 °C — thousands of samples on a stationary ST3215
+  produced not one outlier. Driving, the same servo at a true 30 °C returns isolated
+  bytes of 41, 48, 54, 56, 98, and over a 21 s trot a raw maximum of **150 °C**, on
+  both the SyncRead and the single-read path, with the voltage byte beside it correct
+  in every frame. It is PWM noise reaching the ADC, and it tripped the very first
+  `--stand`: `over temperature on fl_pitch: 65.00`, on a servo a direct read showed
+  at 30 °C a second later. Temperature is the slowest thing the guard watches, so it
+  is now median-filtered over five samples and held for 0.5 s, like every other held
+  limit — it was the only one that tripped on a single sample, and it was the one
+  that least should have. `--profile` now reports `N temperature spikes discarded`
+  beside the true peak; that count rising is the ADC, not the robot. Before torque
+  comes on nothing is driving, so `Guard.check_at_rest` still refuses on one hot
+  reading — that is where a genuinely hot servo gets caught.
+
+  **The tracking limit is too tight for this gait.** Measured on the 21 s trot in
+  free air: peak error **26.3°** against a 0.35 rad (20.1°) limit, so it already
+  exceeds the threshold and survives only on the 0.3 s hold. Driven at the gait's own
+  joint rate the servo lags a median 21.7° and a peak 67°, because ±0.5 rad in a
+  0.45 s period asks for 6.98 rad/s against a 4.71 rad/s no-load speed — it
+  saturates. Position itself is trustworthy while driving, unlike temperature: 0
+  impossible jumps in 321 samples. So the number is real and the limit is the thing
+  that is wrong. It has not been changed yet, because loaded on the ground is where
+  the honest value lives, and that run has not happened. Expect to raise it to
+  ~0.7 rad; the guard is there to catch a jam or a reversed sign, and both of those
+  hold a large error rather than peaking through one.
 
 ### Margins worth knowing
 

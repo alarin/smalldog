@@ -41,6 +41,7 @@ owns the torque, because there is one owner or there are races.
 from __future__ import annotations
 
 import argparse
+import collections
 import dataclasses
 import math
 
@@ -65,6 +66,20 @@ class Limits:
     """
     temp_c: float = 65.0            # the servo's own MAX_TEMPERATURE default is ~70
     temp_warn_c: float = 55.0
+    #: Temperature is HELD and MEDIAN-FILTERED, and that is not caution, it is a
+    #: measurement. `PRESENT_TEMPERATURE` is clean to +-1 C while a servo is still
+    #: and unreliable the moment its motor drives: on 2026-09-07, fl_pitch sitting
+    #: at a true 30 C returned isolated samples of 41, 48, 54, 56 and once 98 while
+    #: it moved, on both the SyncRead and the single-read path, with the voltage
+    #: byte beside it correct in every frame. It is PWM noise reaching the ADC.
+    #: This tripped the very first --stand: `over temperature on fl_pitch: 65.00`
+    #: on a servo that a direct read showed at 30 C a second later. Temperature is
+    #: the slowest thing the guard watches — a 55 g rotor cannot move 30 C in 20 ms
+    #: — so a single sample over the line is evidence of noise, not of heat, and
+    #: every other held limit here already knew that.
+    temp_hold_s: float = 0.50
+    temp_median_n: int = 5          # odd, so the median is a sample and not a mean
+    temp_spike_c: float = 8.0       # raw minus median above this is counted, not acted on
     current_a: float = 2.0          # stall is 2.7 A at 12 V
     current_hold_s: float = 0.30
     volt_min: float = 9.5           # 3S nearly empty; the bench's lowest point is 9.9
@@ -92,11 +107,18 @@ class Guard:
 
     def reset(self):
         self._hot = {n: 0.0 for n in self.joints}
+        self._hot_t = {n: 0.0 for n in self.joints}
+        self._temps = {n: collections.deque(maxlen=self.lim.temp_median_n)
+                       for n in self.joints}
         self._err = {n: 0.0 for n in self.joints}
         self._low_v = 0.0
         self._miss = 0
         self._warned = set()
-        self.peak = dict(temp=0.0, current=0.0, q_err=0.0,
+        #: `temp` is the filtered figure — the robot's actual temperature. `temp_raw`
+        #: is the highest single byte any servo returned, spikes included, so the
+        #: noise stays visible instead of being quietly smoothed out of the report.
+        self.temp_spikes = 0
+        self.peak = dict(temp=0.0, temp_raw=0.0, current=0.0, q_err=0.0,
                          volt_min=math.inf, volt_max=0.0)
 
     # ------------------------------------------------------------------ warn
@@ -105,6 +127,25 @@ class Guard:
         if key not in self._warned:
             self._warned.add(key)
             self.log(f"!! {msg}")
+
+    # ------------------------------------------------------------- at rest
+    def check_at_rest(self, feedback: dict):
+        """Temperature, judged on a single reading, before torque comes on.
+
+        `update` filters and holds temperature because PRESENT_TEMPERATURE is only
+        noisy while a motor drives — see `Limits.temp_hold_s`. Nothing is driving
+        here, and a still servo's byte is good to +-1 C: thousands of samples on a
+        stationary ST3215 produced not one outlier, while the same servo moving
+        produced bytes as high as 150. So this is the one place a single reading is
+        allowed to refuse. A servo that is genuinely hot must not be asked to take
+        the weight, and half a second of filtering to establish what a stationary
+        robot could say immediately is half a second of putting torque into it.
+        """
+        for n in self.joints:
+            fb = feedback.get(n)
+            if fb is not None and fb["temp"] >= self.lim.temp_c:
+                raise Tripped("over temperature before torque",
+                              n, fb["temp"], self.lim.temp_c)
 
     # ---------------------------------------------------------------- update
     def update(self, dt, feedback: dict, goal: dict | None = None):
@@ -116,12 +157,29 @@ class Guard:
                 continue
             live += 1
 
-            t = fb["temp"]
-            self.peak["temp"] = max(self.peak["temp"], t)
-            if t >= lim.temp_c:
-                raise Tripped("over temperature", n, t, lim.temp_c)
-            if t >= lim.temp_warn_c:
-                self._warn(f"hot:{n}", f"{n} is at {t:.0f} C, {lim.temp_c:.0f} trips")
+            # Median of the last few samples, then held: see Limits.temp_hold_s for
+            # why one hot byte is noise rather than news.
+            raw_t = fb["temp"]
+            self.peak["temp_raw"] = max(self.peak["temp_raw"], raw_t)
+            d = self._temps[n]
+            d.append(raw_t)
+            # Nothing is judged until the window is full. A partly-filled window has
+            # no median worth the name — on the first tick it IS whatever single
+            # sample arrived, spike and all, which is precisely how a startup spike
+            # would walk past the filter it was built to stop. Four ticks is 80 ms
+            # of not looking, against a hold of 500 ms, and temperature is the one
+            # quantity slow enough that the wait cannot hide anything.
+            if len(d) == d.maxlen:
+                t = sorted(d)[len(d) // 2]
+                if raw_t - t >= lim.temp_spike_c:
+                    self.temp_spikes += 1
+                self.peak["temp"] = max(self.peak["temp"], t)
+                self._hot_t[n] = self._hot_t[n] + dt if t >= lim.temp_c else 0.0
+                if self._hot_t[n] >= lim.temp_hold_s:
+                    raise Tripped(f"over temperature for {self._hot_t[n]:.2f} s",
+                                  n, t, lim.temp_c)
+                if t >= lim.temp_warn_c:
+                    self._warn(f"hot:{n}", f"{n} is at {t:.0f} C, {lim.temp_c:.0f} trips")
 
             i = fb["current"]
             self.peak["current"] = max(self.peak["current"], i)
@@ -170,9 +228,13 @@ class Guard:
 
     def report(self) -> str:
         p = self.summary()
-        return (f"peaks: {p['temp']:.0f} C, {p['current']:.2f} A, "
-                f"{p['q_err']*57.3:.1f} deg tracking error, "
-                f"{p['volt_min']:.1f}..{p['volt_max']:.1f} V")
+        s = (f"peaks: {p['temp']:.0f} C, {p['current']:.2f} A, "
+             f"{p['q_err']*57.3:.1f} deg tracking error, "
+             f"{p['volt_min']:.1f}..{p['volt_max']:.1f} V")
+        if self.temp_spikes:
+            s += (f"\n  {self.temp_spikes} temperature spikes discarded "
+                  f"(raw max {p['temp_raw']:.0f} C) — see Limits.temp_hold_s")
+        return s
 
 
 # ============================================================== self-test
@@ -204,8 +266,43 @@ def _selftest() -> int:
     g = Guard(joints, log=quiet)
     chk("nominal does not trip", feed(g, 500) is None)
 
+    # Temperature is held (0.5 s = 25 ticks at 50 Hz) and median-filtered, because
+    # PRESENT_TEMPERATURE is noisy while the motor drives. These four cases are the
+    # real 2026-09-07 failure, not a hypothetical: a servo at a true 30 C returned
+    # isolated bytes as high as 98 and tripped --stand at 65.00.
     g = Guard(joints, log=quiet)
-    chk("over temperature trips at once", feed(g, 1, temp=70.0) is not None)
+    chk("a single hot sample does not trip", feed(g, 1, temp=98.0) is None)
+
+    # ... but before torque, on a robot that is not driving, one reading is enough
+    g = Guard(joints, log=quiet)
+    hot = {j: frame(temp=70.0) for j in joints}
+    try:
+        g.check_at_rest(hot)
+        chk("at rest, one hot reading does refuse", False)
+    except Tripped:
+        chk("at rest, one hot reading does refuse", True)
+    g = Guard(joints, log=quiet)
+    g.check_at_rest({j: frame(temp=30.0) for j in joints})
+    chk("at rest, a cold robot is fine", True)
+
+    g = Guard(joints, log=quiet)
+    chk("... nor a burst shorter than the hold", feed(g, 10, temp=70.0) is None)
+
+    g = Guard(joints, log=quiet)
+    chk("sustained over temperature still trips", feed(g, 40, temp=70.0) is not None)
+
+    g = Guard(joints, log=quiet)
+    trip = None
+    for i in range(500):                       # one 98 C spike every 17 ticks, 30 C otherwise
+        try:
+            g.update(0.02, {j: frame(temp=98.0 if i % 17 == 0 else 30.0) for j in joints})
+        except Tripped as e:
+            trip = e
+            break
+    chk("isolated spikes never trip", trip is None)
+    chk("... the filtered peak stays honest", g.summary()["temp"] == 30.0)
+    chk("... the raw spike is still reported", g.summary()["temp_raw"] == 98.0)
+    chk("... and the spikes are counted", g.temp_spikes > 0)
 
     g = Guard(joints, log=quiet)
     chk("hot but not over does not trip", feed(g, 500, temp=60.0) is None)
