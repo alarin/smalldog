@@ -78,7 +78,16 @@ class Limits:
     #: — so a single sample over the line is evidence of noise, not of heat, and
     #: every other held limit here already knew that.
     temp_hold_s: float = 0.50
-    temp_median_n: int = 5          # odd, so the median is a sample and not a mean
+    #: Odd, so the median is a sample and not a mean. NINE, not five, and the
+    #: difference is measured: over a 20 s trot on all twelve servos, 12000
+    #: samples carried 102 elevated stretches and **every one of them was a single
+    #: sample long** — the noise is isolated spikes, not sustained error. A median
+    #: of five is fooled only when three spikes land inside one five-window, which
+    #: at that rate is roughly a one-in-ten event over a 30 s run; it duly happened,
+    #: and the first --baseline reported a 44 C peak on servos a rest reading put at
+    #: 30. Nine needs five spikes in nine samples, which is not going to happen, and
+    #: costs 0.18 s of lag on a quantity that moves over tens of seconds.
+    temp_median_n: int = 9
     temp_spike_c: float = 8.0       # raw minus median above this is counted, not acted on
     current_a: float = 2.0          # stall is 2.7 A at 12 V
     current_hold_s: float = 0.30
@@ -369,7 +378,9 @@ def _selftest() -> int:
     chk("a partial bus warns exactly once", len(said) == 1)
 
     g = Guard(joints, log=quiet)
-    feed(g, 5, temp=40.0, current=1.0, volt=11.5, goal=goal, q=0.05)
+    # more ticks than temp_median_n: the temperature peak is only recorded once the
+    # median window is full, so a run shorter than the warm-up reports no peak at all
+    feed(g, 12, temp=40.0, current=1.0, volt=11.5, goal=goal, q=0.05)
     p = g.summary()
     chk("peaks are recorded", p["temp"] == 40.0 and abs(p["current"] - 1.0) < 1e-9
         and abs(p["volt_min"] - 11.5) < 1e-9 and abs(p["q_err"] - 0.05) < 1e-9)

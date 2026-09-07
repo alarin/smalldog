@@ -208,6 +208,23 @@ the mac have no other way to agree about which servo is `fl_knee`.
   included. `walk.py --baseline` records the free-air curve with the robot hanging,
   `--contact` uses it. The threshold is in Feetech's Present Load units and has to
   be re-found on hardware, so both are opt-in.
+
+  **Recorded 2026-09-07, and the signal is real.** `runtime/contact_baseline.json`
+  is 30 s of trot at 0.20 m/s hanging free, 100 % phase coverage on all four legs.
+  The curve is smooth and near-sinusoidal over the gait cycle, **±185 units of
+  Present Load** about a mean of zero, and the four legs agree closely. Two
+  independent 30 s recordings correlate at **0.995** with an RMS difference of 3 %
+  of the range, so the baseline repeats to about 11 units and a contact has that
+  much to beat. That retires this module's stated doubt — "the result says the
+  information is there in principle; it does not say the number the servo reports
+  carries it" — for the in-air half. Still unmeasured is the other half: how far a
+  real footfall moves the load off this curve, which needs the robot on the ground.
+
+  **Hang it the right way up.** The curve is gravity plus inertia plus friction, and
+  only gravity cares which way up the robot is — recorded inverted, the leg's own
+  weight loads the knee the other way and the baseline is wrong by twice that term,
+  silently, and in the direction of the thing being detected. Upside down is fine
+  for calibration and for the first trot; it is not fine for this.
 - **The servo model is still the vendor's.** `rl/params/st3215.json` says
   `fitted: false` out loud. That does not block the analytic trot — the trot
   commands positions and the servo's own loop decides the current — but it blocks
@@ -226,10 +243,17 @@ the mac have no other way to agree about which servo is `fl_knee`.
   in every frame. It is PWM noise reaching the ADC, and it tripped the very first
   `--stand`: `over temperature on fl_pitch: 65.00`, on a servo a direct read showed
   at 30 °C a second later. Temperature is the slowest thing the guard watches, so it
-  is now median-filtered over five samples and held for 0.5 s, like every other held
+  is now median-filtered over nine samples and held for 0.5 s, like every other held
   limit — it was the only one that tripped on a single sample, and it was the one
   that least should have. `--profile` now reports `N temperature spikes discarded`
-  beside the true peak; that count rising is the ADC, not the robot. Before torque
+  beside the true peak; that count rising is the ADC, not the robot. Nine samples
+  and not five, because the spikes are isolated: 12000 samples over a 20 s
+  twelve-servo trot carried 102 elevated stretches and **every one was a single
+  sample long**, so a five-window is fooled only when three spikes fall inside it —
+  about a one-in-ten event over a 30 s run at that rate. It duly happened on the
+  first `--baseline`, which reported 44 °C on servos a rest reading put at 30. A
+  nine-window needs five spikes in nine; the same run then reported 32 °C against a
+  true 29..32. Before torque
   comes on nothing is driving, so `Guard.check_at_rest` still refuses on one hot
   reading — that is where a genuinely hot servo gets caught.
 
