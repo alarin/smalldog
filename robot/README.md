@@ -14,6 +14,7 @@ robot at all.
 | `bench/sweep.py` | drives one servo through the identification trajectories |
 | `bench/fit_bam.py` | those csv files → `rl/params/st3215.json` |
 | `bench/runlog.py` | the csv format, defined once and used from both ends |
+| `bench/lift_test.py` | is foot contact visible in the servos at all? set it down, lift it, compare |
 | `runtime/calib.py` | which servo is which joint, where its zero is, which way it turns |
 | `runtime/safety.py` | the limits, and the one place that decides to cut torque |
 | `runtime/loop.py` | the 50 Hz tick, controller-agnostic — step 7 |
@@ -220,6 +221,29 @@ the mac have no other way to agree about which servo is `fl_knee`.
   carries it" — for the in-air half. Still unmeasured is the other half: how far a
   real footfall moves the load off this curve, which needs the robot on the ground.
 
+  **At 1.55 kg the contact signal is not there on every leg, and that is the
+  gearbox.** `bench/lift_test.py` holds the standing pose while the robot is set
+  down, lifted clear and set down again — same pose throughout, so the only thing
+  that changes is what is under the feet. Measured with no battery, no LiDAR and no
+  Pi (62 % of design mass, ~3.8 N per leg): `fl_knee` moved 56 → 0 → 48, a clean
+  52-unit step against a baseline that repeats to 11. `fl_roll` moved 40 and
+  `rr_pitch` 32. But `fr_knee` and `rl_knee` moved **nothing at all**, and the
+  whole rear-left leg reported nothing on any of its three joints. The two
+  set-down readings do not even agree with each other (`fl_knee` 56 then 48).
+
+  That is stiction, and it is the same actuator fact `robot/bench` found from the
+  other side — the ST3215's friction is 6× the model's, and it held the arm the
+  motor was meant to. Below the friction the motor does nothing whether the foot is
+  loaded or not, so the duty the servo reports as Present Load carries no
+  information. Load is quantised in steps of 8 here, which is not the limit.
+
+  So `--contact` is **not usable at this mass**, and a threshold found now would be
+  fitted to one leg. Whether it becomes usable at the full 2.5 kg is open and worth
+  re-testing rather than assuming either way: per-leg load rises 61 %, which may
+  carry all four legs out of the friction band, and `fl_knee`'s clean step is proof
+  the mechanism works the moment the load clears it. Re-run `bench/lift_test.py`
+  when the battery goes in, before touching `--contact-threshold`.
+
   **Hang it the right way up.** The curve is gravity plus inertia plus friction, and
   only gravity cares which way up the robot is — recorded inverted, the leg's own
   weight loads the knee the other way and the baseline is wrong by twice that term,
@@ -232,8 +256,24 @@ the mac have no other way to agree about which servo is `fl_knee`.
   own run notes.
 - **The guard's limits are only partly measured.** `safety.Limits` defaults to 65 °C,
   2.0 A held for 0.3 s, 9.5 V and 0.35 rad of tracking error. Current and voltage
-  still want a real footfall — the robot has only ever run unloaded and upside down,
-  where it draws 0.05 A. Two of them are no longer guesses:
+  still want a real footfall at the real mass. Two of them are no longer guesses:
+
+  **What the robot weighs today is not what the limits are for.** As it stands on
+  the table it is the printed parts plus twelve servos and the URT-1: **1.55 kg,
+  62 % of the 2.499 kg design mass.** The missing 937 g is battery 420, Orange
+  Pi/BMS/wiring 250, LiDAR 230, GPS 25, camera 12, IMU 3 — and every gram of it is
+  *body* mass on the chassis, so the body is far lighter relative to the legs than
+  it will ever be again. Nothing measured under load here transfers: not the
+  current, not the sag, not the tracking error, and not the contact threshold.
+
+  Standing at 1.55 kg the whole robot draws **0.4 A at 12 V** at the bench supply,
+  while the twelve reported motor currents sum to about 0.07 A. The ~0.33 A
+  difference is quiescent — roughly **27 mA per servo** — which says
+  `PRESENT_CURRENT` is motor current only and does not see the servo's own
+  electronics. Useful for the power budget, and a first sanity check on
+  `CURRENT_LSB_A`; it is not a calibration of it, which wants the supply's reading
+  against a known load. The holding current being this small is the friction again,
+  not an error: the gearbox holds the stance, the motors barely work.
 
   **`PRESENT_TEMPERATURE` is unusable while the motor drives, and the guard now says
   so.** Still, it is good to ±1 °C — thousands of samples on a stationary ST3215
