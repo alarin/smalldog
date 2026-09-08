@@ -420,10 +420,62 @@ the mac have no other way to agree about which servo is `fl_knee`.
   0.45 s period asks for 6.98 rad/s against a 4.71 rad/s no-load speed — it
   saturates. Position itself is trustworthy while driving, unlike temperature: 0
   impossible jumps in 321 samples. So the number is real and the limit is the thing
-  that is wrong. It has not been changed yet, because loaded on the ground is where
-  the honest value lives, and that run has not happened. Expect to raise it to
-  ~0.7 rad; the guard is there to catch a jam or a reversed sign, and both of those
-  hold a large error rather than peaking through one.
+  that is wrong. **It is now 0.70 rad, and that came from the loaded run, not from
+  the estimate.** The first 3 s trot on the bench at 2.55 kg tripped after one second
+  — `not tracking for 0.32 s … fl_pitch: 0.44 against a limit of 0.35` — on a robot
+  doing exactly what it was told, which is a guess stopping the very run that could
+  settle it. Re-run with the trip at 0.8 (`--track-rad`, new, because a limit nobody
+  can set is a limit nobody can measure), the same trot peaks at **0.61 rad / 35°**,
+  twice, reproducible to a tenth of a degree, and travels 350–450 mm in 3 s. 0.70
+  keeps ~15 % over the peak; a reversed sign holds 1–2 rad and the 0.30 s hold is
+  what separates a transient from a fault.
+
+  Do not read 35° as "the servo tracks badly", and note which direction it moved:
+  it is **worse at the fitted gait than at the old one** (35° against 26°) even
+  though the joint-rate demand halved, because the stride nearly doubled — lower
+  rate, larger excursion, and a loaded stance push against a gearbox whose friction
+  is 6× the model's.
+
+  Raising it also broke `safety.py --selftest`, which is the useful part: the test
+  fed `q=0.5` as "a jam" against the old 0.35 trip, so at 0.70 the jam stopped being
+  one and **the test would have gone green on a guard that no longer guards**. Both
+  fixtures now derive from `Limits.q_err_rad`.
+
+### The gait is fitted to the servo, and it doubled the robot's real speed
+
+`walk.py` now refuses to command a trot these servos cannot fly. `gait.py` rate-limits
+its own output to 4.0 rad/s; at 0.20 m/s the trot demands **7.55**, so the commanded
+foot path is clipped before a servo sees it and the robot **drags**. Measured at
+2.55 kg: 0.067 m/s achieved against 0.20 commanded, 0.86 A peaks, and the knee-load
+residual peaking in the half the gait calls *swing* on all four legs, in two
+independent runs — a foot that never leaves the ground.
+
+`feasible_gait()` searches for the shortest period whose demand fits under the limiter
+with the stride still under `max_step`, and caps the speed if none does. It prints what
+it changed; `--as-commanded` restores the old behaviour and names the defect. What that
+picks, and the two constraints together:
+
+| commanded | best period | stride | demand | |
+|---|---|---|---|---|
+| 0.10 | 2.00 | 50 mm | 2.64 | comfortable |
+| 0.12 | 1.65 | 50 mm | 3.16 | |
+| **0.14** | **1.20** | **42 mm** | **3.77** | **what 0.20 is capped to** |
+| 0.15 | 1.30 | 49 mm | 3.95 | at the limit |
+| 0.20 | 1.00 | 50 mm | 5.24 | drags — infeasible at any period |
+
+**0.20 m/s is not achievable by these servos at this mass**, at any period; cutting
+swing to 15 mm only reaches 4.14 and costs the clearance that makes contact readable.
+So the cap is not a slower robot, it is a faster one: **350–450 mm in 3 s = 0.12–0.15
+m/s against 0.067**, better than 2×, and it lands on the commanded speed, which says
+the slip went with the drag — feet that clear and land do not scuff.
+
+Two things this deliberately does not do. It does not touch `gait.py`: **the sim does
+not have this bug**, because MuJoCo's feet run at μ ≈ 1.2 and grip, so the sim robot
+still makes 0.156 m/s, and fixing it in the gait would move every tuned number in
+`ros2/README.md` and what `rl/` trains on to cure something only the hardware suffers.
+And `clamp_profile()` caps the scripted demo's own velocities, because `PROFILE`
+carries its own and the fit on `--speed` would never have reached it — the one run
+meant to be shown to people would still have dragged.
 
 ### Margins worth knowing
 

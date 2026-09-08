@@ -79,6 +79,98 @@ def build_gait(params, args) -> TrotGait:
     return gait
 
 
+# ------------------------------------------------------- what the servos can deliver
+#
+# The trot as tuned asks for more joint speed than these servos have, and the way that
+# fails on hardware is not a limp - it is a DRAG.  `gait.py` rate-limits its own output
+# to `joint_velocity_limit * 0.85` = 4.0 rad/s, so a demand over that is clipped before a
+# servo ever sees it and the commanded foot path is simply not the path that is flown.
+# Measured 2026-09-08 at 2.55 kg: at 0.20 m/s the demand is 7.55 rad/s, 89 % over, and the
+# robot travelled 0.067 m/s - a third of what it was told - with the knee-load residual
+# peaking in the half the gait calls SWING on all four legs, which is a foot that never
+# leaves the ground.  It also costs current (0.86 A peaks against 0.28 standing) and it
+# destroys contact sensing, because there is no free-air half of the cycle left to
+# subtract against.
+#
+# This lives here and not in `gait.py` on purpose.  **The simulation does not have this
+# bug.**  The same clipping happens there, but MuJoCo's feet run at mu ~ 1.2 against a
+# real 0.3..0.5 on a bare bench, so the sim robot grips and still makes 0.156 m/s.  Fixing
+# it inside the gait would move the sim and everything tuned against it - the flat and
+# terrain distances in `ros2/README.md`, and what `rl/` trains on - to cure something only
+# the hardware suffers from.  So the runtime picks a deliverable operating point and says
+# what it changed; the gait is left exactly as the sim and the policy know it.
+#
+RATE_MARGIN = 0.95          # of the gait's own limiter; 1.0 exactly is not a place to sit
+
+
+def joint_rate_demand(params, speed, period, swing, max_step, height):
+    """Peak commanded joint rate over one cycle, rad/s, with the gait's own rate limiter
+    lifted so the number is the DEMAND rather than what survives the clip.
+
+    Ticks a throwaway gait, at 200 Hz for resolution rather than the control rate, and
+    discards the first cycle so the answer is the steady state and not the start-up ramp.
+    """
+    g = TrotGait(params)
+    g.period, g.swing_height, g.max_step, g.body_height = period, swing, max_step, height
+    g.max_joint_rate = float("inf")
+    g.stride_max = 1e3                      # so period_for cannot pin the period here
+    dt, prev, peak = 1.0 / 200.0, None, 0.0
+    for i in range(int(period * 200) * 3):
+        q = g.joint_targets(dt, speed, 0.0, 0.0)
+        if prev is not None and i > int(period * 200):
+            peak = max(peak, max(abs(x - y) / dt for x, y in zip(q, prev)))
+        prev = q
+    return peak
+
+
+def feasible_gait(params, args, limit=None):
+    """Pick a (speed, period) these servos can actually fly.  Returns (speed, period, note).
+
+    Two constraints, and both have to hold or the gait is lying about something:
+
+      * the joint-rate demand has to fit under the limiter, or the foot path is clipped;
+      * the stride, `speed * period / 4`, has to stay under `max_step`, or the gait clamps
+        it and the stance foot stops travelling as far as the body does - which is slip
+        designed in, and it is how a scan of "feasible" settings produces 0.40 m/s that
+        cannot possibly be walked.
+
+    Preferring the SHORTEST period that fits keeps the body unsupported for as little time
+    as possible, which is what `TrotGait.period_for` is protecting on rough ground.
+    """
+    if limit is None:
+        limit = TrotGait(params).max_joint_rate
+    target = limit * RATE_MARGIN
+
+    def best_period(speed):
+        for period in [x / 20.0 for x in range(int(20 * args.period), 20 * 4 + 1)]:
+            if speed * period / 4.0 > args.max_step:
+                break                        # longer only makes the stride worse
+            if joint_rate_demand(params, speed, period, args.swing,
+                                 args.max_step, args.height) <= target:
+                return period
+        return None
+
+    speed = abs(args.speed)
+    period = best_period(speed) if speed > 1e-6 else args.period
+    if period is not None:
+        note = ("" if abs(period - args.period) < 1e-9 else
+                f"period {args.period:.2f} -> {period:.2f} s to stay under "
+                f"{target:.1f} rad/s")
+        return speed, period, note
+
+    # No period works at this speed.  Back the speed off until one does, rather than
+    # command a gait that will drag: 0.067 m/s of dragging is slower than 0.15 walked.
+    while speed > 0.01:
+        speed = round(speed - 0.01, 3)
+        period = best_period(speed)
+        if period is not None:
+            return speed, period, (
+                f"!! {abs(args.speed):.2f} m/s needs more joint speed than these servos "
+                f"have; capped to {speed:.2f} m/s at period {period:.2f} s")
+    return abs(args.speed), args.period, (
+        "!! no feasible period found; running as commanded, expect the feet to drag")
+
+
 def stance_pose(gait, dt, seconds=1.5):
     """Where the gait wants the joints with no command — the pose to stand up into.
 
@@ -170,6 +262,21 @@ class Teleop:
         return (self.cmd["x"], self.cmd["y"], self.cmd["z"])
 
 
+def clamp_profile(steps, vmax):
+    """The scripted demo, with every commanded speed brought inside `vmax`.
+
+    `PROFILE` carries its own velocities, so the feasibility fit on `--speed` does not
+    reach it: without this the demo would still command 0.20 m/s and drag its feet on the
+    one run that is meant to be shown to people.  Direction and timing are untouched; only
+    the magnitude is capped, so the shape of the demo survives.
+    """
+    out = []
+    for secs, vx, vy, wz in steps:
+        sc = min(1.0, vmax / max(abs(vx), abs(vy), 1e-9))
+        out.append((secs, vx * sc, vy * sc, wz))
+    return out
+
+
 def profile_source(steps):
     """A scripted command sequence; raises StopIteration when it runs out."""
     state = {"t": 0.0, "i": 0}
@@ -253,6 +360,9 @@ def main():
 
     ap.add_argument("--baseline", metavar="FILE",
                     help="record the free-air knee-load curve (robot HANGING) and exit")
+    ap.add_argument("--as-commanded", action="store_true",
+                    help="do NOT fit the gait to the servo's joint speed; run --speed and "
+                         "--period exactly as given, feet dragging and all")
     ap.add_argument("--contact", metavar="FILE", help="use a recorded baseline")
     # 50 is measured, on this robot, at 2.55 kg: the residual reads 65..104 units through
     # stance and 1..10 through swing, against an air baseline that repeats to ~2 units.
@@ -267,6 +377,11 @@ def main():
     ap.add_argument("--temp-c", type=float, default=Limits.temp_c)
     ap.add_argument("--current-a", type=float, default=Limits.current_a)
     ap.add_argument("--volt-min", type=float, default=Limits.volt_min)
+    # The tracking limit is the one Limits itself says is unmeasured, and it is the one
+    # that stops a loaded run before it can measure anything. Settable so the honest
+    # number can be found on the ground, which is the only place it exists.
+    ap.add_argument("--track-rad", type=float, default=Limits.q_err_rad,
+                    help="tracking-error trip, rad (default %(default)s)")
     a = ap.parse_args()
 
     params = load_params()
@@ -277,7 +392,18 @@ def main():
         print("!! run: python runtime/calib.py --capture, then --sign all")
         return 2
 
+    if not a.as_commanded:
+        speed, period, note = feasible_gait(params, a)
+        a.speed, a.period = speed, period
+        if note:
+            print(note)
     gait = build_gait(params, a)
+    if not a.as_commanded:
+        # period_for() only ever SHORTENS the period, pinning it at 2*stride_max/speed, so
+        # a period chosen for feasibility has to be admissible there too or it is silently
+        # discarded.  This raises the pin exactly far enough for the period just chosen and
+        # no further, so the schedule keeps shortening with speed the way it was tuned to.
+        gait.stride_max = max(gait.stride_max, a.speed * a.period / 2.0)
     if list(gait.joint_names) != list(calib.joints):
         print("!! the gait and the calibration disagree about joint order — a leg would\n"
               "!! be driven by another leg's servo. Both read robot_params.json, so one\n"
@@ -288,6 +414,11 @@ def main():
     print(f"trot: period {gait.period:.2f} s, swing {r['swing_height']*1000:.0f} mm, "
           f"body {r['body_height']*1000:.0f} mm of {r['height_min']*1000:.0f}.."
           f"{r['height_max']*1000:.0f}")
+    dem = joint_rate_demand(params, a.speed, gait.period, gait.swing_height,
+                            gait.max_step, gait.body_height)
+    print(f"  {a.speed:.2f} m/s demands {dem:.2f} rad/s of "
+          f"{gait.max_joint_rate:.2f} available"
+          + ("" if dem <= gait.max_joint_rate else "  !! CLIPPED — the feet will drag"))
 
     if a.dry_run:
         bus = Bus(transport=FollowingLoopback(calib.ids), discard_echo=False)
@@ -295,7 +426,8 @@ def main():
     else:
         bus = Bus(a.port, a.baud)
 
-    limits = Limits(temp_c=a.temp_c, current_a=a.current_a, volt_min=a.volt_min)
+    limits = Limits(temp_c=a.temp_c, current_a=a.current_a, volt_min=a.volt_min,
+                    q_err_rad=a.track_rad)
     rt = Runtime(bus, calib, hz=a.hz, limits=limits)
 
     pre = rt.preflight(None if a.dry_run else a.port)
@@ -348,7 +480,8 @@ def main():
             elif a.profile or not Teleop.available():
                 if not a.profile:
                     print("no TTY for the keyboard; running the scripted profile")
-                cmd = profile_source(PROFILE)
+                cmd = profile_source(PROFILE if a.as_commanded
+                                     else clamp_profile(PROFILE, a.speed))
 
                 def source(dt_, fb):
                     if contact:

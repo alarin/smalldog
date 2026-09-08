@@ -58,11 +58,11 @@ class Tripped(RuntimeError):
 
 @dataclasses.dataclass
 class Limits:
-    """Defaults are conservative and none of them is measured on this robot yet.
+    """Defaults are conservative and most of them are not measured on this robot yet.
 
-    The three that will want revisiting once the bench has run: `current_a` against
-    what a real footfall draws, `q_err_rad` against the servo's actual lag at the
-    gait's joint rates, and `volt_min` against the pack's sag under twelve servos.
+    Still wanting a real number: `current_a` against what a footfall draws, and
+    `volt_min` against the pack's sag under twelve servos.  `q_err_rad` is no longer
+    one of them - see its own note below.
     """
     temp_c: float = 65.0            # the servo's own MAX_TEMPERATURE default is ~70
     temp_warn_c: float = 55.0
@@ -94,7 +94,20 @@ class Limits:
     volt_min: float = 9.5           # 3S nearly empty; the bench's lowest point is 9.9
     volt_max: float = 13.2          # 3S full is 12.6; higher is a supply set wrong
     volt_hold_s: float = 0.30
-    q_err_rad: float = 0.35         # ~20 deg; the loop's own lag is a quarter of that
+    #: MEASURED, loaded, on the ground, which is the only place this number exists.
+    #: It was 0.35 rad (~20 deg), and that was a guess that stopped the very run that
+    #: could settle it: at 2.55 kg the first 3 s trot on the bench tripped after one
+    #: second, `not tracking for 0.32 s ... fl_pitch: 0.44 against a limit of 0.35`, on
+    #: a robot doing exactly what it was told.  Raised to 0.8 and re-run, the same trot
+    #: peaks at 0.61 rad (35 deg) and travels 350..450 mm in 3 s - the commanded speed,
+    #: near enough.  0.70 keeps ~15 % over that peak.  The guard is here to catch a jam
+    #: or a reversed sign and neither of those peaks through: a reversed sign holds 1..2
+    #: rad, and the 0.30 s hold below is what separates a transient from a fault.
+    #: Do not read this as "the servo tracks badly": the error is the loaded stance push
+    #: on a gearbox whose friction is 6x the model's, and it is bigger at the FITTED
+    #: gait than at the old one (35 deg against 26) because the stride nearly doubled -
+    #: lower joint rate, larger excursion. Measured 2026-09-08.
+    q_err_rad: float = 0.70
     q_err_hold_s: float = 0.30
     bus_fail: int = 5               # consecutive ticks with no usable feedback
 
@@ -339,10 +352,14 @@ def _selftest() -> int:
 
     g = Guard(joints, log=quiet)
     goal = {j: 0.0 for j in joints}
-    chk("tracking within the band is fine", feed(g, 500, goal=goal, q=0.1) is None)
+    # Derived from the limit, not written next to it. These were 0.1 and 0.5 against a
+    # 0.35 rad trip; when the trip was measured and moved to 0.70 the "jam" stopped being
+    # one and the selftest went green on a guard that no longer guarded.
+    inside, jam = Limits.q_err_rad * 0.3, Limits.q_err_rad * 1.5
+    chk("tracking within the band is fine", feed(g, 500, goal=goal, q=inside) is None)
     g = Guard(joints, log=quiet)
-    chk("a brief lag is fine", feed(g, 10, goal=goal, q=0.5) is None)
-    chk("... a jam is not", feed(g, 10, goal=goal, q=0.5) is not None)
+    chk("a brief lag is fine", feed(g, 10, goal=goal, q=jam) is None)
+    chk("... a jam is not", feed(g, 10, goal=goal, q=jam) is not None)
 
     g = Guard(joints, log=quiet)
     chk("no goal means no tracking check", feed(g, 500, q=3.0) is None)
