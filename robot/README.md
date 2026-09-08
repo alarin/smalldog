@@ -325,6 +325,26 @@ the mac have no other way to agree about which servo is `fl_knee`.
   back to the 0.20 m/s demo gait**: at that operating point there is no clean swing
   phase to subtract against, and the number means nothing.
 
+  **There is now a baseline for the gait the robot actually walks at**, which the
+  measurement gait is not — `runtime/contact_baseline_walk.json`, recorded at the
+  fitted 0.14 m/s / 1.20 s. Two independent 30 s hangs correlate at **r = 1.000**
+  with a noise floor of 1.8–2.3 units on a 719–756 unit range, the same statistics
+  as the slow gait, and `bench/contact_walk_air_b.json` is the repeat that says so.
+  Run it with `--contact runtime/contact_baseline_walk.json` and `mismatch()` stays
+  quiet; point `--contact` at the *slow* baseline while walking and it will tell you
+  the period and speed are wrong, which is the mechanism working.
+
+  **Its threshold of 50 is provisional, and the bench is why.** The number was
+  measured at the slow gait; carrying it over is an argument from the ranges being
+  close (752 against 686) and from 50 sitting between a 55–94 unit separation and a
+  ~2 unit noise floor, not a measurement at this gait. Closing it needs a *ground*
+  run at 0.14 m/s, and that is what the bench cannot give: 40 cm of travel is about
+  three seconds, which is 2.5 gait cycles against 60 phase bins, and at period 1.20
+  the phase advances almost exactly one bin per tick. The air half is free — hang it
+  and record for as long as you like — but the loaded half needs a corridor. Do that
+  before trusting `--contact` to steer anything, and re-check 50 against the stance
+  and swing medians the way `bench/contact_2p55kg.json` does.
+
   Two bins in sixty is also the limit of the recorder: the phase advances `dt/period`
   per tick, so a period under about 1.2 s at 50 Hz skips bins outright and
   `Baseline.coverage()` reports 75 % or worse. It says "run it longer", which is
