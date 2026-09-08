@@ -637,6 +637,114 @@ then a plain 2-link solve inside that plane. FK/IK round-trip is tested to 1e-6.
 python -m pytest smalldog_walker/test -q     # 7 passed
 ```
 
+### The foot's contact patch, and why growing it changed nothing
+
+The printed foot is a ⌀26 TPU dome, so the model gives it one `sphere` geom per leg, and a
+sphere on a plane is **one contact point at any attitude**. Until 2026-09-08 the foot also
+shipped at MuJoCo's default `condim="3"`, which uses only the first column of its own
+`friction` — so a planted foot resisted no twist at all, and the torsion number sat in both
+exporters unread. Measured on that model over the 5 s flat trot:
+
+```
+1.00 contact points per loaded foot,  patch spread 0.0 mm
+skid 28.7 mm/foot,  twist 20.6 deg/foot
+the shin is 34.6 deg off vertical while it is carrying load (46.7 deg worst)
+```
+
+That last line is the one to keep: the dome does not touch at its lowest point, it touches
+a third of the way round its side, and it rolls ~25° across the side during one stance.
+
+`tools/foot_contact.py` builds four answers to that on top of the compiled model — through
+`MjSpec`, writing nothing — and runs each beside the unchanged control. The numbers below
+are from before the condim fix, so `base` there is the old behaviour:
+
+| arm | what it is | flat, mm | rough, mm (6 seeds) | pts/foot | spread | skid |
+|---|---|---|---|---|---|---|
+| `base` | as shipped — **the control** | 781.1 | 625.6 ±94 | 1.00 | 0.0 mm | 28.7 |
+| `site` | control #2: only the touch site's radius | 781.1 | 625.6 ±94 | 1.00 | 0.0 mm | 28.7 |
+| `grip` | same dome, its torsion friction switched on | 785.5 | 572.1 ±222 | 1.00 | 0.0 mm | 32.5 |
+| `pad` | dome truncated 3.5 mm to a ⌀17.7 flat face, raked to the loaded shin | 773.6 | 531.8 ±176 | 1.37 | 3.4 mm | 25.1 |
+| `tripod` | three ⌀10 lobes on a ⌀16 ring, same ⌀26 envelope | 760.4 | 485.1 ±252 | 1.88 | 9.2 mm | 30.9 |
+| `ankle` | flat pad on a passive sprung rocker at the dome's centre | 445.8 | 404.7 ±117 | 1.33 | 2.9 mm | 199.9 |
+
+Every arm keeps the sole in the same place and moves no mass (`ankle` takes its rocker's
+8 g out of the shin), so the mass cliff in `3d/CLAUDE.md` step 6 is not what moves a
+distance here. **`pad` and `tripod` do make a real patch and it buys nothing:** on flat
+ground all three are inside ±21 mm of the 781 mm control, and on rough ground every one of
+them is equal or worse against a ±94…±252 mm seed spread. The passive ankle is the only
+unambiguous result and it is negative — it slaps down on an edge and skids seven times as
+far, at every spring rate from 0.02 to 3 N·m/rad. `--push` says why: stand the robot up and
+lean 6 N on it sideways and the body gives 5.6 mm **whatever the foot is**, because the
+compliance that matters is the servo's `kp = 25`, not the contact; and Coulomb friction does
+not depend on contact area, so no patch can change when a foot starts to slide. Past ~12 N
+every arm is shoved equally.
+
+So the small contact point is not costing this walker anything *that this model can see* —
+and the italics are the caveat. MuJoCo contact is rigid: the thing a TPU dome actually does
+under 60 N, which is squash into a patch, is not represented at any foot shape. What the
+test can compare is contact count, torsion, roll and skid; what it cannot compare is
+contact pressure, wear, or how the real foot feels on a table.
+
+#### What was actually changed
+
+Only the contact model, in `3d/mini_dog.py` section 4 — `MJ_FOOT_CONDIM`,
+`MJ_FOOT_FRICTION`, `MJ_FOOT_PRIORITY`, read by both exporters, copied by neither. No
+printed geometry moved, and `fea.py --all` is bit-identical to the pre-change run.
+
+- **`condim` 3 → 4.** The foot now resists twist. Not 6: adding the *rolling* dimension
+  takes the terrain sweep from 657 ±35 mm to 615 ±124 — the mean moves less than the
+  spread but the spread triples, and it is not even the coefficient's doing, because
+  condim 6 with the roll coefficient set to zero still reads 612 ±72. condim 4 reads
+  653 ±28, the tightest of the five. A foot is also not a wheel.
+- **The torsion coefficient is derived, not chosen.** MuJoCo's torsional friction has units
+  of length and caps the twist torque at ~⅔·a·μ·f_n for a patch of radius a. The foot
+  carries ~25 N mean and 57 N peak; 95A TPU works near 4 MPa, so a = 1.4…2.1 mm and the
+  coefficient is 1.6e-3 m. The two exporters had been carrying 0.02 and 0.05 — an order of
+  magnitude and 25× generous. Nobody had picked those; they had never been used.
+- **`priority="1"` on the foot.** MuJoCo does not use a geom's friction, it uses the
+  elementwise *max* of the pair. After the fix above both feet declared the same numbers
+  and still met the ground with different ones, because the two floors differ (`0.9 0.02
+  0.001` against `1.0 0.005 0.0001`): effective torsion 0.02 against 0.005, a factor of
+  four, in two files that now agreed. Priority also settles `solref`/`solimp`, which is
+  the bigger half — the ROS 2 foot had been landing at solref 0.014 / solimp 0.925 0.97,
+  an average of its own 0.008 / 0.95 0.99 with whatever the floor said, so the foot was as
+  soft as the scenery. Check this by reading `d.contact[i].friction`, never the XML.
+
+Re-baselined with the condim-3 control re-run beside it on the same tree, so both columns
+are measurements and neither is a remembered number:
+
+| | condim 3 (control) | **condim 4 (shipped)** |
+|---|---|---|
+| flat trot, 5 s | 788.2 mm | **790.8 mm** |
+| terrain, seeds 7–12 | 480 ±67 mm | **537 ±67 mm** |
+| terrain, default seed | 412.9 mm | **611.2 mm** |
+| course | 1/7, 1621 mm | **5/7, 2778 mm** |
+
+The course figure is a *report*, not a pass, and it is worth seeing how it behaved across
+three small variations of this one change: 2/7 at 1800 mm, 3/7 at 2209 mm, 5/7 at 2778 mm.
+Re-baseline it; do not chase it.
+
+#### Two things worth knowing before repeating any of this
+
+**The heightfield cannot compare feet.** `terrain.py`'s field is `CELL_MM = 12` and MuJoCo
+collides a heightfield as prisms at that pitch. A ⌀26 sphere spans two cells and behaves. A
+⌀17.7 flat face or a ⌀10 lobe is *smaller than one cell*, so what it collides with is the
+prisms' side walls: `pad` was on its back before the trot started, and `tripod` stood still
+with **4 kN** summed through its touch sensors — forty times the robot's weight, at a
+stand. Re-generating the same noise at 4 mm cells makes it worse, not better (46 contacts
+per foot, 6.7 kN, and the *control* arm down from 657 to 363 mm), because the cost is the
+prism count and not the cell size. So `--terrain` compares gaits and masses, as the rest of
+this README uses it, but it cannot compare feet. `--rough` is the ground that can: a plane,
+which every collider handles exactly, strewn with seeded tilted slabs across the metre the
+5 s trot covers.
+
+**A harness bug that looks exactly like a result.** The walker feeds on `<touch>` sensors
+attached to a sphere **site** around each ankle, and the shipped site is r = 14 mm. A foot
+that puts its contacts further out than that is not a better foot, it is a foot the walker
+cannot feel: with the site left alone, `pad` was upside down 0.4 s into the terrain trot
+and walked 554 mm with the feedback switched *off*. Hence `SITE_R`, and hence the `site`
+arm, which is the control that proves the enlarged site is inert on its own.
+
 ## Verified run
 
 Built and run end-to-end in the spider project's `pixi` `kilted` environment on macOS

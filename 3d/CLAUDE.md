@@ -148,6 +148,24 @@ name → (workplane, qty, note) and drives both the export loop and the BOM;
   reflected rotor inertia, the same number as `rl/actuator.py`'s `Params.J_m`. When
   the bench fits the real actuator, these become its initial guess — never a second
   opinion sitting beside it.
+- **The foot's contact lives there too, and it was the same defect a fifth time** —
+  `MJ_FOOT_CONDIM` = 4, `MJ_FOOT_FRICTION` = (1.2, 0.002, 0.001), `MJ_FOOT_PRIORITY` = 1,
+  read by both exporters. They had diverged (torsion 0.05 in `export_sim.py` against 0.02
+  in the ROS 2 generator) while *both* shipped MuJoCo's default `condim="3"`, which reads
+  only the first friction column — so the torsion number was in both files, different in
+  each, and used by neither, and a planted foot was a frictionless pivot. **It is 4 and
+  not 6:** condim 6 adds the rolling dimension and takes the terrain sweep from 657 ±35 mm
+  to 615 ±124, and that is the dimension and not its coefficient — condim 6 with roll set
+  to zero still reads 612 ±72, against condim 4's 653 ±28. Do not "upgrade" it. The
+  torsion figure is derived from the real patch (⅔·a·μ·f_n, a = 1.4…2.1 mm at 4 MPa in
+  95A TPU), not chosen. **And check a contact model by reading `d.contact[i].friction`,
+  never the XML**: MuJoCo uses the elementwise *max* of the pair unless one geom has
+  priority, so after the constants agreed the two exporters still met the ground at
+  0.02 against 0.005, because their floors differ. `MJ_FOOT_PRIORITY` is what makes the
+  foot's own numbers win — `solref`/`solimp` included, which is why this re-baselined
+  step 6 below. Fixed 2026-09-08. `ros2/tools/foot_contact.py` is the measurement, and
+  `ros2/README.md`'s "The foot's contact patch" is the write-up, including the three
+  ways of growing the actual patch that were built, measured and **not** adopted.
 - **The servo's stall torque and no-load speed are read from here too**, by both
   exporters — `SERVO_STALL_NM` = 2.94 and `SERVO_NOLOAD_RADS` = 4.71. This was the
   same defect a third time and the worst-stated of the three: `export_sim.py` read
@@ -287,6 +305,17 @@ name → (workplane, qty, note) and drives both the export loop and the BOM;
    this venv's libpython on its own); it changes no dynamics - verified, the 5 s trot comes
    out at the same millimetre with and without it - so it is a diagnostic, never the
    regression itself.
+
+   **Re-baselined 2026-09-08 by the foot contact fix** (`MJ_FOOT_CONDIM` above), which
+   changed no geometry and no mass and moved every figure in this step, because
+   `MJ_FOOT_PRIORITY` also took the foot's `solref`/`solimp` out of an average with the
+   floor's. The numbers to compare against now, each with the condim-3 control re-run
+   beside it on the same tree: **flat 790.8 mm** (control 788.2), **terrain seeds 7..12
+   537 ±67 mm** (control 480 ±67), **terrain default seed 611.2 mm** (control 412.9),
+   **course 5/7, corridor 2778 mm** (control 1/7, 1621 mm). Everything below this
+   paragraph is the history that led here — the mass-cliff argument still holds and is
+   the reason to keep running a control, but do not compare a new run against its
+   distances.
 
    The first rewrites `smalldog_description/{meshes,urdf,mujoco,robot_params.json}`; the
    second must end `RESULT: OK — stands and trots forward` with a travelled distance close

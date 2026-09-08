@@ -679,6 +679,65 @@ MJ_DAMPRATIO      = 1.0           # critically damped.  export_sim.py carried no
                                   # incomparable with the ROS 2 one rather than
                                   # merely different.
 
+# The foot's contact.  Same rule as the block above and for the same reason: it was the
+# duplicated-constant defect a fifth time, and this one had already diverged - export_sim.py
+# wrote friction="1.2 0.05 0.001" on the foot geom while generate_model.py's `foot` default
+# class wrote "1.2 0.02 0.001", so the two files described robots whose feet gripped
+# differently in torsion by 2.5x, and which sim you loaded decided which foot you had.
+#
+# CONDIM is the substance of the fix.  Both exporters shipped the foot at MuJoCo's default
+# condim 3, which uses only the FIRST column of the friction it declares - so the torsion
+# and roll numbers above were in both files and read by neither, and a planted foot resisted
+# no twist at all.  The foot is a sphere, so it makes exactly one contact point at any
+# attitude; with condim 3 that point was a frictionless pivot.  4 adds torsion.
+#
+# It is 4 and not 6, and that is measured, not taste.  6 adds the ROLLING dimension too,
+# and over terrain seeds 7..12 it takes the trot from 657 +-35 mm to 615 +-124: the mean
+# moves less than the spread, but the spread itself more than triples, which is the walker
+# wandering rather than the walker working harder.  The column is not even the cause - at
+# condim 6 with the roll coefficient set to zero it is still 612 +-72, because condim 6
+# adds the rolling constraint to the solver whatever its coefficient is.  condim 4 reads
+# 653 +-28, i.e. the same distribution as the old behaviour and the tightest of the five.
+# It is also the better physics: a foot is not a wheel, and the leg already resists the
+# dome rolling.  Do not "upgrade" this to 6.
+#
+# The torsion figure is derived, not chosen.  MuJoCo's torsional coefficient has units of
+# LENGTH: it caps the twist torque at ~(2/3)*a*mu*fn for a patch of radius a.  Measured off
+# the flat trot the foot carries ~25 N mean and 57 N peak; 95A TPU works near 4 MPa, so the
+# dome's patch is r = 1.4..2.1 mm and the coefficient is 0.667 * 2.0e-3 * 1.2 = 1.6e-3 m.
+# Both shipped numbers were an order of magnitude generous (0.02) or 25x (0.05) - nobody
+# had picked them, they had simply never been used.  The roll column is kept at a plausible
+# 1e-3 m so the number is there and honest, but condim 4 does not read it.
+#
+# Do not expect any of this in a distance, and that is the point rather than a
+# disappointment: ros2/tools/foot_contact.py measures the whole question - four ways of
+# growing the contact patch, two controls - and NONE of them moves the walker outside the
+# seed noise.  Whether the patch is one point or nine millimetres across, the compliance
+# that decides how far the body gives under a push is MJ_KP, not the foot.  What this fix
+# buys is that the model stops discarding friction it declares.  See ros2/README.md,
+# "The foot's contact patch", for the full table and for why the heightfield cannot be
+# used to compare feet at all.
+# One more level of the same trap, found by reading the COMPILED contacts rather than the
+# files: MuJoCo does not use a geom's friction, it uses the elementwise MAX of the pair
+# unless one geom has the higher `priority`.  Both exporters' feet declared the same
+# numbers after the fix above and still met the ground with different ones, because their
+# floors differ - export_sim.py's global default is friction="0.9 0.02 0.001" and the ROS 2
+# floor is "1.0 0.005 0.0001", so the effective torsion came out 0.02 against 0.005, a
+# factor of four, in two files that now agreed.  The foot is the part whose friction is
+# derived from something, so the foot wins the pair: both exporters give it priority 1.
+# Check this the same way if it is ever touched - d.contact[i].friction, not the XML.
+#
+# `priority` settles solref and solimp as well, and that is deliberate rather than a side
+# effect worth hiding: without it the ROS 2 foot met the ground at solref 0.014 and solimp
+# 0.925/0.97 - an average of the foot's declared 0.008 / 0.95 0.99 with whatever the floor
+# happened to say - so the foot's contact was as soft as the scenery it landed on, and a
+# different softness in each exporter.  Now both read the foot's own numbers.  It is a real
+# change and it re-baselined the gait figures in CLAUDE.md step 6, every one of them
+# upward, with the condim-3 control re-run beside it on the same tree.
+MJ_FOOT_CONDIM    = 4             # slide + torsion.  3 discards torsion; 6 costs, see above
+MJ_FOOT_FRICTION  = (1.2, 0.002, 0.001)   # slide, torsion (m), roll (m; unread at condim 4)
+MJ_FOOT_PRIORITY  = 1             # the foot's friction wins the pair, not the floor's
+
 # =====================================================================================
 # helpers
 # =====================================================================================

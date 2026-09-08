@@ -479,6 +479,12 @@ def write_mjcf():
         f.write("\n".join(o) + "\n")
     print("wrote mujoco/robot.xml")
 
+# condim and friction for the foot come out of mini_dog.py, like the joint feel and the
+# servo's torque: this generator and 3d/export_sim.py had each been carrying their own
+# torsion number (0.02 here, 0.05 there) and both shipping condim 3, which uses neither it
+# nor the roll column.  The floor stays at condim 3 - MuJoCo takes the max of the pair.
+FOOT_FRICTION = " ".join(f"{v:g}" for v in md.MJ_FOOT_FRICTION)
+
 DEFAULTS = f'''<mujoco>
   <default>
     <default class="mujoco">
@@ -494,7 +500,8 @@ DEFAULTS = f'''<mujoco>
         <geom group="3" contype="4" conaffinity="1" rgba="0.9 0.2 0.2 0.3"/>
       </default>
       <default class="foot">
-        <geom group="3" contype="2" conaffinity="1" friction="1.2 0.02 0.001"
+        <geom group="3" contype="2" conaffinity="1" condim="{md.MJ_FOOT_CONDIM}"
+              friction="{FOOT_FRICTION}" priority="{md.MJ_FOOT_PRIORITY}"
               solref="0.008 1" solimp="0.95 0.99 0.001" rgba="0.15 0.15 0.15 1"/>
       </default>
     </default>

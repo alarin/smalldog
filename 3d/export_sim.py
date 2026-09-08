@@ -57,6 +57,11 @@ IMU_XYZ = tuple(v/1000.0 for v in md.imu_xyz())   # the BMI088's package, from t
 # MuJoCo joint feel lives in mini_dog.py section 4, next to the servo's stall
 # torque, and is read - not copied - by this exporter and by the ROS 2 one.  Two
 # private copies is exactly how they came to disagree.
+# The foot's contact dimension and friction live in mini_dog.py too, and for a sharper
+# reason than the joint feel above: this file and the ROS 2 generator had already diverged
+# on it (0.05 against 0.02 in the torsion column) while both shipped condim 3, which reads
+# neither that column nor the roll one.  Read, never copied.
+FOOT_FRICTION   = " ".join(f"{v:g}" for v in md.MJ_FOOT_FRICTION)
 MJ_DAMPING      = md.MJ_DAMPING
 MJ_ARMATURE     = md.MJ_ARMATURE
 MJ_FRICTIONLOSS = md.MJ_FRICTIONLOSS
@@ -506,7 +511,9 @@ def mjcf(base_mp, legmp, rom, meshes, hf=None):
               f' fromto="0 0 0 0 0 {-sh_h:.6g}"/>',
               f'            <geom name="foot_{tag}" class="col" type="sphere"'
               f' size="{md.FOOT_D/2000.0:.6g}" pos="0 0 {-sh_h:.6g}"'
-              f' friction="1.2 0.05 0.001" rgba="0.12 0.12 0.14 1" group="0"/>',
+              f' condim="{md.MJ_FOOT_CONDIM}" friction="{FOOT_FRICTION}"'
+              f' priority="{md.MJ_FOOT_PRIORITY}"'
+              f' rgba="0.12 0.12 0.14 1" group="0"/>',
               f'            <site name="foot_{tag}" pos="0 0 {-sh_h:.6g}" size="0.004"/>',
               '          </body>',
               '        </body>',

@@ -161,11 +161,11 @@
   </sensor>
   <custom>
     <numeric name="lidar_cone" data="1.67552"/>
-    <numeric name="lidar_rate" data="21600"/>
+    <numeric name="lidar_rate" data="62340"/>
     <numeric name="lidar_range" data="0.05 30"/>
     <numeric name="lidar_sigma" data="0.02"/>
     <numeric name="lidar_spin" data="121.6 -75.1529"/>
-    <numeric name="lidar_frame_hz" data="10"/>
+    <numeric name="lidar_frame_hz" data="12"/>
     <numeric name="lidar_groups" data="1 1 0 1 1 1"/>
   </custom>
 </mujoco>
