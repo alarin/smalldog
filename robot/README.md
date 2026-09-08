@@ -521,9 +521,17 @@ cd 3d && .venv/bin/python bench_rig.py       # -> out/bench/{step,stl} + the num
 | part | g | why |
 |---|---|---|
 | `servo_gauge` | 11.8 | **print this one alone first and stop.** It is half a sleeve with a hub arm: check that a real ST3215 drops into the bore, and that the arm's four M3 land on the hub, before spending five hours on a stand built out of the same measured numbers. |
-| `bench_stand` | 140 | sleeve + the two M3 thrust bolts + a column; axis 150 mm above the base |
-| `bench_arm_s` | 5.8 | light arm, reach 45 mm — the direct `J_m` measurement |
-| `bench_arm_l` | 9.4 | heavy arm, reach 90 mm — the holds, and the second free swing |
+| `bench_stand` | 154 | sleeve + the two M3 thrust bolts + a column; axis **190 mm** above the base — raised from 150 so the ⌀140 disc clears at the bottom of the swing. Modelled, not yet weighed |
+| `bench_arm_s` | **5.07** | light arm, reach 45 mm — the direct `J_m` measurement |
+| `bench_arm_l` | **8.17** | heavy arm, reach 90 mm — the holds, and the second free swing |
+| `bench_bushing` × 2 | **4.27** ea. | centres the ⌀29 bore on the M6 tip bolt; without them the disc sits up to 11.5 mm off radius **and moves while swinging** |
+
+The three bold figures are weighed off the real print (2026-09-08); the slicer's
+fill factors were optimistic by 13 % on the arms and **46 % on the bushing**, which
+had no `BENCH_FILL` entry at all and fell through to `mini_dog`'s thin-wall default
+of 0.92. They are in `bench_rig.py` now. The two bushings ride at the tip radius, so
+they are part of the **tip mass**: 8.5 g on 1053 is 0.8 %, and that is 0.8 % straight
+into `k_t`, which the fit gets by dividing measured torque by `m·g·r`.
 
 One plate, **167 g, 6 h 04** on a Q2 at 0.2 mm / 0.4 nozzle / 4 walls / 30 %.
 5.8 g of that is support and it is only in two places — inside the gauge (3.5 g)
@@ -572,9 +580,13 @@ Non-printed, and the bench does not work without them:
   loads the ring section in compression, needs no hole in the tube at all, and
   tunes by the length of the cut. Do not clamp it across two opposite walls — the
   bolt dents them, and a soft joint is the rattle above;
-- **a clamp.** The stand only holds itself down by 1.4× with the heavy arm out
-  horizontal — the two slots in the base take an M6 or a G-clamp, and
-  `bench_rig.py` prints that ratio on every run;
+- **a clamp, and it is now mandatory.** The stand does **not** hold itself down: the
+  heavy arm out horizontal is 0.330 N·m over the base's front edge against 0.161 N·m
+  of stand + servo, i.e. **0.49×**, and `bench_rig.py` prints
+  `!! IT WILL GO OVER unclamped` on every run. The 1.4× this line used to quote was
+  the old rig, before `AXIS_H` went 150 → 190 to clear the disc — raising the axis
+  raised the overturning moment and left the footprint where it was. The two slots in
+  the base take an M6 or a G-clamp; fit one before the first release;
 - 4 × M3 × 6 into the driven hub, 2 × M3 × 10 **set screws** + nuts for the thrust
   clamp. Headless is the robot's spec and the reason is on the robot, not here — a
   cap head fouls the fork spine (`3d/README.md`, *The thrust clamp*). The bench has no

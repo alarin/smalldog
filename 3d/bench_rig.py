@@ -120,19 +120,64 @@ ROOT_W     = 26.0       # beam width at the hub disc, tapering to TIP_W at the t
 # reason the tips are sized the way they are.  Both are WEIGHED, not assumed.
 ARM_MASS   = {"bench_arm_s": 1.053, "bench_arm_l": 1.053}   # one disc, moved between
 
-# The disc, measured.  TIP_ICM is the one that cannot be assumed: at 1053 g in 206 cm3
-# its density is 5.1 g/cm3, so it is not solid - a thin web, a raised hub, or cutouts -
-# and the uniform-annulus formula below is a guess about mass distribution, not a fact.
-# It matters because the two-arm free swing recovers J_m + I_cm as a SUM and never J_m
-# alone, so I_cm has to come from outside the bench.  Hang the disc on a nail through
-# its own bore and time 20 swings: it is a physical pendulum about the bore edge, and
-#     I_cm = m*g*Ri*(T/2pi)^2 - m*Ri^2
-# separates 0.00269 (uniform) from 0.00516 (rim-heavy) as 17.5 s against 23.8 s.
+# The disc.  TIP_ICM is the one number here that cannot be assumed and cannot be measured
+# on the bench either: the two-arm free swing recovers J_m + I_cm as a SUM and never J_m
+# alone, because the SAME disc goes on both arms and I_cm is therefore common mode.  It
+# has to come from outside.
+#
+# It is NOT the uniform annulus.  The plate is a Domyos grip plate and the photo shows
+# three coaxial sections - a raised hub boss, a recessed web carrying two crescent grip
+# pockets, and a raised outer rim.  That is the whole explanation of the 5.1 g/cm3 this
+# comment used to puzzle over: 1053 g in the 140 x 14 ENVELOPE reads 5.1, but the envelope
+# is not the solid.  The solid is ~146 cm3 of cast iron at ~7.2, and the missing 29 % is
+# the web being half the rim's thickness.
+#
+# So integrate the rings instead.  For a stack of coaxial rings the density cancels
+# outright,
+#     I_cm = m * sum((ro^4-ri^4)*t) / (2 * sum((ro^2-ri^2)*t))
+# which is why only the SHAPE has to be measured - the weighed mass carries the scale, and
+# a cast-iron density that is anywhere between 6.8 and 7.6 never enters.  The radii below
+# are read off a square-on photo scaled by the 140 mm OD; the bore edge then lands at
+# r = 14.5, i.e. the 29.0 measured with a caliper, which is the check that the scaling is
+# right.  t_rim is the caliper's 14.0 (a caliper across a plate finds the thickest section,
+# and on this plate that is the rim).  t_web is then whatever puts the density in the
+# cast-iron band, and t_hub is bracketed 10..16 because a photo cannot see it.
+#
+# Over that whole box I_cm lands in 0.00289..0.00303: call it 0.00294 +-2.5 %.  That is
+# 9 % ABOVE the uniform annulus and nothing remotely like the 0.00516 of a rim-heavy plate,
+# which is the outcome that would have mattered.  +-2.5 % of I_cm is +-0.9 % of J_m -
+# comfortably inside what fit_bam recovers on noise-free data - so the swing test that used
+# to be specified here is off the critical path.  It is kept below for the record.
+#
+# The grip pockets are not modelled and do not need to be: they sit in the web, and the
+# web's VOLUME is pinned by the total mass either way, so removing 35 % of its area and
+# thickening the rest to compensate moves I_cm by under 0.1 %.  Checked.
+#
+# To make this exact rather than +-2.5 %, caliper three thicknesses - at the rim, in the
+# flat of the web, and on the hub boss - and put them in TIP_RINGS.  The density bracket
+# then drops out of the argument entirely.
+#
+# For the record, the direct measurement, which is NOT the physical-pendulum formula this
+# comment carried until 2026-09-08: a thin pin in a 29 mm bore touches on the line of
+# centres, so it has no moment arm about the disc's own centre and cannot hold the disc
+# rigid to the pivot.  A smooth pin lets the disc keep its orientation - a plain bob on a
+# 12 mm string, 0.22 s, carrying no information about I_cm at all - and the most a gripping
+# pin can do is ROLL.  So the disc has to visibly counter-rotate as it swings (tape a mark
+# on the rim: it should tilt by 0.86 of the swing angle, the other way), and the reduction
+# is the rolling one,
+#     I_cm = m*R^2 * (g*(T/2pi)^2/d - 1)        R = bore radius, d = R - r_pin
+# where I_cm is 92 % of what sets the period.  Five swings is enough - dry friction decays
+# the amplitude linearly and leaves the period alone - but time them off a 60 fps video,
+# not a stopwatch: +-0.2 s of thumb on a 4 s interval is 10 % of I_cm.
 TIP_M      = 1.053      # kg, weighed
-TIP_OD     = 140.0
-TIP_BORE   = 29.0
-TIP_THK    = 14.0
-TIP_ICM    = 0.5*TIP_M*((TIP_OD/2000)**2 + (TIP_BORE/2000)**2)   # PLACEHOLDER - measure
+TIP_OD     = 140.0      # measured
+TIP_BORE   = 29.0       # measured, and confirmed by the photo's bore edge at r = 14.5
+TIP_THK    = 14.0       # AT THE RIM - the thickest section, not a slab thickness
+TIP_RINGS  = [(TIP_BORE/2,  24.5, 14.0),    # hub boss     (ri, ro, t) mm
+              (      24.5,  58.0,  7.1),    # web, incl. the two grip pockets
+              (      58.0, TIP_OD/2, 14.0)] # outer rim
+TIP_ICM    = (TIP_M * sum((ro**4 - ri**4)*t for ri, ro, t in TIP_RINGS)
+              / (2 * sum((ro**2 - ri**2)*t for ri, ro, t in TIP_RINGS)) * 1e-6)
 
 # The disc's bore is 29 mm and the tip bolt is M6, so nothing locates it: it can sit
 # 11.5 mm off centre, which is 13 % of ARM_L_R and 26 % of ARM_S_R, and it can move
@@ -143,16 +188,57 @@ BUSH_GAP   = 0.6        # total axial gap left between the two sleeves
 BUSH_CLR   = 0.3        # sleeve OD under the bore, for a slip fit
 BUSH_FLG_D = 34.0       # flange has to be bigger than the bore, M6 washers are not
 BUSH_FLG_T = 3.0
+BUSH_M     = 0.00427    # kg EACH, weighed 2026-09-08 (8.54 g for the pair).  They are
+                        # part of the TIP MASS, not of the arm: they sit on the tip bolt
+                        # axis, so they enter m*g*r at the full radius.  8.5 g on 1053 is
+                        # 0.8 %, which is 0.8 % straight into k_t - the fit divides the
+                        # measured torque by m*g*r.  Their own I_cm is 6e-7 and ignored.
 
-# Fill factor = printed mass / solid-volume mass, MEASURED the way mini_dog's PRINT_FILL
-# is: sliced alone in OrcaSlicer for the Qidi Q2 (0.2 layer, 4 walls, 30 % gyroid, no
-# support) and read off the plate.  Not a detail - mini_dog's own default of 0.92 is for
-# thin-walled parts where the walls set the mass, and the stand is the opposite: a chunky
-# part where the infill does, so 0.92 overstated it by 100 g.
-BENCH_FILL = {"bench_stand": 0.54, "bench_arm_s": 0.72, "bench_arm_l": 0.70}
+# Fill factor = printed mass / solid-volume mass.  The stand's 0.54 is still the SLICER's
+# number, read off the plate in OrcaSlicer for the Qidi Q2 (0.2 layer, 4 walls, 30 %
+# gyroid, no support); the other three are WEIGHED on the parts that came off it,
+# 2026-09-08, and the slicer was optimistic about all three by 13-46 %.  Not a detail -
+# mini_dog's own default of 0.92 is for thin-walled parts where the walls set the mass,
+# and every part here is the opposite: a chunky part where the infill does, so 0.92
+# overstated the stand by 100 g and the bushing - which had no entry at all and fell
+# through to that default - by 3.6 g each, i.e. nearly 2x.  Weigh the stand too.
+BENCH_FILL = {"bench_stand": 0.54,          # sliced, NOT yet weighed -> 153.7 g
+              "bench_arm_s": 0.631,         # weighed 5.07 g (sliced said 0.72 / 5.78)
+              "bench_arm_l": 0.605,         # weighed 8.17 g (sliced said 0.70 / 9.46)
+              "bench_bushing": 0.498}       # weighed 4.27 g each (default 0.92 / 7.88)
 
 G = 9.80665
-TAU_C_EST  = 0.28       # MEASURED, 2026-09-04, on the servo this stand holds: energy
+# SUPERSEDED 2026-09-08 - kept below as TAU_C_OLD because the arm sizing above was
+# argued from it.  The 0.28 was energy balance over free-swing drops on ONE arm, and one
+# arm cannot separate Coulomb from viscous: a slow heavy swing and a fast light one fit
+# the same decay.  With two arms at different speeds they split, and the viscous half is
+# the larger one.  Three independent methods on 2026-09-08:
+#   - energy balance over BOTH free swings, solving tau_c and b_v together:
+#       tau_c 0.086 N*m,  b_v 0.115 N*m*s/rad
+#   - release acceleration at omega = 0 on both arms (no viscous term at rest):
+#       tau_c 0.125 N*m
+#   - the hold ladder's intercept: gravity torque against PRESENT_LOAD extrapolated to
+#     zero duty is what friction holds with no motor help:  tau_c 0.092 N*m
+# So tau_c is ~0.09-0.12, not 0.28, and the missing 0.28-0.09 was viscous loss being
+# billed to Coulomb.  b_v is worth more than tau_c at any real speed: 0.43 N*m at the
+# long arm's 4.7 rad/s.
+#
+# STICTION IS SEPARATE AND LARGER, which is why TAU_S is not just tau_c.  Bracketed the
+# same day: the short arm HELD at 0.171 N*m and MOVED at 0.348; the long arm's hold
+# ladder shows a +-160 count (+-14 deg) band, i.e. 0.228 N*m.  So breakaway is 0.23..0.35.
+#
+# AND THE BIG ONE: the loss is mostly LOAD-PROPORTIONAL, not constant.  The hold ladder's
+# gravity-vs-duty slope is 0.00468 N*m per load unit where k_u = 0.245 N*m/V at 12 V
+# predicts 0.00294, so 59 % of the motor's torque never reaches the output.  The free
+# swings say 62-65 % dissipated, and rl/actuator.py's own eta = k_u*R/k_e from the three
+# vendor specs says 57 % - three routes, one of them (the swings) independent of every
+# vendor number.  That is a term neither this file nor rl/actuator.py has: its law is
+# tau_c*sign(w) + b_v*w, both independent of load.  Do not add it here - this file only
+# sizes the rig - but it is the argument for a load-dependent friction term in the
+# actuator model, and it is why the arm sizing below still works out despite tau_c
+# collapsing: what actually resists the arm is a fraction of what the arm weighs.
+TAU_C_EST  = 0.10       # MEASURED, 2026-09-08, three ways (0.086 / 0.092 / 0.125)
+TAU_C_OLD  = 0.28       # superseded.  Was: MEASURED 2026-09-04 on this servo by energy
                         # balance over six free-swing drops, 0.278..0.281 N*m.  It was
                         # 0.05 here and in rl/params/st3215.json, taken from the vendor
                         # sheet - and the arms' "margin on the prior" was margin on a
@@ -160,7 +246,27 @@ TAU_C_EST  = 0.28       # MEASURED, 2026-09-04, on the servo this stand holds: e
                         # weight.  The static breakaway is higher still and brackets
                         # tightly: the arm did not move at 0.352 N*m and did at 0.380,
                         # which is what a release has to clear before it swings at all.
-TAU_S_EST  = 0.38       # static breakaway.  This, not TAU_C_EST, gates the free swing.
+# The counts the encoder reads with the arm HANGING.  Mounting-specific and it does not
+# survive a re-mount: it was 1686 on the first stand and is 2300 on this one, 614 counts
+# = 54 deg apart, because the servo came out of one sleeve and went into another.  Every
+# gravity term in the fit is m*g*r*sin(q - centre), so a stale one is not a small error.
+# RE-MEASURE IT after any re-mount, and do not trust the arm sitting still: this servo
+# holds anywhere in a +-15 deg friction band, so where it rests is not where it hangs.
+# Two ways that do work, both run on 2026-09-08 and agreeing to 36 counts:
+#   - release it from big angles on BOTH sides and take the midpoint of where it stops.
+#     Match the drop heights or the midpoint is biased - an asymmetric pair read 2436.
+#     Energy conservation is the sharp tool here: a release that ENDS higher than it
+#     STARTED is impossible, which is what killed 1686 outright.
+#   - hold it at a ladder of positions, approached from below and then from above, and
+#     read PRESENT_LOAD.  Each branch is +-(gravity + friction) and reads zero where
+#     friction alone holds it; extrapolate the two active branches to zero load and take
+#     the midpoint.  Those crossings were -125 and +196 counts, i.e. friction is worth
+#     about +-160 counts and cancels in the mean.
+CENTRE     = 2300       # +-20 counts (+-1.8 deg), measured 2026-09-08 on THIS mounting
+
+TAU_S_EST  = 0.28       # static breakaway, re-bracketed 2026-09-08 to 0.23..0.35 (held
+                        # at 0.171, moved at 0.348, hold-ladder band 0.228).  Was 0.38.
+                        # This, not TAU_C_EST, gates the free swing.
 
 
 # =====================================================================================
@@ -466,7 +572,7 @@ def report():
         mp = MP.of(PARTS[name][0].val(), rh)
         m0, J0 = axis_inertia(PARTS[name][0].val(), rh)
         r = reach/1000.0
-        mt = ARM_MASS[name]
+        mt = ARM_MASS[name] + 2*BUSH_M   # the disc AND the two bushings clamping it
         # the printed arm has weight of its own, at its own radius.  It is 1-2 % of the
         # tip's torque, which is small but not nothing, and folding it into an effective
         # tip mass costs one line - sweep.py's --mass only ever enters as m*g*r.
@@ -483,7 +589,8 @@ def report():
         # --arm-inertia is everything the fit must NOT attribute to the motor: the
         # printed arm and the disc's own I_cm.  sweep.py adds mass*radius^2 itself.
         lines.append(f"  python bench/sweep.py --traj all --mass {meff:.3f} "
-                     f"--radius {r:.3f} --arm-inertia {J0+TIP_ICM:.6f} --centre 1686")
+                     f"--radius {r:.3f} --arm-inertia {J0+TIP_ICM:.6f} "
+                     f"--centre {CENTRE}")
     print(f"\n  (tau_c = {TAU_C_EST} N*m and breakaway = {TAU_S_EST} N*m are MEASURED on"
           f"\n   this servo, not priors.  Breakaway is the gate: a release below it does"
           f"\n   not move at all, which is a flat CSV rather than a bad fit.  J_arm share"
