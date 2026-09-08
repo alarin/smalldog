@@ -39,16 +39,20 @@ scan.  It reproduces the coverage (0 .. LIDAR_FOV_NEGA from the axis, all azimut
 point rate, and the non-repetition - the two spin rates are in the golden ratio, so the
 pattern never closes and a longer dwell always adds new directions.
 
-What it does NOT reproduce is the density profile.  A Risley rosette piles its points up
-where the sweep turns around, i.e. on the axis and on the rim, while the L2's manual says
-its own density is highest at the middle of the vertical FOV (which is what LIDAR_TILT is
-set to exploit - see mini_dog.py).  So: use this for geometry, coverage and occlusion; do
-not use it to argue about how many returns a particular object gets.  Fixing that needs
-the real pattern, not a better guess.
+What it does NOT reproduce is the density profile, and since 2026-09-05 that is measured
+rather than suspected.  A Risley rosette piles its points up where the sweep turns around,
+i.e. on the axis AND on the rim.  The real L2 falls monotonically off its own axis:
+455318 points per steradian on axis against 30560 at 72..80 deg, ~14x, with no rim peak at
+all (ref/lidar/README.md has the table).  So the rosette is roughly right on the axis and
+wrong in the last band - and the manual's claim that density is highest at the middle of
+the vertical FOV, which is what LIDAR_TILT was argued from in mini_dog.py, is not what the
+unit does either.  Use this for geometry, coverage and occlusion; do not use it to argue
+about how many returns a particular object gets.  Fixing it needs the real pattern, and
+now there is a real capture to fit one against.
 
 MOTION DISTORTION is not modelled either.  Every point of a frame is cast from the sensor
 pose at the end of that frame's window, while a real sweeping lidar moves through it.  At
-the trot's 0.2 m/s and FRAME_HZ = 10 that is 20 mm across a frame; if you ever care about
+the trot's 0.2 m/s and LIDAR_FRAME_HZ = 12 that is 17 mm across a frame; if you ever care about
 it, cast in chunks per sim step and accumulate in world coordinates - the pose is right
 there in mjData either way.
 """
@@ -69,7 +73,11 @@ import numpy as np
 PHI      = (1.0 + 5.0 ** 0.5) / 2.0
 SPIN_A   = 121.6                      # Hz, first prism (7300 rpm, Livox-class hardware)
 SPIN_B   = -SPIN_A / PHI              # ... second, counter-rotating: -75.2 Hz
-FRAME_HZ = 10.0                       # how often the sim emits an accumulated cloud
+
+# FRAME_HZ used to be here, at 10.0, described as a sim choice.  It is not one: the real
+# L2 emits 12.0 clouds per second, measured, so it is a sensor number and it lives with
+# the others in mini_dog.py as LIDAR_FRAME_HZ.  The Scanner still reads it out of the
+# compiled model like everything else, so nothing in the ROS 2 workspace changed.
 
 # Which geoms a ray may hit, by MuJoCo geom group.  Both exporters draw the printed solids
 # as visual-only meshes in group 2 and put the physics in primitives (group 3, and the
@@ -99,7 +107,7 @@ def spec(nega=True):
         r_max=md.LIDAR_R_MAX / 1000.0,
         sigma=md.LIDAR_SIGMA / 1000.0,
         spin=(SPIN_A, SPIN_B),
-        frame_hz=FRAME_HZ,
+        frame_hz=md.LIDAR_FRAME_HZ,
     )
 
 

@@ -205,7 +205,14 @@ name → (workplane, qty, note) and drives both the export loop and the BOM;
   to forget: it lives outside this repo, nothing here imports it, and its meshes keep
   rendering happily with whatever geometry they were baked from.
 - **The LiDAR's parameters live in `mini_dog.py` and travel inside the model.** The
-  sensor's cone, point rate, range and noise are in section 3's LiDAR block; `lidar.py`
+  sensor's cone, point rate, frame rate, range and noise are in section 3's LiDAR block —
+  **including `LIDAR_FRAME_HZ`, which used to sit in `lidar.py` as a "sim choice" and is
+  not one**: the real L2 emits 12.0 clouds/s, so it is the sensor's number and it lives
+  with the sensor's other numbers. `lidar.py`'s file-local constants are the ones that are
+  still genuinely this-file's-guess (the Risley spin rates), and that is the line between
+  the two files. The point rate was the same defect a degree worse: 21600 /s was catalogue,
+  the real sensor does **62341 /s at 12 Hz**, and being 2.9x low is the direction that
+  flatters the model. Measured 2026-09-05, method and capture in `ref/lidar/`; `lidar.py`
   writes them into every MJCF as `<custom><numeric name="lidar_*">`, and both consumers -
   `lidar.Scanner` and the C++ `MujocoLidar` in `../ros2/src/mujoco_ros2_control` - read
   them back out of the *compiled* model. Do not add a launch parameter, a YAML or a
@@ -325,8 +332,12 @@ name → (workplane, qty, note) and drives both the export loop and the BOM;
    mass-and-limits signal into an obstacle-interaction signal: with the course at x = 0.55
    the same trot read 486 +-93 mm, so a real regression would have to beat the noise the
    course adds. The fourth command is the course, and it is a *report*, not a pass/fail:
-   deterministic at the default seed — **currently cleared 4/7, corridor reach 2606 mm,
-   upright at x = 2606 mm at 2.496 kg** (the control beside it, on the pre-2.94-torque
+   deterministic at the default seed — **re-baselined 2026-09-05: cleared 3/7 (log,
+   ramp_up, deck), corridor reach 2209 mm at 2.492 kg**, established as a *control* run on
+   the unchanged model, which came out bit-identical to the changed one beside it. The
+   4/7 / 2606 mm below did not reproduce on this tree, exactly as the paragraph after it
+   predicts; re-baseline, do not chase. The older reading was **4/7, corridor 2606 mm at
+   2.496 kg** (the control beside it, on the pre-2.94-torque
    model at the same mass, was 4/7 and 2512 mm). Older readings, kept because they show
    the spread rather than a trend: 5/7 / 2790 mm at 2.499 kg, 5/7 / 2883 mm at 2.495 kg,
    5/7 / 2896 mm at 2.459 kg, and 2713 +-291 mm with 0/6

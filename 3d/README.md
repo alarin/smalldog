@@ -789,7 +789,7 @@ those numerics has no LiDAR, and both readers say so rather than inventing a con
 | | |
 |---|---|
 | cone | half-angle 96° about the sensor axis (`LIDAR_FOV_NEGA`) — the "360 × 90" plus NEGA |
-| rate | 21600 points/s → 2160 per frame at 10 Hz **verify** |
+| rate | **62340 points/s → 5196 per frame at 12 Hz — measured**, see `ref/lidar/` |
 | range | 0.05 … 30 m, 20 mm 1σ range noise **verify** |
 | frame | `lidar_link`: +Z **is** the sensor's axis, so every FOV angle in the CAD reads directly |
 | sees | what the physics collides with (geom groups ≠ 2), minus the body it is bolted to |
@@ -797,10 +797,14 @@ those numerics has no LiDAR, and both readers say so rather than inventing a con
 The scan pattern is a **Risley pair** — two counter-rotating wedge prisms, each deflecting
 by half the cone — which is the standard way to build a *non-repetitive* scan: stand still
 and the field keeps filling in instead of retracing rings. It reproduces the L2's coverage,
-its point rate and that non-repetition. It does **not** reproduce the density profile: a
-rosette piles points up on the axis and at the rim, while the manual says the real sensor
-is densest at the middle of its vertical FOV, which is the very thing `LIDAR_TILT = 45°`
-was chosen to exploit. Use the model for geometry, coverage and occlusion; do not use it to
+its point rate and that non-repetition. It does **not** reproduce the density profile, and the
+real sensor has now been measured, so this is no longer a guess about a guess: a rosette
+piles points up on the axis *and at the rim*, while the L2 falls monotonically off its own
+axis — 455318 pts/sr on axis against 30560 at 72–80°, ~14×. So the model is closer than it
+claimed on-axis and wrong in the last band, and the *manual's* "densest at the middle of
+the vertical FOV", which is what `LIDAR_TILT = 45°` was argued from, is not what the unit
+does either. The tilt still aims the dense part where the robot walks; only the reasoning
+needs rewriting. See `ref/lidar/README.md`. Use the model for geometry, coverage and occlusion; do not use it to
 argue about how many returns an object gets. No intensity is published either — MuJoCo
 returns a distance and a geom id and nothing about the surface, and a plausible-looking
 invented reflectance is worse than none.
@@ -837,8 +841,10 @@ frame above.
    before `chassis_bottom` goes on the printer.
 2. Orange Pi 5 Pro hole pattern (currently 92 × 54).
 3. ~~Unitree L2 base bolt circle~~ — measured from the manual drawing: ⌀51, 4 × M3 ▽6 at
-   22.5°, ⌀60 spigot, ⌀75 base, 75 × 75 × 65 mm, 230 g. Cable exit still to confirm on a
-   real unit (the L2 has three: DC 3.5×1.35, RJ45 and GH1.25-4P).
+   22.5°, ⌀60 spigot, ⌀75 base, 75 × 75 × 65 mm, 230 g. ~~Cable exit~~ — the unit arrived
+   2026-09-05 and runs on **RJ45 + the DC3.5-1.35 barrel** (ethernet is not PoE; 12 V 1 A).
+   Its ~~point rate~~ and ~~frame rate~~ are measured now too — `ref/lidar/README.md`. Still
+   **verify**: the range window and the range noise, neither of which a room can test.
 4. BMS outline (currently 64 × 27 × 13), and the three connector bodies in the rear panel:
    XT60 16.5 × 8.5, XT30 12.0 × 6.6, JST-XH 3S plug 13.0 × 6.0. All four are catalogue
    numbers, not measurements — check them against the parts in your hand before printing

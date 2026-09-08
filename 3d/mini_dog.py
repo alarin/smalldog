@@ -410,18 +410,33 @@ LIDAR_NUT_Z  = (8.0,)                 # nut-slot floor above the deck, for the M
 # masses are: lidar.py, export_sim.py and ../ros2/.../generate_model.py all model the scan
 # and none of them may keep its own copy of a number that belongs to the sensor.
 #
+# POINT RATE AND FRAME RATE ARE MEASURED.  They were catalogue figures - 21600 pts/s at
+# 10 Hz - and the real L2 does neither: 62341 points per second in 240 frames over 20.0 s,
+# i.e. 12.0 Hz and 5196 points per frame, on firmware 2.8.11.1.  That is 2.9x the point
+# rate the sim had been casting, and it was wrong in the direction that flatters the
+# model, so anything that read "the cloud is sparse" off this repo before 2026-09-05 read
+# it off a number nobody had checked.  Two independent captures 5 s and 20 s apart agree
+# to 2 parts in 62000, so this is the sensor's clock and not a sample.  Method:
+# ref/lidar/README.md; the capture is ref/lidar/l2_room.pcd.
+#
+# LIDAR_FRAME_HZ lives here rather than in lidar.py for the reason every other number in
+# this block does: it is the sensor's, both sim exporters write it into the model, and
+# lidar.py's own header is explicit that its file-local constants are the ones that are
+# *guesses*.  It stopped being a guess when the sensor arrived.
+#
+# The remaining two are still catalogue, and still **verify** in README.md: the range
+# window (the room the capture was taken in is 10 m across, which tests neither end) and
+# the range noise (which needs a flat wall at a known standoff, not a room).
+#
 # LIDAR_FOV is the "360 x 90" of the catalogue read as what it is - a cone of half-angle
 # 90 deg about the sensor's own axis, from that axis down to its base plane.  NEGA, the
-# factory default, buys 6 more degrees BELOW that plane and nothing else; lidar_fov_clear()
-# lidar_fov_clear() has always measured against 96; it just used to spell it inline.
-#
-# The other three are catalogue figures, not measurements off a part in ref/, and they are
-# marked **verify** in README.md until someone reads them off a real L2: point rate,
-# range window and range accuracy.  Nothing structural depends on them - they set how
-# dense and how noisy the simulated cloud is - but a perception result quoted from this
-# model is only as good as they are.
+# factory default, buys 6 more degrees BELOW that plane and nothing else.  The capture
+# reaches 96.4 deg off-axis, so NEGA is confirmed as the envelope; FOV is left at 90 as
+# the base-plane figure it has always been.  lidar_fov_clear() has always measured against
+# 96; it just used to spell it inline.
 LIDAR_FOV, LIDAR_FOV_NEGA = 90.0, 96.0    # scan cone half-angle about the axis, deg
-LIDAR_RATE   = 21600.0                # points per second                    **verify**
+LIDAR_RATE     = 62340.0              # points per second                     MEASURED
+LIDAR_FRAME_HZ = 12.0                 # clouds per second out of the sensor   MEASURED
 LIDAR_R_MIN, LIDAR_R_MAX = 50.0, 30000.0  # mm, usable range window          **verify**
 LIDAR_SIGMA  = 20.0                   # mm, 1-sigma range noise (+-2 cm spec) **verify**
 # WHY THERE IS NO LIDAR GUARD.
