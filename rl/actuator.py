@@ -43,9 +43,13 @@ Where the encoder sits
 we read back over the bus — sees the output shaft (after the gearbox play) or
 the motor side. The vendor wiki in 3d/ref/st3215_wiki.html says "360 degree
 magnetic encoder ... 360/4096", i.e. one absolute turn of the OUTPUT, which only
-works with the sensor on the output shaft; that is the default here. It is a
-30-second bench test to confirm (torque off, rock the horn, watch Present
-Position move by the backlash) and the answer changes the observation wiring in
+works with the sensor on the output shaft.
+
+**CONFIRMED on the bench, 2026-09-08: the encoder is AFTER the gearbox.** Torque
+off, rocking the horn against the play moves Present Position. So the servo reads
+the true joint angle, and the backlash is a hole in the TORQUE path, not in the
+measurement — the robot can observe its own play. `True` below is now measured,
+not inherited from a wiki. The answer changes the observation wiring in
 step 4, so it is a parameter and not an assumption baked into the equations.
 
 Units are SI at the joint: rad, rad/s, N*m, V, A.

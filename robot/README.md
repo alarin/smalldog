@@ -611,9 +611,14 @@ you can *set* and two different arms.
    Present Position. If it moves by ~0.5°, the encoder is after the gearbox: it
    reads the true joint angle, and the backlash is a hole in the *torque* path,
    not in the measurement. If it does not move, the encoder is before the
-   gearbox and the robot cannot observe the play at all. The vendor wiki in
-   `3d/ref/` implies the former; `rl/actuator.py`'s `enc_after_backlash` default
-   assumes it; step 4's observation wiring depends on it.
+   gearbox and the robot cannot observe the play at all.
+
+   **ANSWERED 2026-09-08: the encoder is AFTER the gearbox** — Present Position
+   moves when the horn is rocked against the play. The vendor wiki in `3d/ref/`
+   implied it and `rl/actuator.py`'s `enc_after_backlash = True` assumed it; both
+   are now measured rather than inherited. The robot can observe its own play, so
+   step 4's observation wiring can use the read-back position as the true joint
+   angle. Re-run this after any gearbox or servo swap, not otherwise.
 
 3. **`--traj freeswing`, light short arm.** This is the one direct measurement of
    the reflected rotor inertia, which `rl/checks/check_model.py` found to be

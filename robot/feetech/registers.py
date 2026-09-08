@@ -130,9 +130,26 @@ BROADCAST_ID = 0xFE
 
 # ------------------------------------------------------------- conversions
 COUNTS_PER_TURN = 4096
-#: LSB of Present Current. **verify** against the INA226 on the bench: the
-#: figure quoted for this family is 6.5 mA, and the whole electrical half of the
-#: fit is scaled by it, so it is not a number to inherit from a forum post.
+#: LSB of Present Current, 6.5 mA — and the register is the **SUPPLY** current, not
+#: the motor current. That distinction is the whole reason this channel looked broken.
+#: Measured 2026-09-08 on the bench: holding 0.865 N*m the servo reported 0.084 A, an
+#: order of magnitude below the ~0.5 A a motor making that torque must carry, and the
+#: fit's torque-vs-current line had an unphysical +0.118 N*m intercept.
+#:
+#: It is not the sensor. A PWM'd brushed motor at duty d sits at I_motor = d*U/R, and
+#: the supply behind the bridge sees only d of that, so
+#:      I_reported = d * I_motor = d^2 * U / R
+#: Inverting it over the hold ladder — d from PRESENT_LOAD, seven points across a 7x
+#: range of duty — gives R = 4.29, 4.29, 4.29, 4.44, 4.36, 4.33 ohm (one outlier at
+#: 3.22, the low-duty point where friction carried most of the load). Against the
+#: 12/2.7 = 4.44 the vendor's locked-rotor spec implies. Six points inside 3 % of a
+#: number this register was never told, so both the LSB and the interpretation stand.
+#:
+#: THEREFORE: motor current is `PRESENT_CURRENT / duty`, and anything that regresses
+#: torque against this register raw is regressing against d^2 instead of d. The
+#: electrical half is NOT blocked by this — R falls straight out, and it is the first
+#: electrical parameter here that is measured rather than inherited from the sheet.
+#: Still worth an INA226 someday to pin the LSB without leaning on a vendor number.
 CURRENT_LSB_A = 0.0065
 VOLTAGE_LSB_V = 0.1
 #: Present Speed is in counts/s on STS. **verify**: some firmware reports

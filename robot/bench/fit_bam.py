@@ -87,6 +87,16 @@ FIT = [("kt_eff", 0.05, 20.0), ("g_kp", 0.05, 500.0), ("g_ke", 0.005, 10.0),
        ("deadband", 1e-5, 0.05), ("punch", 0.0, 0.5), ("theta_bl", 0.0, 0.05)]
 
 W_POS = math.radians(0.3)     # rad of position error worth one unit of residual
+#: Smallest duty at which PRESENT_CURRENT / duty is worth believing.  0.02 is two
+#: PRESENT_LOAD counts; the supply current there is 0.0011 A, well under the
+#: register's 0.0065 A LSB.  See the note in Run.__init__.
+DUTY_MIN = 0.02
+
+#: PRESENT_CURRENT's own LSB, 6.5 mA.  Here only so the selftest can quantise its
+#: synthetic current the way the hardware does; the live path reads it from
+#: feetech.registers.CURRENT_LSB_A.
+CURRENT_LSB = 0.0065
+
 W_CUR = 0.03                  # A of current error worth the same
 SMOOTH = 5                    # samples of moving average before comparing
 
@@ -123,7 +133,6 @@ class Run:
         self.name, self.meta = name, meta
         self.t, self.dt = grid, dt
         self.q = g("q_rad")
-        self.i = g("current_a")
         # The servo's own PRESENT_SPEED. Worth carrying rather than always
         # differentiating q: at the bench's 200 Hz one encoder count of position
         # is 0.307 rad/s, while PRESENT_SPEED quantises at 0.0767 rad/s -- four
@@ -153,8 +162,58 @@ class Run:
         if lr is None or len(lr) != len(keep):
             self.duty = None
         else:
-            mag = (np.asarray(lr, dtype=np.int64) & 0x3FF)[keep].astype(float)
+            # `load_raw` is written in TWO conventions and the column name is
+            # honest about neither. Servo.decode() applies registers.SIGN_BIT, so
+            # logs taken after that landed hold a SIGNED integer (-472 for a hold
+            # pulling 47 % the other way); logs taken before it hold the RAW
+            # register, sign-magnitude with bit 10 the direction (1152 = 0x400|128).
+            # Both are in bench/data, six months apart.
+            #
+            # Neither a bare mask nor a bare abs() reads both. Masking a signed
+            # value with 0x3FF reads two's complement as a magnitude — -472 becomes
+            # 552, and -24 becomes 1000, so every lightly-loaded sample reports as
+            # fully saturated. abs() on a raw negative gives 1024+mag, i.e. a duty
+            # over 1. Found 2026-09-08: the mask manufactured 1385 "pinned" samples
+            # across the holds, steps, reversals and triangles, every one of them
+            # drawing about 0.005 A where a genuinely saturated servo pulls 2 A,
+            # and seed_from_saturation regressed R = 20.2 ohm off them. The real
+            # stall runs, which do saturate, say 4.0-4.1.
+            #
+            # The two are separable without a flag, because their ranges do not
+            # overlap where it matters: a decoded value is in [-1023, 1023] and a
+            # raw one in [0, 2047], so anything negative is decoded, anything at
+            # or above 1024 is raw-and-negative, and [0, 1023] is the same
+            # magnitude either way.
+            v = np.asarray(lr, dtype=np.float64)[keep]
+            mag = np.where(v < 0, -v, np.where(v >= 1024, v - 1024, v))
             self.duty = np.interp(grid, t, mag / 1000.0)
+
+        # PRESENT_CURRENT IS THE SUPPLY CURRENT, NOT THE MOTOR CURRENT, and every
+        # pass below wants the motor's.  Behind a PWM bridge the motor sits at
+        # I_m = d*U/R while the supply only delivers d of that, so the register
+        # reads d^2*U/R and a fit that takes it raw is regressing against d^2
+        # where it believes it has d.  It does not diverge, it converges on
+        # nonsense: measured 2026-09-08, taking it raw returned R = 20.2 ohm
+        # against a bench-measured 4.3, k_e pinned on its lower bound, and an
+        # implied no-load speed of 240 rad/s against a spec 4.71.
+        #
+        # The correction is one division, and it is self-verifying: inverting
+        # R = d^2*U/I over a hold ladder returns 4.29..4.44 ohm across a 7x range
+        # of duty and two supply voltages, against the 12/2.7 = 4.44 the vendor's
+        # locked-rotor spec implies - a number the register was never told.  See
+        # feetech/registers.py, CURRENT_LSB_A.
+        #
+        # Below DUTY_MIN the division is meaningless rather than merely noisy: the
+        # supply current there is under one 6.5 mA LSB, so the register reads zero
+        # and the ratio is 0/0.  Clamping the divisor caps the amplification at
+        # 1/DUTY_MIN and costs nothing, because the true motor current in that
+        # regime is small and the residual weights it by W_CUR anyway.
+        if self.duty is None:
+            self.i = g("current_a")
+            self.i_is_supply = True      # uncorrectable: this log predates load_raw
+        else:
+            self.i = g("current_a") / np.maximum(self.duty, DUTY_MIN)
+            self.i_is_supply = False
         self.load = A.pendulum_load(self.mass, self.radius)
 
     def predict(self, p: A.Params, dt_int):
@@ -362,6 +421,70 @@ def seed_from_holds(runs, p: A.Params) -> A.Params:
     return A.Params(**d)
 
 
+def seed_R_from_stationary(runs, p: A.Params) -> A.Params:
+    """R from every sample where the joint is HELD STILL, at any duty.
+
+    seed_from_saturation below needs the duty pinned at 1 so that the applied
+    voltage is exactly the supply. There is a second place where the electrical
+    equation collapses just as cleanly, and it is far easier to reach: standing
+    still. At omega = 0 the back-EMF term vanishes on its own, so
+
+        i = d * U / R
+
+    with no gain, no dead zone, no friction and no speed in it. Regressing the
+    measured current on d*U over the stationary samples returns 1/R directly, and
+    unlike saturation it does not need the servo to be pushed to its limit — a
+    hold ladder gives it at a dozen different duties.
+
+    This exists because saturation turned out to be unreachable on a real bench.
+    Measured 2026-09-08 over the full three-voltage set: max duty 0.68 at 12 V,
+    0.80 at 10 V, and NINE genuinely pinned samples in the entire dataset, all in
+    one 8 V run and all at one speed. With no run clearing the ten-sample bar,
+    seed_from_saturation fell through to its position-error fallback — the one
+    its own docstring warns "comes back an order of magnitude wrong" — and
+    returned R = 20.2 ohm against a bench-measured 4.3.
+
+    The holds have no such problem: R = d^2*U/i over the ladder lands in
+    4.29..4.44 ohm across a 7x range of duty and two supply voltages.
+
+    NOTE this gives R and not k_e: with omega pinned at zero there is nothing for
+    the k_e/R column to act on. k_e still needs either genuine saturation across a
+    spread of speeds, or a free-running no-load spin.
+    """
+    x, y = [], []
+    for r in runs:
+        if r.duty is None or not r.on.any():
+            continue
+        w = r.w_meas if r.w_meas is not None else np.gradient(r.q, r.dt)
+        # Stationary, driving, and above the duty where the current LSB stops
+        # meaning anything. The speed bar is one encoder count per sample at the
+        # bench's 200 Hz, so "still" means still to the resolution of the log.
+        still = r.on & (np.abs(w) < 0.05) & (r.duty > DUTY_MIN) & (r.i > 1e-3)
+        if still.sum() < 10:
+            continue
+        x.append((r.duty * r.u_bat)[still]); y.append(np.abs(r.i[still]))
+    if not x:
+        print("  stationary: no held samples above the current LSB. R stays at "
+              "its prior.")
+        return p
+    x, y = np.concatenate(x), np.concatenate(y)
+    # Intercept carried, not forced through zero: a systematic offset in the
+    # current channel would otherwise land entirely on the slope.
+    M = np.column_stack([x, np.ones(len(x))])
+    (g_R, c), *_ = np.linalg.lstsq(M, y, rcond=None)
+    if not (1e-3 < g_R < 3.0):
+        print(f"  stationary: 1/R came out at {g_R:.4g}, not physical; ignoring.")
+        return p
+    R = 1.0 / g_R
+    print(f"  stationary: {len(x)} held samples -> 1/R = {g_R:.4f} "
+          f"(R = {R:.2f} ohm, intercept {c:+.4f} A)")
+    # k_u*R and kp/R are the well-measured products; hold them and let the
+    # individual parameters follow the new R, exactly as saturation does.
+    kt = p.k_u * p.R
+    return A.Params(**{**p.__dict__, "R": R, "k_u": kt / R,
+                       "kp": (p.kp / p.R) * R})
+
+
 def seed_from_saturation(runs, p: A.Params) -> A.Params:
     """R and k_e from the moments the duty is pinned at 1, in one regression.
 
@@ -391,6 +514,17 @@ def seed_from_saturation(runs, p: A.Params) -> A.Params:
     # pinned samples give R = 3.88 ohm, and topping them up to 928 with inferred
     # ones gives 7.92.
     have_duty = any(r.duty is not None and (r.duty > 0.99).sum() >= 10 for r in runs)
+    if not have_duty and any(r.duty is not None for r in runs):
+        # The position-error fallback below is only defensible when no run logged
+        # a duty at all. When the duty IS logged and simply never pins, the honest
+        # reading is "this bench cannot saturate this servo", and the fallback
+        # actively harms: it admits fast-moving samples whose back-EMF is large,
+        # which is the failure this docstring already describes. R comes from
+        # seed_R_from_stationary instead; leave it alone here.
+        print("  saturation: the duty is logged but never pins — this trajectory "
+              "set does not saturate the servo. R is left to the stationary "
+              "holds; k_e keeps its prior and needs a no-load spin.")
+        return p
     i, w, u = [], [], []
     for r in runs:
         if not r.on.any():
@@ -570,6 +704,7 @@ def fit(runs, holdout=None, dt_int=1e-4, max_nfev=200, base=None,
     print(f"\nseeding from {len(train)} runs "
           f"({', '.join(sorted({r.trajectory for r in train}))})")
     base = seed_from_freeswing(train, base)
+    base = seed_R_from_stationary(train, base)  # R where omega = 0, any duty
     base = seed_from_saturation(train, base)   # R first: the holds divide by it
     base = seed_from_holds(train, base)
     base = seed_from_reversal(train, base)
@@ -745,11 +880,27 @@ def _selftest(dt_int=1e-4) -> int:
         s = A.simulate(p, target, dt, q0=float(target[0]), u_bat=volts,
                        load_torque=A.pendulum_load(mass, radius),
                        torque_on=on, dt_int=dt_int)
+        duty_s = np.asarray(s["u"]) / float(volts)      # applied volts -> duty
         rows = [dict(t=float(t[k]),
                      target_rad=float(target[k]) if on[k] else float("nan"),
                      q_rad=float(s["q_meas"][k]), w_rad_s=float(s["w"][k]),
-                     current_a=float(abs(s["i"][k]) + rng.normal(0, 0.004)),
-                     volt_v=volts, temp_c=35, load_raw=0,
+                     # emulate the REGISTER, not the motor: supply current is
+                     # duty*I_motor, and load_raw is that duty in per-mille,
+                     # sign-magnitude with bit 10 the direction.  Writing the
+                     # motor current here instead would leave the correction in
+                     # Run.__init__ untested by the one test that runs every time.
+                     # ... and quantised the way the register is.  A 4 mA
+                     # Gaussian on the SUPPLY side is not the same noise: it is
+                     # 2x the LSB's own sigma, and Run divides by duty, so it
+                     # arrives at the fit amplified by 1/d.  The real channel's
+                     # error is bounded and often exactly zero.
+                     current_a=float(round(abs(s["i"][k]) * abs(duty_s[k])
+                                           / CURRENT_LSB) * CURRENT_LSB
+                                     + rng.normal(0, 0.001)),
+                     volt_v=volts, temp_c=35,
+                     # SIGNED, because that is what sweep.py writes: the sign
+                     # bit is applied in Servo.decode(), not left in the column.
+                     load_raw=int(round(duty_s[k] * 1000)),
                      counts=round(s["q_meas"][k] / A.ENC_STEP_RAD) + 2048)
                 for k in range(len(t))]
         runlog.write(os.path.join(tmp, f"{name}_v{volts}_m{mass}_r{radius}.csv"),
@@ -824,9 +975,10 @@ def main():
     ap.add_argument("--out", default=os.path.join(ROOT, "rl", "params", "st3215.json"))
     ap.add_argument("--holdout", default="chirp",
                     help="trajectory name kept out of the objective")
-    ap.add_argument("--seconds", type=float, default=8.0,
+    ap.add_argument("--seconds", type=float, default=25.0,
                     help="seconds used from each run; the cost is wall-clock, "
-                         "not samples")
+                         "not samples. 25 covers the reversal (21 s), which is "
+                         "where the dead zone lives — see the note in fit()")
     ap.add_argument("--fit-hz", type=float, default=200.0)
     ap.add_argument("--dt-int", type=float, default=1e-4)
     ap.add_argument("--max-nfev", type=int, default=200)
