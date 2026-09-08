@@ -15,6 +15,7 @@ robot at all.
 | `bench/fit_bam.py` | those csv files → `rl/params/st3215.json` |
 | `bench/runlog.py` | the csv format, defined once and used from both ends |
 | `bench/lift_test.py` | is foot contact visible in the servos at all? set it down, lift it, compare |
+| `bench/lift_2p55kg.json` | that comparison at 2.55 kg, both plate positions, run-length encoded |
 | `runtime/calib.py` | which servo is which joint, where its zero is, which way it turns |
 | `runtime/safety.py` | the limits, and the one place that decides to cut torque |
 | `runtime/loop.py` | the 50 Hz tick, controller-agnostic — step 7 |
@@ -218,8 +219,9 @@ the mac have no other way to agree about which servo is `fl_knee`.
   of the range, so the baseline repeats to about 11 units and a contact has that
   much to beat. That retires this module's stated doubt — "the result says the
   information is there in principle; it does not say the number the servo reports
-  carries it" — for the in-air half. Still unmeasured is the other half: how far a
-  real footfall moves the load off this curve, which needs the robot on the ground.
+  carries it" — for the in-air half. The other half — how far a real footfall moves
+  the load off this curve — is measured statically below at 2.55 kg and still open
+  dynamically.
 
   **At 1.55 kg the contact signal is not there on every leg, and that is the
   gearbox.** `bench/lift_test.py` holds the standing pose while the robot is set
@@ -237,12 +239,126 @@ the mac have no other way to agree about which servo is `fl_knee`.
   loaded or not, so the duty the servo reports as Present Load carries no
   information. Load is quantised in steps of 8 here, which is not the limit.
 
-  So `--contact` is **not usable at this mass**, and a threshold found now would be
-  fitted to one leg. Whether it becomes usable at the full 2.5 kg is open and worth
-  re-testing rather than assuming either way: per-leg load rises 61 %, which may
-  carry all four legs out of the friction band, and `fl_knee`'s clean step is proof
-  the mechanism works the moment the load clears it. Re-run `bench/lift_test.py`
-  when the battery goes in, before touching `--contact-threshold`.
+  So `--contact` was **not usable at 1.55 kg**, and a threshold found there would
+  have been fitted to one leg.
+
+  **At 2.55 kg it is, on all four legs.** Re-run 2026-09-08 with a 1 kg plate on
+  the deck — 102 % of the 2.499 kg design mass, though a plate is one lump where
+  the missing 937 g is spread, so this brackets the finished robot rather than
+  being it. Knee only, which is what `contact.py` reads, |DOWN − LIFTED| in
+  Present Load units, measured twice with the plate in two places:
+
+  | leg | plate forward | plate centred |
+  |---|---|---|
+  | fl | 56 | 56 |
+  | fr | 24 | 24 |
+  | rl | **8** | **48** |
+  | rr | 8 | 16 |
+
+  **The front/rear split is load distribution, not per-servo scatter.** Moving the
+  plate back took `rl_knee` from 8 to 48 and `fr_roll`/`fr_pitch` from 0 to 24/32,
+  while the front legs held. That is the difference between "two legs are deaf" and
+  "two legs were unloaded", and it is why the plate's position is recorded here:
+  the real robot carries 267 g of LiDAR, camera and GPS at the nose against a
+  central 420 g battery, so it sits between these two columns.
+
+  **The number repeats now, which is the thing 1.55 kg could not do.** At 1.55 kg
+  the two set-down readings inside a *single* run disagreed (`fl_knee` 56 then 48).
+  Here the joints whose load barely changed between the two runs reproduced **to
+  the unit** — `fl_knee` 56/56, `fr_knee` 24/24, `rl_pitch` 32/32, `rl_roll` 0/0.
+  Interquartile spread inside every window of both runs is 0 but for a single 8:
+  Present Load is *latched*, not noisy. It holds dead flat for the seven seconds
+  the robot hangs and steps only when what is under the foot changes, which is a
+  much better signal to threshold than the ±185-unit in-air swing suggests.
+
+  Two things to carry into `--contact-threshold`. **The sign is per-leg** — fl/rl
+  positive, fr/rr negative, which is `calib.py`'s knee sign map +1,−1,+1,−1, so
+  the residual needs the sign or an absolute value. And **`rr` is the marginal
+  leg** at 16 units: above the baseline's 11-unit repeatability, under the 24 bar.
+  That may well not matter — this is a static test with the feet placed by hand,
+  and the gait wants a touchdown *edge* inside a swing rather than a calibrated
+  force — but it is the leg to watch when the threshold is set.
+
+  **The first window `lift_test.py` prints is not a contact reading.** It is the
+  state the 2 s engage ramp leaves behind, legs driven into the table and the
+  gearbox wound up, and it runs 2–4× the second window (`fl_knee` 136 against 56).
+  The script used to average the two DOWN windows into one `delta`, so the 1.55 kg
+  verdicts above carry that artifact; it now reports DOWN − LIFTED alone as
+  `signal` and the wound-up one beside it as `ramped`.
+
+  **The dynamic case is now measured too, and `--contact-threshold` is 50.** Same
+  day, same 2.55 kg. `walk.py --baseline` records the free-air curve and the *same
+  command with the robot on the bench* records the loaded one; the difference,
+  per leg per phase bin, is the contact signal:
+
+  | leg | stance median | swing median | air repeatability |
+  |---|---|---|---|
+  | fl | 104 | 10 | 1.8 |
+  | fr | 65 | 10 | 1.7 |
+  | rl | 86 | 1 | 2.3 |
+  | rr | 68 | 2 | 1.7 |
+
+  Separation is 55–94 units against a noise floor of ~2, i.e. **32 to 53 σ**, and
+  the swing half sits at zero on all four legs, which is the air subtraction doing
+  exactly its job. Two independent free-air recordings correlate at **r = 1.000**
+  with an RMS difference of 2.3–3.3 units on a ~680-unit range — four times tighter
+  than the 11 units the fast gait managed. `runtime/contact_baseline_slow.json` is
+  that baseline; `bench/contact_2p55kg.json` is all three curves and the residual.
+
+  **It had to be measured at a slow gait, and that is a finding about the demo gait,
+  not a limitation of the method.** `gait.py` rate-limits its own output to
+  `joint_velocity_limit × 0.85` = 4.0 rad/s. At 0.20 m/s the trot demands **7.55
+  rad/s — 89 % over the limiter** — so the commanded foot path is clipped before a
+  servo ever sees it, and `--period` cannot help because `period_for()` pins the
+  period to 0.45 s at that speed whatever is passed. The robot then drags: the
+  residual peaked in the half the gait calls *swing*, on all four legs, in two
+  independent runs. That is the foot on the ground through the whole cycle, fighting
+  hardest when it is being told to lift. Measured travel was **400 mm in 6 s, 0.067
+  m/s against 0.20 commanded** and against 0.156 m/s for the same gait in MuJoCo.
+
+  The measurement gait is **speed 0.02 m/s, period 1.35 s**, demand 3.36 rad/s,
+  inside the limiter. Stride shrinks to 13.5 mm while the lift stays the full 22 mm,
+  so there is almost no tangential force to slip on — which matters, because this
+  robot slips (below). Tracking error fell from 24–26° to 16.8° at this operating
+  point, and the in-air load range nearly doubled, 360 → 680 units, because the foot
+  finally completes the lift it is commanded. **Do not carry the threshold of 50
+  back to the 0.20 m/s demo gait**: at that operating point there is no clean swing
+  phase to subtract against, and the number means nothing.
+
+  Two bins in sixty is also the limit of the recorder: the phase advances `dt/period`
+  per tick, so a period under about 1.2 s at 50 Hz skips bins outright and
+  `Baseline.coverage()` reports 75 % or worse. It says "run it longer", which is
+  wrong — that is aliasing, and longer does not fill a bin the phase never lands in.
+
+  **The sign is per leg, and a scalar could never have worked.** `ServoContact` took
+  one `sign` for all four legs, which is right in MuJoCo where the "load" is a clean
+  `kp·err − kv·qvel`. On hardware the knee hubs are mirrored left to right: fl and rl
+  rise when loaded, fr and rr drop. Replayed against the measured curves, the scalar
+  that would have shipped gives **duty 0.00 on fl and rl — two legs of four
+  permanently blind**, whichever value is chosen. It now takes a `{leg: ±1}` dict and
+  `walk.py --contact-sign auto` (the default) fills it from `calib.json`'s knee
+  signs — which came out **+1 −1 +1 −1, identical to the map derived independently
+  from the load residuals**, so nothing new has to be calibrated for it.
+
+  What the contact says about this robot, at a threshold of 50: the front feet carry
+  for a duty of **0.68 against the commanded 0.50** — touchdown 7–8 % early, liftoff
+  10–12 % late — and the rear feet for 0.40–0.43. That is the 1 kg plate sitting
+  forward, showing up in the timing exactly as it did in the static lift test. The
+  gait's commanded phase is therefore *not* ground truth for contact, and scoring the
+  detector against it (82 %) measures the robot's weight distribution, not the
+  detector.
+
+  **The feet are the wrong shape for the floor, and the sim does not know.** `foot()`
+  is a true hemisphere, R = 13 mm, with no flat. At 6.25 N per foot Hertz gives a
+  contact patch of **2.5 mm diameter, 4.8 mm², at 1.3 MPa** (TPU ~95A; 3.4 mm and
+  8.9 mm² at ~85A). Rubber friction has an adhesion term that scales with real
+  contact area, so a point contact grips far worse than a flat pad of the same
+  material — this is not the textbook case where area drops out. Meanwhile the foot
+  geom ships `friction="1.2 0.02 0.001"` against a ground plane at `1.0`, so MuJoCo
+  runs at μ ≈ 1.2 where TPU on bare bench is realistically 0.3–0.5. The sim assumes
+  2.5–4× the grip the robot has, which is most of the 0.156 → 0.067 m/s gap on its
+  own. A flat truncation of the sole is a one-parameter change to `foot()` and a full
+  `3d/CLAUDE.md` verification ladder; it belongs in `MAC.md`'s queue, not here.
 
   **Hang it the right way up.** The curve is gravity plus inertia plus friction, and
   only gravity cares which way up the robot is — recorded inverted, the leg's own

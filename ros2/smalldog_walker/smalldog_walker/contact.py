@@ -120,17 +120,32 @@ class Baseline:
 class ServoContact:
     """Baseline + threshold + debounce -> {leg: bool}, ready for TrotGait.feedback().
 
-    `sign` is which way contact pushes the residual: -1 for a knee load that *drops* when
-    the foot is loaded (what the ST3215 knee reads, and what the numbers above are for),
-    +1 for a sensor that rises, e.g. an FSR in the foot.
+    `sign` is which way contact pushes the residual: -1 for a load that *drops* when the
+    foot is loaded, +1 for one that rises, e.g. an FSR in the foot.
+
+    **It is per leg on a real robot, and a scalar is the wrong shape.** In MuJoCo the
+    "load" is a clean kp*err - kv*qvel and every leg reads the same way, so a scalar was
+    right for as long as this module had only ever run there. On hardware the knee hubs
+    are mirrored left to right, so the same footfall pushes fl and rl one way and fr and
+    rr the other - measured 2026-09-08 at 2.55 kg, and the map that came out of the load
+    residuals is exactly `calib.json`'s knee sign, +1 -1 +1 -1, which is not a coincidence
+    and is why nothing new has to be calibrated for it. With a scalar, two legs of four
+    can never fire, whichever value is chosen. So `sign` also takes a {leg: +-1} dict, and
+    `runtime/walk.py` passes the calibration's knee signs straight in.
     """
 
     def __init__(self, baseline, threshold=0.5, sign=-1, hold=0.004, legs=LEGS):
         self.baseline = baseline
         self.threshold = float(threshold)
-        self.sign = -1 if sign < 0 else 1
-        self.hold = float(hold)                # s the residual must stay over threshold
         self.legs = tuple(legs)
+        if isinstance(sign, dict):
+            missing = [l for l in self.legs if l not in sign]
+            if missing:
+                raise ValueError(f"sign has no entry for {', '.join(missing)}")
+            self.sign = {l: (-1 if sign[l] < 0 else 1) for l in self.legs}
+        else:
+            self.sign = {l: (-1 if sign < 0 else 1) for l in self.legs}
+        self.hold = float(hold)                # s the residual must stay over threshold
         self._over = {l: 0.0 for l in self.legs}
         self._state = {l: False for l in self.legs}
 
@@ -144,7 +159,7 @@ class ServoContact:
         for l in self.legs:
             if l not in load or l not in phase:
                 continue
-            r = self.baseline.residual(l, phase[l], load[l]) * self.sign
+            r = self.baseline.residual(l, phase[l], load[l]) * self.sign[l]
             if r > self.threshold:
                 self._over[l] += dt
                 if self._over[l] >= self.hold:
@@ -156,5 +171,5 @@ class ServoContact:
 
     def residuals(self, phase, load):
         """the raw residuals, sign applied — publish these and let the far end threshold"""
-        return {l: self.baseline.residual(l, phase[l], load[l]) * self.sign
+        return {l: self.baseline.residual(l, phase[l], load[l]) * self.sign[l]
                 for l in self.legs if l in load and l in phase}

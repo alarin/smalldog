@@ -1,0 +1,816 @@
+{
+ "note": "lift_test.py at 2.55 kg (1.55 kg robot + a 1 kg plate on the deck), 2026-09-08, the mac on /dev/cu.usbmodem*. Two runs, the plate forward over the front hip brackets and then centred on the deck. Present Load is latched - it holds flat and steps only when what is under the foot changes - so each run is stored run-length encoded: 'changes' is [t, {joint: load}] carrying only the joints that moved at that sample. Lossless. WINDOWS and CUES are lift_test.py's.",
+ "cues": [
+  [
+   0,
+   "down"
+  ],
+  [
+   8,
+   "lift"
+  ],
+  [
+   16,
+   "down"
+  ],
+  [
+   24,
+   null
+  ]
+ ],
+ "windows": {
+  "ramped": [
+   2,
+   7.5
+  ],
+  "lifted": [
+   10,
+   15.5
+  ],
+  "down": [
+   18,
+   23.5
+  ]
+ },
+ "runs": {
+  "plate_forward": {
+   "n_samples": 869,
+   "changes": [
+    [
+     0.0,
+     {
+      "fl_roll": 120,
+      "fl_pitch": 0,
+      "fl_knee": 128,
+      "fr_roll": -80,
+      "fr_pitch": -24,
+      "fr_knee": -112,
+      "rl_roll": -32,
+      "rl_pitch": -32,
+      "rl_knee": 56,
+      "rr_roll": 32,
+      "rr_pitch": 0,
+      "rr_knee": -56
+     }
+    ],
+    [
+     7.523,
+     {
+      "fl_knee": 116
+     }
+    ],
+    [
+     7.551,
+     {
+      "fl_knee": 120
+     }
+    ],
+    [
+     7.605,
+     {
+      "fr_knee": -100
+     }
+    ],
+    [
+     7.633,
+     {
+      "fr_knee": -104
+     }
+    ],
+    [
+     8.358,
+     {
+      "fr_roll": -68
+     }
+    ],
+    [
+     8.387,
+     {
+      "fr_roll": -72
+     }
+    ],
+    [
+     9.147,
+     {
+      "rl_knee": 48
+     }
+    ],
+    [
+     9.175,
+     {
+      "rl_knee": 44
+     }
+    ],
+    [
+     9.203,
+     {
+      "rl_knee": 28
+     }
+    ],
+    [
+     9.229,
+     {
+      "rl_knee": 32
+     }
+    ],
+    [
+     9.342,
+     {
+      "fl_knee": 108
+     }
+    ],
+    [
+     9.367,
+     {
+      "fl_knee": 112
+     }
+    ],
+    [
+     9.394,
+     {
+      "fl_knee": 92,
+      "fr_knee": -84
+     }
+    ],
+    [
+     9.422,
+     {
+      "fl_knee": 84,
+      "fr_pitch": 0,
+      "fr_knee": -68,
+      "rr_roll": 24
+     }
+    ],
+    [
+     9.45,
+     {
+      "fl_roll": 96,
+      "fl_knee": 88,
+      "fr_roll": -64,
+      "fr_pitch": 20,
+      "fr_knee": -52,
+      "rl_roll": 20,
+      "rr_roll": 20
+     }
+    ],
+    [
+     9.476,
+     {
+      "fl_roll": 72,
+      "fl_knee": 80,
+      "fr_roll": -52,
+      "fr_pitch": 0,
+      "fr_knee": -36,
+      "rl_roll": 0,
+      "rl_knee": 24,
+      "rr_roll": -20,
+      "rr_pitch": -24
+     }
+    ],
+    [
+     9.504,
+     {
+      "fl_roll": 56,
+      "fl_knee": 56,
+      "fr_roll": 20,
+      "fr_knee": -28,
+      "rr_roll": 0,
+      "rr_pitch": -36
+     }
+    ],
+    [
+     9.532,
+     {
+      "fl_roll": 44,
+      "fl_knee": 64,
+      "fr_roll": 24,
+      "fr_knee": -32,
+      "rr_pitch": -32
+     }
+    ],
+    [
+     9.559,
+     {
+      "fl_roll": 36,
+      "fl_pitch": -28,
+      "fl_knee": 56,
+      "fr_roll": 0,
+      "fr_knee": -24,
+      "rr_knee": -44
+     }
+    ],
+    [
+     9.587,
+     {
+      "fl_roll": 32,
+      "fl_pitch": -24,
+      "fl_knee": 44,
+      "rr_pitch": -52,
+      "rr_knee": -48
+     }
+    ],
+    [
+     9.615,
+     {
+      "fl_roll": 20,
+      "fl_knee": 48,
+      "fr_knee": 20,
+      "rr_pitch": -60
+     }
+    ],
+    [
+     9.642,
+     {
+      "fl_roll": -20,
+      "fl_pitch": -36,
+      "fl_knee": 40,
+      "fr_knee": 0,
+      "rr_pitch": -56
+     }
+    ],
+    [
+     9.669,
+     {
+      "fl_roll": 0,
+      "fl_pitch": -44,
+      "fl_knee": 32
+     }
+    ],
+    [
+     9.698,
+     {
+      "fl_pitch": -40,
+      "fl_knee": 28,
+      "rr_pitch": -48
+     }
+    ],
+    [
+     9.725,
+     {
+      "fl_knee": 32
+     }
+    ],
+    [
+     9.75,
+     {
+      "fl_pitch": -32
+     }
+    ],
+    [
+     9.778,
+     {
+      "fl_knee": 20
+     }
+    ],
+    [
+     9.806,
+     {
+      "fl_knee": 0
+     }
+    ],
+    [
+     9.834,
+     {
+      "fl_knee": -20
+     }
+    ],
+    [
+     9.861,
+     {
+      "fl_knee": 0
+     }
+    ],
+    [
+     10.64,
+     {
+      "fl_roll": -24
+     }
+    ],
+    [
+     17.666,
+     {
+      "rl_knee": 36
+     }
+    ],
+    [
+     17.694,
+     {
+      "rl_pitch": -20,
+      "rl_knee": 20
+     }
+    ],
+    [
+     17.722,
+     {
+      "rl_pitch": -24,
+      "rl_knee": 32
+     }
+    ],
+    [
+     17.75,
+     {
+      "rl_knee": 36
+     }
+    ],
+    [
+     17.779,
+     {
+      "fl_knee": 28,
+      "rl_knee": 24,
+      "rr_pitch": -40
+     }
+    ],
+    [
+     17.806,
+     {
+      "fl_roll": 20,
+      "fl_knee": 24,
+      "rr_pitch": -28
+     }
+    ],
+    [
+     17.832,
+     {
+      "fl_roll": 0,
+      "rr_pitch": -24
+     }
+    ],
+    [
+     17.86,
+     {
+      "fl_roll": 24,
+      "fl_knee": 32,
+      "rr_pitch": 20
+     }
+    ],
+    [
+     17.888,
+     {
+      "fl_roll": 28,
+      "rr_pitch": 0
+     }
+    ],
+    [
+     17.916,
+     {
+      "fl_roll": 24,
+      "rl_pitch": 20
+     }
+    ],
+    [
+     17.944,
+     {
+      "fl_knee": 40,
+      "rl_pitch": 0
+     }
+    ],
+    [
+     17.971,
+     {
+      "fl_roll": 36,
+      "rr_knee": -60
+     }
+    ],
+    [
+     17.999,
+     {
+      "fl_roll": 32,
+      "fl_knee": 48,
+      "rr_knee": -56
+     }
+    ],
+    [
+     18.027,
+     {
+      "fr_knee": -28,
+      "rl_knee": 36,
+      "rr_pitch": -24
+     }
+    ],
+    [
+     18.055,
+     {
+      "fl_pitch": -20,
+      "fr_knee": -24,
+      "rl_knee": 32,
+      "rr_pitch": -28
+     }
+    ],
+    [
+     18.083,
+     {
+      "fl_pitch": -24,
+      "rr_pitch": -24
+     }
+    ],
+    [
+     18.137,
+     {
+      "fl_knee": 56
+     }
+    ]
+   ]
+  },
+  "plate_centred": {
+   "n_samples": 871,
+   "changes": [
+    [
+     0.0,
+     {
+      "fl_roll": 40,
+      "fl_pitch": 108,
+      "fl_knee": 136,
+      "fr_roll": -32,
+      "fr_pitch": -80,
+      "fr_knee": -100,
+      "rl_roll": -24,
+      "rl_pitch": -32,
+      "rl_knee": 28,
+      "rr_roll": 24,
+      "rr_pitch": 24,
+      "rr_knee": -60
+     }
+    ],
+    [
+     0.031,
+     {
+      "fl_pitch": 100,
+      "fr_pitch": -60,
+      "fr_knee": -84,
+      "rl_knee": 20,
+      "rr_knee": -64
+     }
+    ],
+    [
+     0.058,
+     {
+      "fl_pitch": 104,
+      "fr_pitch": -64,
+      "fr_knee": -88,
+      "rl_knee": 24,
+      "rr_knee": -52
+     }
+    ],
+    [
+     0.083,
+     {
+      "rr_knee": -56
+     }
+    ],
+    [
+     3.423,
+     {
+      "fl_pitch": 92
+     }
+    ],
+    [
+     3.45,
+     {
+      "fl_pitch": 96
+     }
+    ],
+    [
+     9.254,
+     {
+      "rl_knee": 0
+     }
+    ],
+    [
+     9.283,
+     {
+      "fl_knee": 124,
+      "fr_knee": -76,
+      "rl_knee": -20
+     }
+    ],
+    [
+     9.311,
+     {
+      "fl_knee": 128,
+      "fr_knee": -80,
+      "rl_pitch": -40,
+      "rl_knee": 0
+     }
+    ],
+    [
+     9.366,
+     {
+      "fl_knee": 112,
+      "fr_knee": -52
+     }
+    ],
+    [
+     9.394,
+     {
+      "fl_roll": 32,
+      "fl_knee": 100,
+      "fr_roll": -20,
+      "fr_pitch": -52,
+      "fr_knee": -32
+     }
+    ],
+    [
+     9.423,
+     {
+      "fl_roll": -24,
+      "fl_knee": 92,
+      "fr_roll": 20,
+      "fr_pitch": -28,
+      "rr_roll": -20
+     }
+    ],
+    [
+     9.451,
+     {
+      "fl_roll": 0,
+      "fl_knee": 84,
+      "fr_roll": 0,
+      "fr_knee": -24,
+      "rr_roll": 0,
+      "rr_pitch": -20
+     }
+    ],
+    [
+     9.479,
+     {
+      "fl_knee": 88,
+      "fr_pitch": -32,
+      "fr_knee": 20,
+      "rr_pitch": 0,
+      "rr_knee": -44
+     }
+    ],
+    [
+     9.507,
+     {
+      "fl_pitch": 76,
+      "fl_knee": 76,
+      "fr_knee": 0,
+      "rl_roll": 20,
+      "rr_knee": -48
+     }
+    ],
+    [
+     9.534,
+     {
+      "fl_knee": 60,
+      "rl_roll": 0,
+      "rr_pitch": -24
+     }
+    ],
+    [
+     9.561,
+     {
+      "fl_pitch": 80,
+      "rr_pitch": -28
+     }
+    ],
+    [
+     9.588,
+     {
+      "fl_knee": 64,
+      "rr_pitch": -24
+     }
+    ],
+    [
+     9.617,
+     {
+      "fl_pitch": 68,
+      "fl_knee": 52,
+      "rr_knee": -40
+     }
+    ],
+    [
+     9.644,
+     {
+      "fl_pitch": 72,
+      "fl_knee": 36
+     }
+    ],
+    [
+     9.672,
+     {
+      "fl_pitch": 60,
+      "fl_knee": 28
+     }
+    ],
+    [
+     9.7,
+     {
+      "fl_pitch": 64,
+      "fl_knee": -20,
+      "rr_knee": -20
+     }
+    ],
+    [
+     9.729,
+     {
+      "fl_pitch": 44,
+      "fl_knee": 0,
+      "rr_knee": -24
+     }
+    ],
+    [
+     9.756,
+     {
+      "fl_pitch": 48
+     }
+    ],
+    [
+     9.784,
+     {
+      "fl_pitch": 40,
+      "rl_pitch": -28
+     }
+    ],
+    [
+     9.812,
+     {
+      "fl_pitch": 28,
+      "rl_pitch": -32
+     }
+    ],
+    [
+     9.839,
+     {
+      "fl_pitch": 32
+     }
+    ],
+    [
+     10.25,
+     {
+      "fl_roll": -28
+     }
+    ],
+    [
+     10.279,
+     {
+      "fl_roll": -24
+     }
+    ],
+    [
+     10.444,
+     {
+      "rl_knee": -28
+     }
+    ],
+    [
+     10.473,
+     {
+      "rl_knee": -24
+     }
+    ],
+    [
+     11.03,
+     {
+      "rr_pitch": -36
+     }
+    ],
+    [
+     11.059,
+     {
+      "rr_pitch": -32
+     }
+    ],
+    [
+     17.171,
+     {
+      "fr_roll": 24
+     }
+    ],
+    [
+     17.365,
+     {
+      "rl_knee": 0
+     }
+    ],
+    [
+     17.393,
+     {
+      "fl_pitch": 24,
+      "fl_knee": 28
+     }
+    ],
+    [
+     17.421,
+     {
+      "fl_knee": 24,
+      "rl_pitch": -20
+     }
+    ],
+    [
+     17.449,
+     {
+      "rl_pitch": -24
+     }
+    ],
+    [
+     17.478,
+     {
+      "fr_pitch": -24
+     }
+    ],
+    [
+     17.534,
+     {
+      "fl_roll": 0,
+      "rr_pitch": -20,
+      "rr_knee": -36
+     }
+    ],
+    [
+     17.563,
+     {
+      "fl_knee": 36,
+      "rr_pitch": -24,
+      "rr_knee": -32
+     }
+    ],
+    [
+     17.591,
+     {
+      "fl_knee": 32
+     }
+    ],
+    [
+     17.619,
+     {
+      "fl_knee": 44,
+      "rl_pitch": 20
+     }
+    ],
+    [
+     17.648,
+     {
+      "fl_knee": 40,
+      "rl_pitch": 0,
+      "rr_knee": -44
+     }
+    ],
+    [
+     17.676,
+     {
+      "rr_knee": -40
+     }
+    ],
+    [
+     17.705,
+     {
+      "fr_pitch": 0,
+      "rr_pitch": 0
+     }
+    ],
+    [
+     17.733,
+     {
+      "fr_pitch": 20,
+      "rl_knee": 24
+     }
+    ],
+    [
+     17.762,
+     {
+      "fl_roll": 24,
+      "fl_knee": 52,
+      "fr_pitch": 0,
+      "rl_knee": 28
+     }
+    ],
+    [
+     17.79,
+     {
+      "fl_knee": 48,
+      "rl_knee": 24
+     }
+    ],
+    [
+     17.818,
+     {
+      "fr_knee": -28
+     }
+    ],
+    [
+     17.846,
+     {
+      "fl_knee": 56,
+      "fr_knee": -24
+     }
+    ],
+    [
+     17.874,
+     {
+      "fl_pitch": 36,
+      "rr_pitch": -28
+     }
+    ],
+    [
+     17.902,
+     {
+      "fl_pitch": 32,
+      "rr_pitch": -24
+     }
+    ]
+   ]
+  }
+ }
+}

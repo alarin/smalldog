@@ -254,8 +254,15 @@ def main():
     ap.add_argument("--baseline", metavar="FILE",
                     help="record the free-air knee-load curve (robot HANGING) and exit")
     ap.add_argument("--contact", metavar="FILE", help="use a recorded baseline")
-    ap.add_argument("--contact-threshold", type=float, default=0.5)
-    ap.add_argument("--contact-sign", type=int, default=-1)
+    # 50 is measured, on this robot, at 2.55 kg: the residual reads 65..104 units through
+    # stance and 1..10 through swing, against an air baseline that repeats to ~2 units.
+    # It is NOT the 0.5 the MuJoCo study used - that was in N.m, this is Present Load.
+    ap.add_argument("--contact-threshold", type=float, default=50.0)
+    # "auto" takes each leg's knee sign from the calibration, which is what the hardware
+    # needs: the hubs are mirrored left to right, so a scalar leaves two legs unable to
+    # fire whichever way it is set.  An integer still works, for a sensor that is not the
+    # servo.  See smalldog_walker/contact.py, ServoContact.
+    ap.add_argument("--contact-sign", default="auto")
 
     ap.add_argument("--temp-c", type=float, default=Limits.temp_c)
     ap.add_argument("--current-a", type=float, default=Limits.current_a)
@@ -305,8 +312,15 @@ def main():
                                    body_height=gait.body_height, speed=a.speed))
         for k, (was, now) in drift.items():
             print(f"!! baseline was recorded at {k}={was}, running at {now}")
-        contact = contact_feeder(gait, base, a.contact_threshold, a.contact_sign)
+        if str(a.contact_sign) == "auto":
+            sign = {l: calib.sign[f"{l}_knee"] for l in gait.legs}
+            shown = " ".join(f"{l}{v:+d}" for l, v in sign.items())
+        else:
+            sign = int(a.contact_sign)
+            shown = f"{sign:+d} on every leg"
+        contact = contact_feeder(gait, base, a.contact_threshold, sign)
         print(f"contact from knee load: {a.contact}")
+        print(f"  threshold {a.contact_threshold:g} Present Load, sign {shown}")
     else:
         print("no IMU, no contact baseline: this is the blind open-loop trot")
 
