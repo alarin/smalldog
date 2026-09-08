@@ -237,6 +237,11 @@ with a monotone cubic and lofted. Things that bite:
 
 ## Payload bays
 
+Two-view packaging drawing of the whole body — side elevation and plan on a shared X
+axis, every part's position, extent, mass and fixing: [docs/payload_bays.html](docs/payload_bays.html).
+Hand-drawn from `mini_dog.py`'s constants, so it is only as current as the run it was
+drawn from; the list of parameters that invalidate it is in the file's own header.
+
 - 3S2P 6 × 21700 (Molicel P42A class): cradle for two layers of three, cells along X,
   four fins on the cell pitch, two strap slots. Sits on the floor, centred → low CG.
   Every dimension is derived from `CELL_D`/`CELL_L` — the P42A's datasheet maxima over the
