@@ -103,12 +103,14 @@ SCALE_MAX_KG = 2.0      # the instrument on this bench.  **VERIFY against yours*
                         # a bad reading, it gives a broken scale
 SCALE_HEADROOM = 0.80   # never plan a push past this fraction of the scale
 THROAT     = 60.0       # axis down to the jaw's top face.  Has to swallow the scale
-                        # plus the anvil screw's adjustment; SCALE_MAX_H below is what
+                        # plus the anvil screw's adjustment; SCALE_H below is what
                         # it was sized for
-SCALE_MAX_H = 45.0      # the tallest scale this throat takes, measured to its PLATFORM.
-                        # **VERIFY against yours** - it is the one dimension here that
-                        # belongs to a part nobody in this repo owns, and the fix if it
-                        # does not fit is to raise THROAT and reprint, not to shim
+SCALE_H    = 28.0       # MEASURED, to the platform, on the scale actually in use.  The
+                        # one dimension here that belongs to a part nobody in this repo
+                        # owns, so it is measured rather than assumed; if you swap the
+                        # scale, re-measure and re-run - the fix for one that does not
+                        # fit is to raise THROAT and reprint, never to shim, because a
+                        # shim puts a soft joint in the load path
 FRAME_Z    = SLEEVE_LEN/2                       # 16.5, exactly as bench_rig: the part
                         # prints flat on this face, one zmin, no support anywhere
 JAW_T      = 14.0       # jaw plate thickness.  Deeper than bench_rig's 8 mm base
@@ -280,22 +282,35 @@ def build():
 # checks
 # =====================================================================================
 def throat_clear():
-    """Does a scale of SCALE_MAX_H actually fit, and does the arm clear the frame?
+    """Does the scale fit, does the arm clear the frame, and how long is the screw?
 
-    Two separate questions and both have bitten this repo before in the same way -
-    a clearance nobody could see because one of the two bodies is not a part.  The
-    scale is not a part here, exactly as the Orange Pi is not one in mini_dog.py,
-    so `interference()` would see nothing wrong with a throat that cannot be loaded.
+    Three questions, and the middle one is the only one `interference()` could ever
+    answer.  The scale is not a part - exactly as the Orange Pi is not one in
+    mini_dog.py - so nothing else here can see a throat that cannot be loaded.
+
+    The screw length is the part that was wrong the first time.  The gap from the
+    platform up to the AXIS is not what the screw spans: the arm is in the way, and
+    it is ARM_TIP_W thick about the axis, so the screw only bridges from the arm's
+    underside down.  Reporting the axis gap flattered a 45 mm scale with 15 mm of
+    adjustment where the real figure was 3.
     """
     arm = PARTS["torque_arm"][0].rotate((0, 0, 0), (0, 0, 1), 90.0).val()
     frame = PARTS["torque_frame"][0].val()
     shared = arm.intersect(frame).Volume()
-    gap = THROAT - SCALE_MAX_H
-    print(f"  throat:     {THROAT:.0f} mm axis to jaw, {SCALE_MAX_H:.0f} mm of scale "
-          f"-> {gap:+.0f} mm for the anvil screw to take up")
+    platform = THROAT - SCALE_H            # x of the scale's top face, +x being down
+    reach = platform - ARM_TIP_W/2.0       # arm's underside to the platform
+    screw = int(round((reach + 18) / 5.0)) * 5
+    print(f"  throat:     {THROAT:.0f} mm axis to jaw, {SCALE_H:.0f} mm of scale "
+          f"-> platform sits {platform:.0f} mm below the axis")
+    print(f"  anvil:      {reach:.0f} mm from the arm's underside to the platform "
+          f"-> M6 x {screw:d}, two nuts")
     print(f"  arm at q=90:{shared:9.1f} mm3 shared with the frame "
           f"({'clear' if shared < 1.0 else '!! FOULS'})")
-    return shared < 1.0 and gap > 5.0
+    if reach < 4.0:
+        print("       !! no room for the screw - raise THROAT and reprint")
+    if platform < 2.0:
+        print("       !! the scale is taller than the throat")
+    return shared < 1.0 and reach >= 4.0 and platform >= 2.0
 
 
 def holder_closed():
