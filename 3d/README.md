@@ -297,7 +297,7 @@ in the deck window, and both are gone. Redraw it before relying on it.
 - **Battery module** — 3S2P 6 × 21700 (Molicel P42A class), and it is a *module*, not six
   cells in the chassis. The cells are welded into a 3 × 2 brick, the brick is heatshrunk,
   and the brick and its BMS live in a printed case (`battery_case` + `battery_lid`) that
-  drops into the tray as one payload. It fills the tray: 102.3 × 68.2 × 46.4 mm, from
+  drops into the tray as one payload. It fills the tray: 95.2 × 68.1 × 46.4 mm, from
   z = −22.8 to 23.6, with 1.4 mm of air to the deck. `CELL_D`/`CELL_L` are the P42A's
   datasheet maxima over the wrap and everything else derives from them — inside the brick
   the cells *touch*, which is what welding and shrinking them does, so the old per-cell fin
@@ -305,9 +305,10 @@ in the deck window, and both are gone. Redraw it before relying on it.
 
   Two zones along x. The **BMS** stands on edge against the rear wall, so its leads and
   the pack's leave by one grommet slot and reach the connector panel without crossing the
-  cells; it is held by the rear wall and two ribs in x, by the case's own side walls in y
-  (64.0 mm of board across a 65.0 mm interior — a press, not a slot), by the ribs' ledge
-  below and by one bar under the lid above. The **brick** fills the rest, right up to the
+  cells; it is held by the rear wall and two ribs in x, by two more ribs off the rear wall
+  in y, by the ribs' ledge below and by one bar under the lid above. Those y ribs are what
+  the **measurement** bought: the guessed 64.0 mm board was a press fit against the case's
+  own side walls and needed nothing, and the real 60.13 mm one leaves 2.4 mm a side. The **brick** fills the rest, right up to the
   front wall. That **front wall** is thickened to 7.5 mm and is the module's only screwed
   fixing: the lid's rear edge slides into a groove in the rear wall and its front edge
   takes two M2.5 straight down into the front one. The bar over the BMS is the only thing
@@ -318,8 +319,12 @@ in the deck window, and both are gone. Redraw it before relying on it.
 
   What it cost, because it was not free: a case needs about 3.5 mm the bay did not have,
   and the only 3.5 mm near it was the IMU's slot, so the IMU moved onto the deck (below).
-  The module reaches x = −46.15, so the ESP32 + URT-1 bay moved back to x = −51 and `BATT_X`
-  was pushed forward to 5.0 until that strip was the 8.9 mm it had before. The four corner
+  The module reached x = −46.15 when it was sized around a guessed 13 mm BMS, so the
+  ESP32 + URT-1 bay moved back to x = −51 and `BATT_X` was pushed forward to 5.0 until that
+  strip was the 8.9 mm it had before. The board measured 5.9 mm on 2026-09-09 and the
+  module lost 7.1 mm of length; it is deliberately **not** re-centred, so the rear strip is
+  12.45 mm now and the brick sits 3.55 mm further aft than it did — which is the direction
+  the module owed the CoM in the first place. The four corner
   deck screws moved from |y| = 38 to 41 — at 38 their bosses took a 1.9 mm bite out of the
   module's corners — so all eight deck screws are at |y| = 41 now.
 - 3S BMS: **inside the battery module** (above). Its old bay at x = +46 is gone. ESP32 +
@@ -792,9 +797,12 @@ FAQ says stalls and burns the servo.
    17.7 mm above `FOOT_Z`, so nothing shorter is fully engaged. It was specified as
    M3 × 16 until 2026-08-31, which no position of the head can reach — see the foot-bolt
    invariant in `CLAUDE.md`. The head ends up ~2 mm inside the sole, clear of the ground.
-5. Battery module, off the robot and before anything else goes in the tray: weld the six
-   cells into a 3 × 2 brick and heatshrink it → BMS down its rib slot in the case's rear
-   zone, sitting on the ledge, leads through the grommet slot → brick in → lid's rear edge
+5. Battery module, off the robot and before anything else goes in the tray: **check the
+   BMS's `3S`/`4S` jumpers and its charge cutoff on the bench first** — it arrived with a
+   5S LiFePO4 sticker on it, and those pads are unreachable once the lid is on → weld the
+   six cells into a 3 × 2 brick and heatshrink it → BMS down its rib slot in the case's
+   rear zone, sitting on the ledge and between the two y ribs, leads through the grommet
+   slot → brick in → lid's rear edge
    under the rear wall's tongue, front edge down, 2 M2.5 into the front wall. Those two
    **form their own thread** and it is a one-assembly thread — a pack opened and closed
    often wants the holes drilled out and nutted (see *Screws into plastic*).
@@ -1003,15 +1011,20 @@ frame above.
    2026-09-05 and runs on **RJ45 + the DC3.5-1.35 barrel** (ethernet is not PoE; 12 V 1 A).
    Its ~~point rate~~ and ~~frame rate~~ are measured now too — `ref/lidar/README.md`. Still
    **verify**: the range window and the range noise, neither of which a room can test.
-4. BMS outline (currently 64 × 27 × 13), and the three connector bodies in the rear panel:
-   XT60 16.5 × 8.5, XT30 12.0 × 6.6, JST-XH 3S plug 13.0 × 6.0. All four are catalogue
-   numbers, not measurements — check them against the parts in your hand before printing
-   the tray, because a pocket that is 0.3 mm small is a connector that does not go in.
-   **The BMS outline got sharper teeth on 2026-09-09**: it went inside the battery module,
-   where its 64.0 mm length crosses a 65.0 mm interior. Half a millimetre a side is a press
-   fit if the number is right and a case that will not close if it is not, and the interior
-   width is `max(BRICK_W + BATT_FIT, BMS_L + 1.0)` precisely so a re-measured BMS widens
-   the case instead of jamming in it. Measure this one first.
+4. ~~BMS outline~~ — **measured 2026-09-09 on the board in hand: 60.13 × 37.2 × 5.9 mm**,
+   the thickness over the heatsink plate. Every one of the three catalogue guesses
+   (64 × 27 × 13) was wrong in the direction that had been feared, and the thickness by
+   7.1 mm, which came straight off the module's length. The orientation is forced — a
+   60.13 mm edge cannot stand up in a 43.6 mm interior — and the brick, not the board, now
+   sets the case's width. What is **still verify** on this part is not a dimension: the
+   board arrived with a sticker reading `5S 50A 3.2V`, which is a LiFePO4 label on a 3S
+   Li-ion pack's protection board. Check the `3S`/`4S` jumpers and the charge cutoff on the
+   bench **before the module is closed** — those pads are unreachable behind the lid, and
+   the lid's two M2.5 are thread-forming, i.e. a one-assembly thread.
+   Still catalogue, not measured: the three connector bodies in the rear panel —
+   XT60 16.5 × 8.5, XT30 12.0 × 6.6, JST-XH 3S plug 13.0 × 6.0. Check them against the
+   parts in your hand before printing the tray, because a pocket that is 0.3 mm small is a
+   connector that does not go in.
 5. Servo cable/connector envelope: the sleeve window is 15 × 12 mm at the far end face.
 6. Orange Pi stack envelope `OPI_BOX` (currently 100 × 62 × 20 over the deck) — it is now
    a keep-out, not just a mass box: `gps_mount` is shaped around it.

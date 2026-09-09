@@ -270,44 +270,57 @@ BATT_FRONT_T   = 7.5                  # the FRONT wall, thickened, and the modul
                                       # front of the brick, and the 9 mm came out of the
                                       # rear strip the ESP32/URT-1 bay lives in.
 BATT_POST_L    = 5.0                  # ... engaged thread, 2 x D
-BMS_L, BMS_W, BMS_H = 64.0, 27.0, 13.0        # **verify** - outline, not a datasheet
+BMS_L, BMS_W, BMS_H = 60.13, 37.2, 5.9        # MEASURED 2026-09-09 on the real board,
+                                      # heatsink plate included in BMS_H.  Was 64/27/13
+                                      # **verify**; the orientation is forced, since a
+                                      # 60.13 mm edge cannot stand up in a BATT_IN_H =
+                                      # 43.6 interior.  The board is SMALLER than the
+                                      # guess in every direction that costs anything: it
+                                      # is 3.9 shorter than the brick's width so the
+                                      # max() below now picks the brick outright, and
+                                      # 7.1 THINNER, which takes 7.1 mm straight off the
+                                      # module's length in x.
 BMS_GAP        = 2.0                  # air between the BMS and the brick's -x nickel, and
                                       # it has to swallow the retaining rib as well as the
                                       # gap: rib at BMS_X1+CLR, 0.8 wide, leaves 0.85 mm.
-                                      # BMS_H is **verify**, so this is the number that
-                                      # absorbs a BMS that measures thicker.
 # The brick, wrapped.  This is what the case has to swallow and what the exporters hang
 # BATTERY_KG on - see batt_com().
 BRICK_L = CELL_L + 2*BATT_TAB         # 78.2, along x
 BRICK_W = 3*CELL_D + 2*BATT_WRAP      # 64.5, three cells across y
 BRICK_H = 2*CELL_D + 2*BATT_WRAP      # 43.2, two layers
-# The case interior.  Width is the BRICK or the BMS standing on edge, whichever is wider -
-# the BMS is 64.0 long and the brick 64.5, so they are within half a millimetre of each
-# other and the max() is not decoration.  Length is BMS + gap + brick + the front zone.
+# The case interior.  Width is the BRICK or the BMS standing on edge, whichever is wider.
+# Before the board was measured those two were 64.0 and 64.5, half a millimetre apart and
+# the max() decided nothing; the real board is 60.13, so the brick wins by 4.4 mm and the
+# case's width is the cells' alone.  Length is BMS + gap + brick + the front zone.
 BATT_IN_W = max(BRICK_W + BATT_FIT, BMS_L + 1.0)
 BATT_IN_H = BRICK_H + BATT_FIT
 BATT_IN_L = BMS_H + BMS_GAP + BRICK_L
-BATT_L = BATT_IN_L + BATT_CASE_T + BATT_FRONT_T    # 102.3 - the module's own outside
+BATT_L = BATT_IN_L + BATT_CASE_T + BATT_FRONT_T    # 95.2 - the module's own outside
 BATT_W = BATT_IN_W + 2*BATT_CASE_T                 # 68.2
 BATT_H = BATT_CASE_T + BATT_IN_H + BATT_LID_T      # 46.4
 BATT_X  = 5.0                         # module centre in x.  Not the body origin and not
-                                      # the middle of the tray either: it is pushed
-                                      # forward until the rear strip is 8.9 mm, which is
-                                      # what the ESP32 + URT-1 bay needs.  That leaves
-                                      # 4.3 mm at the front, and the front is where there
-                                      # is nothing to fit.
+                                      # the middle of the tray either: it was pushed
+                                      # forward until the rear strip was the 8.9 mm the
+                                      # ESP32 + URT-1 bay needs, with 4.3 mm at the front.
+                                      # The measured BMS then took 7.1 mm off BATT_L and
+                                      # the module shrank about this same centre, so both
+                                      # ends now have 3.55 mm more than they need.  It is
+                                      # deliberately NOT re-centred: holding x fixed walks
+                                      # the heavy brick 3.55 mm AFT, which is the CoM
+                                      # direction the module owed the robot in the first
+                                      # place (the pack sits ahead of its own BMS).
 BATT_Z0 = BODY_Z0 + 3.0 - BATT_SEAT   # the case's underside, sitting in its seat recess
 BATT_Z1 = BATT_Z0 + BATT_H            # ... and its top: 23.6, with 1.4 mm to the deck
 # The interior, and the three zones along it.  Derived once here because battery_case(),
 # battery_lid(), the payload envelopes and both sim exporters all have to agree on them.
-BATT_XI0 = BATT_X - BATT_L/2 + BATT_CASE_T    # -48.35, the rear wall's inner face
+BATT_XI0 = BATT_X - BATT_L/2 + BATT_CASE_T    # -41.00, the rear wall's inner face
 BATT_XI1 = BATT_X + BATT_L/2 - BATT_FRONT_T   # the front wall's - thicker than the rest
 BATT_YI  = BATT_IN_W/2                        #  32.50
 BATT_ZI0 = BATT_Z0 + BATT_CASE_T              # -21.20, the floor's top face
 BATT_ZI1 = BATT_Z1 - BATT_LID_T               #  22.40, where the lid sits down
 BMS_X0   = BATT_XI0                           # BMS on edge against the rear wall: BMS_H
 BMS_X1   = BATT_XI0 + BMS_H                   # thick in x, BMS_L across y, BMS_W tall
-BRICK_X0 = BMS_X1 + BMS_GAP                   # -33.85
+BRICK_X0 = BMS_X1 + BMS_GAP                   # -33.10
 BRICK_X1 = BRICK_X0 + BRICK_L                 # ... and so the brick is NOT centred on
                                               # the module: batt/brick_com() differ
 BATT_SCREW_Y = 22.0                           # the lid's two screws, in the front wall
@@ -326,6 +339,17 @@ BMS_RIB_Y    = 22.0                           # the BMS's two rib pairs, on y
 BMS_Z0       = BATT_ZI1 - BATT_FRAME_D - BMS_W    # ... and the ledge they sit on: the
                                               # board's top edge lands exactly on the
                                               # underside of the lid's retaining bar
+BMS_SIDE_Y   = BMS_L/2 + CLR                  # and the y stops.  The guessed 64.0 board
+                                              # was a press fit in a 64.9 interior and
+                                              # needed none of this; the MEASURED 60.13
+                                              # leaves 2.4 mm a side, which is a loose
+                                              # PCB with wires on it inside a battery
+                                              # case.  Two ribs off the rear wall take
+                                              # that back, and they are the reason the
+                                              # docstring's "retained in all six
+                                              # directions" is still true.  They stop at
+                                              # the board's top edge, not the lid: the
+                                              # lid's bar is already there.
 BATT_GROOVE = 1.2                     # a groove in the rear wall's inner face, at lid
                                       # height: the lid's rear edge slides INTO it and
                                       # only the front end is screwed.  A groove and not
@@ -333,8 +357,9 @@ BATT_GROOVE = 1.2                     # a groove in the rear wall's inner face, 
                                       # because the lid is flush with the module's top and
                                       # so a tongue at the lid's own height has nowhere to
                                       # be.  There is nowhere for a rear post either: the
-                                      # BMS is 64.0 across a 65.0 interior and fills the
-                                      # rear corners completely.
+                                      # measured BMS is 60.13 across a 64.9 interior, so
+                                      # each rear corner has 2.4 mm - not a post, and not
+                                      # worth reworking the lid's retention for.
 BATT_VENT_D = 4.0                     # two vents high in the rear wall.  A sealed case
                                       # around six cells is the wrong kind of safe - a
                                       # cell that vents has to have somewhere to go, and
@@ -1624,9 +1649,10 @@ def battery_case():
     front edge takes two M2.5 down into this one.
 
     The BMS is retained in all six directions with no fasteners: the rear wall and a pair
-    of rib pairs take it in x, the case's own side walls take it in y (64.0 across a 65.0
-    interior - that is a press, not a slot), the ribs' ledge takes it down, and the one bar
-    under the lid takes it up.  That bar is the only thing hanging below the lid: over the
+    of rib pairs take it in x, two ribs off the rear wall take it in y, the ribs' ledge
+    takes it down, and the one bar under the lid takes it up.  The y ribs are there
+    because the board was MEASURED: the guessed 64.0 outline was a press fit against the
+    case's own side walls and wanted nothing, the real 60.13 leaves 2.4 mm a side.  That bar is the only thing hanging below the lid: over the
     brick there is 0.2 mm, not 2.
 
     Two vents high in the rear wall: a sealed box around six cells is the wrong kind of
@@ -1652,6 +1678,11 @@ def battery_case():
     for py in (-BMS_RIB_Y, BMS_RIB_Y):
         s = s.union(bxc(BMS_X1+CLR, BMS_X1+CLR+0.8, py-5.0, py+5.0, BATT_ZI0, BMS_Z0))
         s = s.union(bxc(BMS_X0, BMS_X1, py-5.0, py+5.0, BMS_Z0-2.0, BMS_Z0))
+    # ... and the y stops, one each side, floor to the board's top edge.  The measured
+    # board does not reach the side walls the guessed one did - see BMS_SIDE_Y.
+    for sy in (-1.0, 1.0):
+        s = s.union(bxc(BMS_X0, BMS_X1,
+                        sy*BMS_SIDE_Y, sy*BATT_YI, BATT_ZI0, BMS_Z0 + BMS_W))
     # grommet slot and vents, through the rear wall
     w, h = BATT_WIRE
     s = s.cut(bxc(BATT_X-BATT_L/2-1, BATT_XI0+1, -w/2, w/2, -h/2, h/2))

@@ -485,3 +485,75 @@ is asking for swing speeds the servo does not have. Do not put `MJ_DAMPING` back
 One consequence worth stating plainly for `rl/`: any policy trained against the old model
 learned to spend joint speed that does not exist, so it has to retrain rather than
 fine-tune — the same conclusion the IMU move reached earlier today, for a different reason.
+
+## 2026-09-09, later — the BMS got measured
+
+The last **verify** row on the battery module met the real board: **60.13 × 37.2 × 5.9 mm**,
+the thickness over the heatsink plate, against the catalogue guess of 64 × 27 × 13. All
+three were wrong, and the orientation is forced by the case itself — a 60.13 mm edge
+cannot stand up in a 43.6 mm interior — so 60.13 goes across y, 37.2 is the board's height
+and 5.9 its thickness in x.
+
+Every one of the three landed inside the band the module could absorb without moving
+anything: the length is 3.9 mm *under* the wrapped brick's width, so the
+brick now sets the case's width outright and the `max()` in `BATT_IN_W` stops being a
+coin-toss; the height is well under the 41.6 mm ceiling; and the thickness is **7.1 mm
+under**, which comes straight off `BATT_IN_L`. The module went 102.3 × 68.2 × 46.4 →
+**95.2 × 68.1 × 46.4** and the robot lost about 2 g.
+
+`BATT_X` is deliberately **not** re-centred. Holding it at 5.0 while `BATT_L` shrinks moves
+both walls in by 3.55 mm, which walks the heavy brick 3.55 mm aft — the direction the
+module owed the CoM when the BMS went behind the cells — and leaves the ESP32/URT-1 strip
+at 12.45 mm instead of the 8.9 it was tuned to.
+
+### What the measurement broke
+
+`battery_case`'s docstring claims the BMS is retained in all six directions with no
+fasteners, and **y was the case's own side walls closing on a 64.0 mm board**. A 60.13 mm
+board leaves 2.4 mm a side: a loose PCB with wires on it inside a battery case. Two ribs
+off the rear wall (`BMS_SIDE_Y`, floor to the board's top edge, 2.0 mm thick) take it back,
+at +1.2 g. This is the sort of thing a constant change quietly does to a claim in a
+docstring, and it is worth re-reading the retention sentence of anything you re-measure.
+
+### What the ladder said
+
+| step | result |
+|---|---|
+| 0 baseline | `fea.py --all` on the unchanged tree, kept for step 4 |
+| 1 `mini_dog.py` | every part valid, volumes positive; ROM unmoved at −90/+90, −90/+90, −110/+110; `body clear`, `imu clear +3.40`, `batt clear +1.40`, **`module clear` 0.0 / 0.0 mm³ with the new y ribs in**, `foot bolt` ok, `clamp clear +1.43`, `head clear +0.65`, `fork access`, `panel clear`, `cradle bolts … +5.15 mm of air to the pack` |
+| 2 bboxes | `battery_case` 102.3 × 68.2 × 46.4 → **95.2 × 68.1 × 46.4**, `battery_lid` 96.2 × 68.2 × 3.2 → 94.5 × 68.1 × 3.2. Nothing else moved |
+| 3 render | three PNGs, looked at |
+| 4 `fea.py --all` | **not one SF moved.** `hip_bracket_A` 46.9 / 23.5 / 7.8 / 2.4, `thigh_A` 18.9 / 9.4 / 3.1 / 1.2, `shin_A` 60.2 / 30.1 / 10.0 / 4.9, `cradle_front` 4.0 / 2.0 / 0.7 / 3.0 — the baseline to a decimal, at 2.455 kg against 2.457 |
+| 5 `export_sim.py --check` | `4 feet down, upright +1.00`, base z 187 mm, 2.486 kg, terrain the same, camera axis (+0.99 +0.00 +0.10), urdf/mjcf leg mass agree |
+| 6 ROS 2 | regenerated; only `base_link.stl` and the base link's inertia moved — no leg mesh changed |
+
+### The gait, with a control beside it
+
+| | control, unchanged tree | after |
+|---|---|---|
+| flat trot | 487.0 mm | 481.4 mm |
+| terrain, seeds 7…12 | 340 ±43 mm | **350 ±31 mm** |
+| course, seeds 7 / 8 / 9 | 2/7 1903, 2/7 1705, 0/7 1005 — all upright | 2/7 1839, 2/7 1820, 2/7 1797 — all upright |
+
+**The control is worth a line of its own: it reproduced the 2026-09-09 fitted-actuator
+baseline exactly** — 487.0 mm flat, 340 ±43 over the sweep, and 2/7 1903 / 2/7 1705 /
+0/7 1005 on the course, against the 487.0 / 340 ±39 / 2/7 1903, 2/7 1705, 0/7 1005 written
+into `3d/CLAUDE.md` step 6. That is the first time a re-baseline in this file has been
+re-derived from scratch and come back bit-for-bit, and it means a drop here would have
+been readable.
+
+Nothing moved. −2 g is a tenth of the 11 g the flat trot is documented as hypersensitive
+to, and it moved 5.6 mm; the terrain sweep's two means differ by 10 mm against spreads of
+43 and 31. The course is the one that changed shape rather than size — seed 9 went from
+falling short at 1005 mm to 1797 mm, and the three seeds are 1839/1820/1797 against
+1903/1705/1005, i.e. much tighter for the same 2/7 obstacles. Read that as one seed's
+worth of chaos landing better, not as a gain: the mean corridor is 1819 against 1538, but
+the spread on the control's own three is 480 mm.
+
+### Still open on this part, and it is not a dimension
+
+The board arrived with a sticker reading `5S 50A 3.2V` — a LiFePO4 label on the protection
+board for a 3S2P Li-ion pack. **Check the `3S`/`4S` jumpers and the charge cutoff on the
+bench before the module is closed.** Those pads are unreachable behind the lid, and the
+lid's two M2.5 are thread-forming, i.e. a one-assembly thread. It is in `README.md` twice
+now: assembly step 5, and the *verify* list.
