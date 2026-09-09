@@ -550,10 +550,13 @@ falling short at 1005 mm to 1797 mm, and the three seeds are 1839/1820/1797 agai
 worth of chaos landing better, not as a gain: the mean corridor is 1819 against 1538, but
 the spread on the control's own three is 480 mm.
 
-### Still open on this part, and it is not a dimension
+### One retraction that came with it
 
-The board arrived with a sticker reading `5S 50A 3.2V` — a LiFePO4 label on the protection
-board for a 3S2P Li-ion pack. **Check the `3S`/`4S` jumpers and the charge cutoff on the
-bench before the module is closed.** Those pads are unreachable behind the lid, and the
-lid's two M2.5 are thread-forming, i.e. a one-assembly thread. It is in `README.md` twice
-now: assembly step 5, and the *verify* list.
+An earlier note in this session had the board arriving with a **wrong sticker** (`5S 50A
+3.2V`, a LiFePO4 label on a 3S Li-ion pack's BMS) and called for the `3S`/`4S` jumpers to
+be checked before the module was closed. **That is retracted: the picture it was read off
+was a stock photo from the internet, not the board on the bench.** The real board and its
+label are both correct, and there is no pre-assembly electrical check owed on this part.
+The general lesson is the one worth keeping — a vendor listing's photo is not the part,
+and this repo's own rule about measured-beats-catalogue applies to what is printed on a
+board as much as to its outline.

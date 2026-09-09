@@ -797,12 +797,10 @@ FAQ says stalls and burns the servo.
    17.7 mm above `FOOT_Z`, so nothing shorter is fully engaged. It was specified as
    M3 × 16 until 2026-08-31, which no position of the head can reach — see the foot-bolt
    invariant in `CLAUDE.md`. The head ends up ~2 mm inside the sole, clear of the ground.
-5. Battery module, off the robot and before anything else goes in the tray: **check the
-   BMS's `3S`/`4S` jumpers and its charge cutoff on the bench first** — it arrived with a
-   5S LiFePO4 sticker on it, and those pads are unreachable once the lid is on → weld the
-   six cells into a 3 × 2 brick and heatshrink it → BMS down its rib slot in the case's
-   rear zone, sitting on the ledge and between the two y ribs, leads through the grommet
-   slot → brick in → lid's rear edge
+5. Battery module, off the robot and before anything else goes in the tray: weld the six
+   cells into a 3 × 2 brick and heatshrink it → BMS down its rib slot in the case's rear
+   zone, sitting on the ledge and between the two y ribs, leads through the grommet slot →
+   brick in → lid's rear edge
    under the rear wall's tongue, front edge down, 2 M2.5 into the front wall. Those two
    **form their own thread** and it is a one-assembly thread — a pack opened and closed
    often wants the holes drilled out and nutted (see *Screws into plastic*).
@@ -1016,11 +1014,7 @@ frame above.
    (64 × 27 × 13) was wrong in the direction that had been feared, and the thickness by
    7.1 mm, which came straight off the module's length. The orientation is forced — a
    60.13 mm edge cannot stand up in a 43.6 mm interior — and the brick, not the board, now
-   sets the case's width. What is **still verify** on this part is not a dimension: the
-   board arrived with a sticker reading `5S 50A 3.2V`, which is a LiFePO4 label on a 3S
-   Li-ion pack's protection board. Check the `3S`/`4S` jumpers and the charge cutoff on the
-   bench **before the module is closed** — those pads are unreachable behind the lid, and
-   the lid's two M2.5 are thread-forming, i.e. a one-assembly thread.
+   sets the case's width. Nothing on this part is **verify** any more.
    Still catalogue, not measured: the three connector bodies in the rear panel —
    XT60 16.5 × 8.5, XT30 12.0 × 6.6, JST-XH 3S plug 13.0 × 6.0. Check them against the
    parts in your hand before printing the tray, because a pocket that is 0.3 mm small is a
