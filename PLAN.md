@@ -188,6 +188,45 @@ to settle it is an **external shunt or an INA226 on the supply**, which costs a
 part and an evening and would pin `R`, `k_u` and the efficiency at once. Until
 then, do not read the fitted stall as a torque the robot has.
 
+### 2c-i. QUEUED: the rig is designed and sliced, waiting on the printer
+
+**Picked up 2026-09-09, parked on print time. Everything needed to resume cold is
+here — nothing about this depends on remembering the conversation it came from.**
+
+`3d/torque_rig.py` is the fixture, and `3d/out/gcode/torque_rig.3mf` is sliced for
+the Qidi: two parts on one plate, 5 walls, 40 % infill, **9 h 01 m, 224 g**, no
+support generated. Re-slice with
+
+```bash
+cd 3d && .venv/bin/python torque_rig.py        # -> out/torque/{step,stl} + the numbers
+.venv/bin/python tools/slice_orca.py --machine "Qidi Q2 0.4 nozzle - Copy" \
+    --process "0.20mm Standard @Qidi Q2 - Copy" --filament "QIDI НИТ petg черный" \
+    --name torque_rig --walls 5 --infill 40% torque_frame torque_arm
+```
+
+**Hardware to have ready:** M6 × 40 and two M6 nuts (the adjustable anvil), 4 × M3 × 6
+into the driven hub, 2 × M3 × 10 set screws for the thrust clamp, and the 2 kg kitchen
+scale the rig is sized around (28 mm to its platform — `SCALE_H`; re-measure and re-run
+`torque_rig.py` if it is a different scale).
+
+**Do this before the first push, and nothing else first:** set `TORQUE_LIMIT` to **350**
+of 1000 and read it back. It is the only thing between a 2 kg scale and a servo that may
+turn out to be the 7.4 N·m one — at full duty two of the three candidates put 2.5–4.4 kg
+through it. `torque_rig.py` prints the full protocol, the three failure modes and the
+arithmetic behind the cap; run it and read what it says rather than working from memory.
+
+**What comes back, and where it goes.** Fit a line through `(d·U, τ)` and through
+`(i, τ)`. The first slope is `k_u` in N·m per volt with no register scaling in it, so
+`k_u × 12` is the stall; the second is `k_t` in N·m/A, which pins `PRESENT_CURRENT`'s
+6.5 mA LSB. Then:
+
+- if the stall is not 2.94, `SERVO_STALL_NM` in `mini_dog.py` section 4 changes, and with
+  it the ROS 2 model's `forcerange` — which is `3d/CLAUDE.md` steps 5 and 6 again;
+- either way **the `rl/` vs `ros2/` servo-strength disagreement gets settled**, which is
+  the second of the three things blocking training (see below);
+- `ST3215_STS3215_measured_parameters.md` carries the ⚠ warning box that this is
+  unresolved. Take it out, or replace it with the answer — it is the public claim.
+
 ## 3. Push the fitted numbers into the CAD and re-baseline — **DONE 2026-09-09**
 
 All four constants in `mini_dog.py` section 4, then the whole `3d/CLAUDE.md` ladder in the
@@ -344,6 +383,32 @@ against vendor priors was correctly judged to be wasted work. After steps 1–4 
 The WSL2 box does this alone; the mac and the robot are not involved.
 
 Train and evaluate in sim now. **Do not expect to deploy** — that needs the IMU, below.
+
+### Not ready yet, and the checklist is short — asked and answered 2026-09-09
+
+Three things, none of them large, and two are decisions about which number goes where
+rather than new work:
+
+1. **`rl/` has no static friction at all.** `model.py` zeroes MuJoCo's `damping` and
+   `frictionloss` because `actuator.py` supplies them, but `actuator.py`'s friction is
+   `tanh(w/v_eps)` — exactly zero at rest (step 2b). So a standing or stancing robot in
+   `rl/` feels **zero** joint friction while the real servo has 0.18–0.35 N·m and the
+   ROS 2 model now has 0.184. At ~0.3–0.5 N·m of knee torque in stance that is a third
+   to a half of the load. Step 3 made this gap *wider* rather than narrower: both sims
+   were wrong together at 0.02 before, and now `ros2/` is right and `rl/` is at zero.
+2. **The two sims disagree about servo strength by 44 %.** `rl/`'s emergent stall is
+   `k_u × 12` = 4.23 N·m; `ros2/` clamps the same joint at the datasheet's 2.94. Not a
+   bug in `model.py` — its ±5 N·m ceiling is a documented NaN guard — but a consequence
+   of 2c that nobody had costed: it decides how strong the servo is *in training*.
+   **2c-i is the measurement that settles it**, and it is queued on the printer.
+3. **Step 4 is not done.** No randomisation over pack voltage, and `mu_load` is not
+   randomised at all — confirmed live on the WSL2 box, `_params().mu_load` is shape `()`
+   while `_params().tau_c` beside it is `(8, 12)` with a 0.33 spread.
+
+Two things that are **not** blockers, so they do not get used as reasons to wait: step
+3b's gait re-tune is for the hand-tuned `standalone_sim` trot, which is a regression
+harness — RL learns its own gait. And the missing IMU blocks deployment, not training,
+exactly as this step already says.
 
 ---
 
