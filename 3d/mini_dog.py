@@ -951,24 +951,70 @@ TPU_PARTS         = ("foot",)     # printed in TPU_RHO, everything else in PRINT
 SERVO_STALL_NM    = 2.94          # 30 kg*cm at 12 V
 SERVO_NOLOAD_RADS = 4.71          # 0.222 s / 60 deg at 12 V
 
-# MuJoCo joint feel.  NOT measured - the ST3215 gearbox is a black box and these
-# are plausible values that keep the model stable at 2 ms.  They live here and
-# nowhere else: both sim exporters (export_sim.py and the ROS 2
-# generate_model.py) read them from this block, because they used to each carry
-# their own literals and silently diverged - 0.5/0.01/0.05/20 against
-# 0.12/0.008/0.02/25 - which is the servo-mass failure this file's mass block
-# already records, repeated one section down.  rl/checks/check_model.py is what
-# caught it.
+# MuJoCo joint feel.  MEASURED, 2026-09-09, on the bench rig - this block used to
+# say "NOT measured ... plausible values" and every number in it has now been
+# replaced by one off a real ST3215.  They live here and nowhere else: both sim
+# exporters (export_sim.py and the ROS 2 generate_model.py) read them from this
+# block, because they used to each carry their own literals and silently diverged
+# - 0.5/0.01/0.05/20 against 0.12/0.008/0.02/25 - which is the servo-mass failure
+# this file's mass block already records, repeated one section down.
+# rl/checks/check_model.py is what caught it.
 #
-# The surviving values are the ROS 2 set, deliberately: every gait baseline in
-# CLAUDE.md was measured against those, so adopting them leaves the ROS 2 model
-# byte-identical and re-baselines nothing.  When rl/ fits the real actuator these
-# become its initial guess, not a second opinion - see rl/actuator.py, whose
-# Params.J_m is already this same 0.008.
-MJ_DAMPING        = 0.12          # N*m*s/rad at the joint
-MJ_ARMATURE       = 0.008         # kg*m2, reflected rotor+gearbox inertia
-MJ_FRICTIONLOSS   = 0.02          # N*m
-MJ_KP             = 25.0          # position-actuator gain
+# Where each comes from, and why it is the right quantity for a POSITION actuator
+# with no electrical model behind it - which is what both exporters emit, and the
+# reason three of these four differ from what rl/ uses.  rl/model.py zeroes
+# damping and frictionloss because rl/actuator.py supplies them as physics; here
+# there is no back-EMF, no winding and no duty, so everything the real servo does
+# through those has to arrive as joint damping, joint friction and a gain:
+#
+#   MJ_KP           the friction-cancelled position-loop stiffness at 12 V.
+#                   40.9 N*m/rad, NOT the 28.8 measured before: a hold ladder
+#                   walked in one direction bills the friction band to elasticity,
+#                   and only approaching every angle from both sides separates
+#                   them.  It is 25 -> 40.9 here and that is a correction, not a
+#                   tuning choice.  The old 25 was the value that reproduced the
+#                   observed droop WITHOUT a friction term; with MJ_FRICTIONLOSS
+#                   below finally set to something real, 25 would be soft twice.
+#   MJ_FRICTIONLOSS the Coulomb friction, 0.184 N*m, from two independent routes
+#                   that had disagreed by 2x and now agree (0.184 bidirectional
+#                   ladder, 0.186 free swing).  The old 0.02 was a tenth of it.
+#                   Note this is the one place the STATIC friction can be modelled
+#                   at all: MuJoCo's frictionloss is a proper stick-slip
+#                   constraint, whereas rl/actuator.py's tanh(w/v_eps) is exactly
+#                   zero at rest and cannot hold a joint (PLAN.md step 2b).
+#   MJ_DAMPING      the TOTAL speed-proportional torque, 1.37 N*m*s/rad, measured
+#                   to 5 % over three supply voltages.  Deliberately the total and
+#                   not the viscous part: that total is b_v + k_u*k_e, this bench
+#                   cannot split them (both cost a motor voltage proportional to
+#                   omega and neither depends on supply), and a position actuator
+#                   has nowhere to put back-EMF anyway.  It is 11x the old 0.12,
+#                   and it is what makes the model run out of speed near 1.8 rad/s
+#                   the way the real servo does.
+#   MJ_ARMATURE     the reflected rotor inertia, 0.0165 kg*m2, from the free swing
+#                   at the corrected friction.  Do NOT use the 0.024-0.042 range
+#                   this project quoted before: that was computed against a tau_c
+#                   half the real size, and J = (m*g*r*sin q0 - tau_c)/alpha makes
+#                   J_m inherit every error in tau_c amplified by the ratio of the
+#                   two.  rl/actuator.py's Params.J_m default is still 0.008 and
+#                   should stay there - it is flagged as an unfitted vendor prior,
+#                   and rl/params/st3215.json carries the fit.
+#
+# Provenance for all four: robot/bench/{sweep,hysteresis,fit_bam}.py over
+# robot/bench/data/, three voltages, 1.066 kg on a 90 mm arm.  The public
+# write-up is ST3215_STS3215_measured_parameters.md.
+#
+# ONE NUMBER HERE IS STILL NOT SAFE TO DERIVE A TORQUE FROM.  The same ladder puts
+# the torque constant at 2.39 N*m/A against a vendor 1.09 - two channels agreeing
+# to 0.3 % and implying a 7.4 N*m stall the servo cannot produce - so something
+# between the registers and N*m is mis-scaled by ~2.2x (PLAN.md step 2c).  The
+# four above are immune: each is either a ratio in the same register units
+# converted through the known m*g*r, or an inertia off a timed fall.
+# SERVO_STALL_NM above is the vendor figure and stays that way until a shunt
+# settles it.
+MJ_DAMPING        = 1.37          # N*m*s/rad at the joint (b_v + back-EMF)
+MJ_ARMATURE       = 0.0165        # kg*m2, reflected rotor+gearbox inertia
+MJ_FRICTIONLOSS   = 0.184         # N*m, Coulomb
+MJ_KP             = 40.9          # position-actuator gain, N*m/rad at 12 V
 MJ_DAMPRATIO      = 1.0           # critically damped.  export_sim.py carried no
                                   # dampratio at all, which is what made its kp
                                   # incomparable with the ROS 2 one rather than

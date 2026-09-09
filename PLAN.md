@@ -188,27 +188,55 @@ to settle it is an **external shunt or an INA226 on the supply**, which costs a
 part and an evening and would pin `R`, `k_u` and the efficiency at once. Until
 then, do not read the fitted stall as a torque the robot has.
 
-## 3. Push the fitted numbers into the CAD and re-baseline
+## 3. Push the fitted numbers into the CAD and re-baseline — **DONE 2026-09-09**
 
-`MJ_ARMATURE`, `MJ_DAMPING`, `MJ_FRICTIONLOSS` in `mini_dog.py` section 4, then
-`3d/CLAUDE.md` steps 5 and 6 in the same pass. `MJ_KP` moves too and further than
-expected: step 1 measured the friction-cancelled stiffness at **40.9 N·m/rad at 12 V**
-against the 28.8 that was on record, and `MJ_DAMPING` should take the *total*
-speed-proportional 1.37 N·m·s/rad rather than a `b_v` this bench cannot resolve.
+All four constants in `mini_dog.py` section 4, then the whole `3d/CLAUDE.md` ladder in the
+same pass. `MJ_KP` 25 → **40.9**, `MJ_FRICTIONLOSS` 0.02 → **0.184**, `MJ_DAMPING` 0.12 →
+**1.37**, `MJ_ARMATURE` 0.008 → **0.0165**. The full record is in `MAC.md`; step 6's
+baselines are re-stated in `3d/CLAUDE.md`.
 
-**Why:** `MJ_ARMATURE` is 0.008 and the bench says **0.0165** (step 2 re-derived this;
-the 0.024–0.042 this line used to quote was computed against a `tau_c` half the real
-size — do not carry the old range forward). That is still the dominant
-term in the joint's dynamics — `check_model.py` already measured it at ~73× the knee link's
-own inertia — so a 3× error in it is not a refinement, it is a different robot. Expect
-every number in step 6 to move and re-baseline them deliberately rather than reading the
-change as a regression.
+Two of those are not the parameter this plan named. `MJ_KP` moved because the stiffness
+was itself wrong by 40 % (step 1), and `MJ_FRICTIONLOSS` moved because MuJoCo's
+`frictionloss` is a proper stick-slip constraint and is therefore **the only place in this
+project where static friction can be modelled at all** — `rl/actuator.py` cannot, by step
+2b. `MJ_DAMPING` is the *total* speed-proportional torque rather than `b_v`, because a
+`position` actuator has no back-EMF to put the rest in.
 
-`3d/CLAUDE.md` says these constants "become its initial guess — never a second opinion
-sitting beside it" once the bench fits the actuator. This is that moment. One correction to
-make while you are there: that file calls `MJ_ARMATURE` = 0.008 "not an estimate … the
-ST3215's reflected rotor inertia". It was never measured — `actuator.py` marks its whole
-block `fitted: false` — and the bench says it is several times low.
+**Nothing else moved, and that is checked rather than assumed.** `export_sim.py --check`
+reads the same 2.488 kg, 187 mm stand height and camera axis; the ROS 2 regeneration moved
+`mujoco/defaults.xml` and nothing else; `fea.py` was skipped because it reads no `MJ_*`,
+the constants are absent from `out/bom.json`, and neither mass nor geometry changed.
+
+**Every gait distance fell by a quarter to a third, and it is the fix working.**
+
+| | control (old `MJ_*`) | after |
+|---|---|---|
+| flat trot | 556.6 mm | **487.0 mm** |
+| terrain, seeds 7…12 | 520 ±67 mm | **340 ±39 mm** |
+| course, seeds 7 / 8 / 9 | 1/7, 5/7, 4/7 | **2/7, 2/7, 0/7** — all upright |
+
+Same mass to the gram, so this is not the mass cliff, and the terrain sweep moved 180 mm
+against a 32 mm standard error — the first re-baseline in this project that is decisively
+not one distribution. The number that settles the interpretation is the joint's speed
+ceiling, `(forcerange − frictionloss)/damping`: **24.3 rad/s before against 2.01 after**,
+where the servo's vendor no-load speed is 4.71 and the bench measured ~1.8 under the 1 kg
+arm. The old model let every leg swing five times faster than the servo can turn with no
+load at all, and the hand-tuned gait had settled into that headroom.
+
+So the sim was flattering the robot in the one dimension a walker spends most, and the
+distances that just fell were never real. **Do not put `MJ_DAMPING` back.**
+
+### 3b. The gait needs re-tuning against the honest joint
+
+Not started. `ros2/tools/standalone_sim.py`'s hand-tuned trot is now commanding swing
+speeds the servo does not have, which is why the distances fell; re-tuning is what gets
+them back, and this time they will mean something. Do this before reading any further
+terrain or course number as evidence about geometry.
+
+It also re-dates the `rl/` work: a policy trained against the old model learned to spend
+joint speed that does not exist, so anything trained before today **retrains rather than
+fine-tunes**. That is the same conclusion the IMU move reached earlier the same day for an
+unrelated reason, and the two compound.
 
 ## 4. Randomise over the pack
 

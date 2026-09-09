@@ -447,16 +447,42 @@ name → (workplane, qty, note) and drives both the export loop and the BOM;
    from the control, which is exactly the trap the paragraphs below describe.
    The 2026-09-08 numbers, superseded: flat 790.8, terrain 537 ±67, course 5/7 2778.
 
-   **Re-baselined 2026-09-08 by the foot contact fix** (`MJ_FOOT_CONDIM` above), which
-   changed no geometry and no mass and moved every figure in this step, because
-   `MJ_FOOT_PRIORITY` also took the foot's `solref`/`solimp` out of an average with the
-   floor's. The numbers to compare against now, each with the condim-3 control re-run
-   beside it on the same tree: **flat 790.8 mm** (control 788.2), **terrain seeds 7..12
-   537 ±67 mm** (control 480 ±67), **terrain default seed 611.2 mm** (control 412.9),
-   **course 5/7, corridor 2778 mm** (control 1/7, 1621 mm). Everything below this
-   paragraph is the history that led here — the mass-cliff argument still holds and is
-   the reason to keep running a control, but do not compare a new run against its
-   distances.
+   **Re-baselined 2026-09-09 by the fitted actuator** (`MJ_DAMPING`/`MJ_ARMATURE`/
+   `MJ_FRICTIONLOSS`/`MJ_KP`, PLAN.md step 3). No geometry, no mass and no limit moved —
+   `export_sim.py --check` reads the same 2.488 kg, the same 187 mm stand height and the
+   same camera axis as before — and every distance in this step still fell by a quarter
+   to a third. **Compare against these, and read the paragraph after them before calling
+   a drop a regression:**
+
+   | | new baseline | control (same tree, old `MJ_*`) |
+   |---|---|---|
+   | flat trot | **487.0 mm** at 2.487 kg | 556.6 mm |
+   | terrain, seeds 7..12 | **340 ±39 mm** | 520 ±67 mm |
+   | course, seeds 7 / 8 / 9 | **2/7 1903, 2/7 1705, 0/7 1005**, all upright | 1/7 1506, 5/7 2872, 4/7 2582 |
+
+   **This is the model getting more honest, not the robot getting worse, and there is a
+   number that settles it.** A joint can turn no faster than where the actuator's torque
+   ceiling meets its damping: `(forcerange − frictionloss)/damping`. At the old
+   0.12/0.02 that is **24.3 rad/s** — five times the ST3215's own vendor no-load speed of
+   4.71, and thirteen times the ~1.8 rad/s the bench actually measured under the 1 kg arm.
+   At the new 1.37/0.184 it is **2.01 rad/s**, which lands on the measured ceiling. So
+   every gait distance this project has ever recorded was measured on a robot whose legs
+   could swing an order of magnitude faster than the real ones, and the walker had tuned
+   itself into exactly that headroom. The terrain sweep is the arm to read and it moved
+   180 mm against a 32 mm standard error on the difference — decisively not one
+   distribution, unlike every re-baseline above it.
+
+   **What follows from that is a re-tune, not a revert.** The gait in
+   `ros2/tools/standalone_sim.py` was fitted against the old joint and is now asking for
+   swing speeds the servo does not have; the distances should come back with it. Nothing
+   here says the constants are wrong — they are four measurements off one real ST3215 at
+   three supply voltages, and `mini_dog.py` section 4 carries their provenance. Do not
+   "fix" this by putting `MJ_DAMPING` back.
+
+   Everything below this paragraph is the history that led here — the mass-cliff argument
+   still holds and is the reason to keep running a control, but do not compare a new run
+   against its distances. The 2026-09-08 set, superseded by the table above, was: flat
+   790.8 mm, terrain seeds 7..12 537 ±67 mm, course 5/7 corridor 2778 mm.
 
    The first rewrites `smalldog_description/{meshes,urdf,mujoco,robot_params.json}`; the
    second must end `RESULT: OK — stands and trots forward` with a travelled distance close

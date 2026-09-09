@@ -417,3 +417,71 @@ stall torque written as "a force at a lever about the joint axis" divides by zer
 load patch is concentric with that axis, which the cradle's bore is, so its stall case is a
 genuine couple. Its ground cases keep the whole bore — half a bore is a different, more
 local load, and read 3 MPa hotter when the two were conflated.
+
+## 2026-09-09, later still: the fitted actuator went into the model
+
+`PLAN.md` step 3. Four constants in `mini_dog.py` section 4, all four now measurements off
+a real ST3215 rather than the "plausible values" the block used to admit to:
+
+| | was | now | where it came from |
+|---|---|---|---|
+| `MJ_KP` | 25.0 | **40.9** N·m/rad | friction-cancelled stiffness at 12 V |
+| `MJ_FRICTIONLOSS` | 0.02 | **0.184** N·m | Coulomb, two routes agreeing (0.184 / 0.186) |
+| `MJ_DAMPING` | 0.12 | **1.37** N·m·s/rad | the *total* speed-proportional torque |
+| `MJ_ARMATURE` | 0.008 | **0.0165** kg·m² | free swing at the corrected `tau_c` |
+
+`MJ_DAMPING` is deliberately the total (`b_v + k_u·k_e`) and not the viscous part: the
+bench cannot split them — both cost a motor voltage proportional to ω and neither depends
+on supply — and a MuJoCo `position` actuator has nowhere to put back-EMF anyway. Same
+reasoning puts the Coulomb term in `frictionloss`, which is also the only place in this
+project where STATIC friction can be modelled at all: `rl/actuator.py`'s `tanh(w/v_eps)`
+is exactly zero at rest and cannot hold a joint (`PLAN.md` step 2b).
+
+### The ladder
+
+| step | result |
+|---|---|
+| 1 `mini_dog.py` | unchanged: every part valid, ROM −90/+90, −90/+90, −110/+110, `body clear` (nine parts), `imu clear +3.40`, `batt clear +1.40`, `module clear`, `foot bolt` ok, `clamp clear +1.43`, `head clear +0.65`, `fork access: all six arms`, `panel clear`, `cradle bolts +1.60` |
+| 2 bboxes | unchanged — no geometry moved |
+| 3 render | skipped, justified: no geometry moved |
+| 4 `fea.py --all` | **skipped, and provably so.** `fea.py` reads no `MJ_*` (checked), the four constants appear nowhere in `out/bom.json`, and neither mass nor geometry changed. Strength cannot have moved |
+| 5 `export_sim.py --check` | identical to the control: `4 feet down, upright +1.00`, base z 187 mm, 2.488 kg, terrain the same, camera axis (+0.99 +0.00 +0.10), urdf/mjcf leg mass agree, 13 STL |
+| 6 ROS 2 | regenerated; **only `mujoco/defaults.xml` moved**, and only those four attributes — no mesh, no mass, no limit |
+
+### The gait, with a control beside it
+
+Control is the same tree with the old `MJ_*`, i.e. the numbers this file recorded a few
+hours earlier for the cradle change.
+
+| | control, old `MJ_*` | after, 2.487 kg |
+|---|---|---|
+| flat trot | 556.6 mm | **487.0 mm** |
+| terrain, seeds 7…12 | 520 ±67 mm | **340 ±39 mm** |
+| course, seeds 7 / 8 / 9 | 1/7 1506, 5/7 2872, 4/7 2582 | **2/7 1903, 2/7 1705, 0/7 1005** — all upright |
+
+Mass is identical to the gram, so none of this is the mass cliff. The terrain sweep is the
+arm to read and it moved **180 mm against a 32 mm standard error on the difference** —
+about 5.6 σ, and the first re-baseline in this file that is *not* one distribution.
+
+### Why that is the model getting honest, and not a regression
+
+One number settles it. A joint can turn no faster than where the torque ceiling meets the
+damping, `(forcerange − frictionloss)/damping`:
+
+- old, 0.12 / 0.02 → **24.3 rad/s**
+- new, 1.37 / 0.184 → **2.01 rad/s**
+- ST3215 vendor no-load speed → 4.71 rad/s
+- measured on the bench under the 1 kg arm → **~1.8 rad/s**
+
+The old model let every joint swing **five times faster than the servo's own no-load
+speed** and thirteen times faster than the bench can actually drive it, and the hand-tuned
+gait had settled into exactly that headroom. The new value lands on the measured ceiling.
+So the shorter distances are the legs no longer being allowed to do something the hardware
+cannot, which is the whole point of fitting the actuator.
+
+**What follows is a re-tune, not a revert.** The gait in `ros2/tools/standalone_sim.py`
+is asking for swing speeds the servo does not have. Do not put `MJ_DAMPING` back.
+
+One consequence worth stating plainly for `rl/`: any policy trained against the old model
+learned to spend joint speed that does not exist, so it has to retrain rather than
+fine-tune — the same conclusion the IMU move reached earlier today, for a different reason.
