@@ -56,6 +56,22 @@ Two traps for anyone re-measuring this:
     docstring read a +-18/+-27/+-40 mm table off single runs and concluded the amplitude
     mattered and that "attitude stayed inside 3 deg in every run"; neither survived a
     twelve-seed sweep, where the median tilt is 13 deg blind and 7 deg closed-loop.
+  * the course is COMPILED IN, and obstacle geoms are found by NAME.  Neither is
+    incidental, and rl/ paid for both on 2026-09-09 (cf5f236) with its own
+    procedural boxes.  Writing `geom_pos` on an already-compiled model moves a
+    static worldbody geom's kinematics but NOT its baked bounding volume, so it
+    draws and reads back in the new place while broadphase still tests the old
+    one -- measured there as a robot standing at 106 mm on MJX and falling
+    straight through the same slab at 73 mm on the CPU engine.  And picking the
+    obstacles off the tail of the geom list is wrong because worldbody geoms
+    compile FIRST, so "the last n" selects the rear-right leg.  This file is on
+    the right side of both by construction: it emits the obstacles into the MJCF
+    before either consumer compiles it, and ros2/tools/standalone_sim.py reads
+    them back with mj_id2name(...).startswith("obs").  Keep it that way -- the
+    moment something here moves a geom after compile, or indexes one by
+    position, the flat/terrain/course numbers in 3d/CLAUDE.md step 6 stop
+    measuring what they say they measure and nothing will report it.
+
   * an obstacle geom's rotation goes in as a *quaternion*.  Both consumers compile with
     <compiler angle="radian">, so an euler written in degrees is read as radians and says
     nothing about it: the first version of this course had a "6 degree" ramp that came out
