@@ -214,6 +214,19 @@ block `fitted: false` — and the bench says it is several times low.
 
 `rl/params/domain_rand.json`, with the voltage range now measured rather than guessed.
 
+**Randomise `mu_load` too, and this is now a measured gap rather than a suggestion.**
+Verified on the WSL2 box, 2026-09-09, on the current tree: `model.sample_actuator_params`
+has no entry for it, `domain_ranges()` has none, and `walk.py`'s `_params()` replaces nine
+fields and leaves `mu_load` as the scalar off `_p0` — live, `_params().mu_load` has shape
+`()` while `_params().tau_c` beside it is `(8, 12)` with a 0.33 spread. So training today
+runs **one shared gearbox friction across every environment while the Coulomb term next to
+it is randomised**, which is the wrong way round: this plan's own argument below is that
+gearbox friction is *exactly* the parameter that varies unit to unit, and it is now the
+larger of the two terms (0.29 N·m per N·m carried, against a 0.18 N·m floor). The jax
+registration is already correct — `mu_load` flattens as data, and a `vmap` over a batched
+`Params` was confirmed to give four distinct per-environment torques — so this is one
+entry in `domain_rand.json` plus one line in `sample_actuator_params`, not plumbing.
+
 **Why:** step 3 gives one servo at one voltage. The robot will run a pack that sags from
 12.6 to 9.9 V, and we now know what that does across three measured points rather than
 two — stiffness is linear in supply at **3.44 N·m/rad per volt** (28.1 / 34.4 / 40.9 at
