@@ -96,26 +96,97 @@ Two things this turned up that were not on anyone's list:
   trajectory when someone is next at the bench, and worth knowing now because 1.8 rad/s is
   inside where the 50 Hz policy commands.
 
-## 2. Give `actuator.py` a load-dependent friction term
+## 2. Give `actuator.py` a load-dependent friction term — **DONE 2026-09-09**
 
-**Why:** it is the largest thing the model is missing, and after step 1 it is no longer
-an inference — the coefficient is **measured**: friction = `0.19 N·m + 0.28·|tau_load|`,
-from the bidirectional hold ladder at three voltages, holding to 6 % and 16 % across
-them. `actuator.py`'s law is `tau_c·sign(w) + b_v·w`, both independent of load, so this
-term has nowhere to go and the fit puts it in `k_u` — hence a fitted stall of 4.23 N·m
-against a spec 2.94. Two corroborating numbers that were the old argument and are now
-the sanity check: the free swings dissipate 62–65 % of the applied torque, and
-`actuator.py`'s own `eta = k_u·R/k_e` from the vendor specs says 57 %.
+`Params.mu_load`, N·m of friction per N·m crossing the gearbox, applied in
+`actuator.friction()` and in `simulate()`'s integrator; `fit_bam.seed_from_holdbi`
+measures it from the bidirectional ladder and it is now the FIRST analytic pass,
+because the free swing subtracts `tau_c` and had been using half the real value.
 
-**This is now blocking, not merely desirable.** With steady speeds in the data and no term
-that can hold them, `--refine` does not converge, it diverges: `kp` pinned at 2017, `k_e`
-at 11.8, `punch` on its bound, an implied no-load speed of 1.02 rad/s against a spec 4.71.
-Step 1's numbers cannot land anywhere until this exists.
+**What it moved.** Two numbers, both in the direction the ladder predicted, and
+both because `tau_c` was wrong rather than because the new term is doing work:
 
-Note the asymmetry when writing it: forward-driving loses ~28 % of motor torque,
-back-driving ~62 %. Same gearbox, different direction. And write it against **load**
-torque, which is what the ladder measures — expressed against motor torque the same
-measurement is about +22 %, not the +38 % the old slope-ratio inference gave.
+| | before | after |
+|---|---|---|
+| `tau_c` | 0.084 | **0.184** |
+| `J_m` | 0.0240 | **0.0165** |
+| `mu_load` | — | **0.286** |
+| position RMS | 8.96° | 8.84° |
+| current RMS | 1.25 A | 1.01 A |
+
+**What it did NOT move, and this refutes a claim in the step-1 write-up.** `--refine`
+still diverges, and identically: `kp` pinned at its bound (1887 against 2017 before),
+`k_e` 11.3 against 11.8, an implied no-load speed of 1.06 rad/s against 1.02. Missing
+friction was not the cause. Nor did `k_u` move — the fitted stall is still 4.23 N·m — see
+2c, where cancelling friction properly makes it *worse*. A fit railing `kp` while `k_e`
+grows to compensate is reaching for torque the electrical model cannot supply, which is
+the same shape as 2c and probably the same cause.
+
+`tau_c` and `J_m` are not independent here: the free swing gets `J_m` from
+`(m·g·r·sinq − tau_c)/acc`, so doubling `tau_c` nearly halves the driving torque
+and `J_m` with it. **`J_m` = 0.0165 is the number step 3 should carry**, not the
+0.024–0.042 this plan quoted before — that range was computed against a `tau_c`
+of 0.08. It is still 2× `MJ_ARMATURE`'s 0.008, so step 3's argument stands, but
+the size of the correction has changed and step 3 should not quote the old range.
+
+The `tau_c` result is worth more than the number: the bidirectional ladder and
+the free-swing fit are two independent routes that had disagreed by 2×, and they
+now agree at **0.184 vs 0.186**. That is the cross-check this parameter never had.
+
+### 2b. The model has no static friction, and that is the next real defect
+
+`actuator._sign()` is `tanh(w/v_eps)`, which is exactly **zero at rest**. So the
+simulated servo has no stiction at all: a hold approached from below and from
+above settles at the same duty (measured on the model: half-difference 0.00 and
+0.03 V, against the real servo's 0.29). The consequences are concrete:
+
+- **`mu_load` is measurable on hardware but not recoverable from the model's own
+  output.** `fit_bam --selftest` now says so and says why — it is a statement
+  about the model, not about the experiment, which is the opposite of every other
+  entry in that list. The term is still live wherever the joint MOVES, which is
+  where it takes load off the fit; it is only the rest case that is missing.
+- `ST3215_STS3215_measured_parameters.md` already records that "small commanded
+  corrections below the breakaway do not move the joint at all" and puts stiction
+  at 0.23–0.35 N·m. The model cannot produce that behaviour today.
+
+The fix is a friction that can hold at ω = 0 — the standard form is Karnopp's:
+below a velocity threshold, friction opposes the net applied torque up to a
+ceiling, rather than being proportional to a smoothed sign. **It is not a
+one-liner and it should not be bolted on without care**: `simulate()` has every
+torque to hand and can do it directly, but `rl/env/walk.py` and `rl/eval.py` call
+`motor_torque()` with MuJoCo owning the load, so there the honest route is
+probably MuJoCo's own `frictionloss` — which `rl/model.py` currently sets to zero
+on the grounds that `actuator.py` supplies friction. Decide that before writing
+code, and keep the two consumers on one law.
+
+### 2c. The torque constant is 2.2× the datasheet, and it is NOT friction
+
+This plan assumed the inflated `k_u` (fitted stall 4.23 N·m against a spec 2.94)
+was missing friction being absorbed. **It is not.** Cancelling friction properly
+makes it worse, not better — the friction-cancelled paired holds give an implied
+stall of **7.4 N·m**. Two channels that share only the gravity anchor agree:
+
+| route | torque constant | implied stall @ 12 V |
+|---|---|---|
+| friction-cancelled paired holds, current channel | 2.394 N·m/A | 7.40 |
+| duty channel × R (`hysteresis.py`) | 2.382 N·m/A | 7.37 |
+| unidirectional holds (the old route) | 1.368 N·m/A | 4.23 |
+| vendor spec | 1.089 N·m/A | 2.94 |
+
+The two measurements agree to 0.3 % with each other and disagree with the vendor
+by 2.2×. The servo cannot produce 7.4 N·m, so something is mis-scaled, and the
+prime suspect is already on the "not measured" list in
+`ST3215_STS3215_measured_parameters.md`: **`PRESENT_CURRENT`'s 6.5 mA LSB is
+confirmed only against vendor numbers, never against a shunt.** `PRESENT_LOAD`'s
+per-mille scaling is the other candidate — if 1000 is not 100 % duty, every
+`d²U/R` correction in `fit_bam.py` inherits it.
+
+Two things follow. First, **`tau_c` and `mu_load` are immune** — both are ratios
+of quantities in the same register units, converted through a gravity anchor that
+is known exactly, so a constant scale error cancels out of both. Second, the way
+to settle it is an **external shunt or an INA226 on the supply**, which costs a
+part and an evening and would pin `R`, `k_u` and the efficiency at once. Until
+then, do not read the fitted stall as a torque the robot has.
 
 ## 3. Push the fitted numbers into the CAD and re-baseline
 
@@ -125,7 +196,9 @@ expected: step 1 measured the friction-cancelled stiffness at **40.9 N·m/rad at
 against the 28.8 that was on record, and `MJ_DAMPING` should take the *total*
 speed-proportional 1.37 N·m·s/rad rather than a `b_v` this bench cannot resolve.
 
-**Why:** `MJ_ARMATURE` is 0.008 and the bench says **0.024–0.042**. That is the dominant
+**Why:** `MJ_ARMATURE` is 0.008 and the bench says **0.0165** (step 2 re-derived this;
+the 0.024–0.042 this line used to quote was computed against a `tau_c` half the real
+size — do not carry the old range forward). That is still the dominant
 term in the joint's dynamics — `check_model.py` already measured it at ~73× the knee link's
 own inertia — so a 3× error in it is not a refinement, it is a different robot. Expect
 every number in step 6 to move and re-baseline them deliberately rather than reading the

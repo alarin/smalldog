@@ -21,9 +21,15 @@ So the chain is modelled as it is, in five stages:
                     fall together as it drains.
   3. electrical     i = (U - k_e*w) / R.  The back-EMF term is what makes the
                     servo's speed limit emerge instead of being clamped on.
-  4. mechanical     tau = k_u*U - k_w*w - tau_c*sign(w) - b_v*w, driving the
-                    reflected rotor inertia J_m, which for 1:345 is ~73x the
-                    knee link's own inertia (measured: rl/checks/check_model.py).
+  4. mechanical     tau = k_u*U - k_w*w - friction, driving the reflected rotor
+                    inertia J_m, which for 1:345 is ~73x the knee link's own
+                    inertia (measured: rl/checks/check_model.py). The friction
+                    is (tau_c + mu_load*|tau_transmitted|)*sign(w) + b_v*w, and
+                    the middle term is not a refinement: on this gearbox it is
+                    0.28 N*m per N*m carried against a 0.19 N*m floor, so at the
+                    bench arm's 0.88 N*m it is half the load again. Measured
+                    2026-09-09; see friction() for how, and for why there is no
+                    forward/back-driving asymmetry beside it.
   5. transmission   a deadzone spring of width theta_bl between motor and output.
                     Below it no torque crosses at all.
 
@@ -36,6 +42,24 @@ two things and only those two: measured CURRENT (which sees k_e and R but not
 b_v) and runs at SEVERAL SUPPLY VOLTAGES. That is why robot/bench/sweep.py
 insists on both, and why a fit from one voltage with no ammeter is refused
 rather than reported with wide error bars.
+
+**The b_v / k_e half of that is now known to be a dead end on this bench, and the
+voltage sweep does not rescue it.** Both terms cost a motor voltage proportional
+to omega and NEITHER depends on supply, so eight volts says exactly what twelve
+does. What the speed ladder measures cleanly is their SUM, 1.37 N*m*s/rad to
+5 % over three voltages, of which back-EMF is 1.31 — leaving 0.06 +- 0.07 for
+b_v, i.e. consistent with zero. Use the sum. Splitting it needs a current
+measurement finer than PRESENT_CURRENT's 6.5 mA LSB divided by a duty.
+
+**The friction terms are immune to the register-scale problem below, and that is
+worth knowing before trusting them.** tau_c and mu_load are measured as ratios
+between two quantities in the same PRESENT_LOAD units, converted to N*m through
+a gravity anchor that is known exactly, so any constant mis-scaling of that
+register cancels out of both. k_u is not so lucky: friction-cancelled holds put
+the torque constant at 2.39 N*m/A through the current channel and 2.38 through
+the duty channel — agreeing to 0.3 % with each other and disagreeing by 2.2x
+with the vendor's 1.09. See PLAN.md step 2c; it is not friction, because
+removing friction makes it worse rather than better.
 
 Where the encoder sits
 ----------------------
@@ -92,8 +116,16 @@ class Params:
     # --- mechanical -------------------------------------------------------
     J_m: float = 0.008        # kg*m^2, reflected rotor+gearbox inertia at the joint
     J_l: float = 0.0          # kg*m^2, load-side inertia the servo carries itself
-    tau_c: float = 0.05       # N*m, Coulomb friction
+    tau_c: float = 0.05       # N*m, Coulomb friction at zero load
     b_v: float = 0.010        # N*m*s/rad, viscous friction
+    # Friction that GROWS WITH THE TORQUE BEING TRANSMITTED, as gear-tooth
+    # normal forces do.  N*m of friction per N*m through the gearbox.  Unlike
+    # its neighbours this default is a MEASUREMENT, not a vendor prior: the
+    # bidirectional hold ladder (robot/bench/sweep.py --traj holdbi, read by
+    # bench/hysteresis.py) puts it at 0.25-0.30 across 8/10/12 V.  Zero here
+    # would silently restore the defect this term exists to fix, so the measured
+    # value is the default and `fitted` still says whether a fit has run.
+    mu_load: float = 0.28
     # --- inner loop (registers 21/22, 26/27, 24) --------------------------
     kp: float = 32.0          # duty per rad of error, after the register scaling
     kd: float = 0.0           # duty per rad/s
@@ -166,8 +198,8 @@ try:
 
     _jax.tree_util.register_dataclass(
         Params,
-        data_fields=["R", "k_e", "k_u", "J_m", "J_l", "tau_c", "b_v", "kp", "kd",
-                     "deadband", "punch", "duty_max", "loop_hz",
+        data_fields=["R", "k_e", "k_u", "J_m", "J_l", "tau_c", "b_v", "mu_load",
+                     "kp", "kd", "deadband", "punch", "duty_max", "loop_hz",
                      "theta_bl", "k_bl", "c_bl", "v_eps"],
         meta_fields=["enc_after_backlash", "fitted", "source", "servo_ids",
                      "rms_pos_deg", "rms_current_a"])
@@ -224,7 +256,39 @@ def current(p: Params, u_volt: float, w: float, driven=True, xp=np) -> float:
     return xp.where(driven, (u_volt - p.k_e * w) / p.R, 0.0)
 
 
-def motor_torque(p: Params, u_volt: float, w: float, driven=True, xp=np) -> float:
+def friction(p: Params, w: float, tau_t: float, xp=np) -> float:
+    """Gearbox friction: a constant, a term that grows with LOAD, and a viscous one.
+
+    The middle term is the one most models leave out, and leaving it out is not a
+    small approximation on a 1:345 spur stack. Gear-tooth friction is proportional
+    to the normal force between teeth, which is proportional to the torque being
+    transmitted, so friction is not a property of the gearbox alone — it is a
+    property of the gearbox and its present load. Measured on this servo
+    (robot/bench/sweep.py --traj holdbi, three voltages): 0.19 N*m at no load,
+    growing by 0.28 N*m per N*m carried, so at the 0.88 N*m the bench arm asks
+    for, friction is 0.41 N*m — half the load again.
+
+    Until this term existed the fit had nowhere to put that and put it in `k_u`,
+    which is why the identified stall was 4.23 N*m against a spec 2.94, and why
+    `b_v` sat pinned on its lower bound however much data it was given.
+
+    **There is deliberately no forward/back-driving asymmetry here**, and that is
+    a conclusion rather than an omission. The bench reports ~28 % of motor torque
+    lost forward-driving against ~62 % back-driving, which reads as a strongly
+    asymmetric gearbox — but almost all of that gap is `tau_c` being a FIXED
+    offset measured against two very different load levels. Run the symmetric law
+    above at each: forward, 0.19 + 0.28*0.88 = 0.41 N*m out of the 1.29 the motor
+    supplies, i.e. 32 %; back-driving over a free swing's mean gravity torque,
+    56 %. Both land on the reported numbers without a second coefficient, and a
+    second coefficient fitted to the residual of the first would not be
+    identifiable from this bench anyway.
+    """
+    return ((p.tau_c + p.mu_load * xp.abs(tau_t)) * _sign(w, p.v_eps, xp)
+            + p.b_v * w)
+
+
+def motor_torque(p: Params, u_volt: float, w: float, driven=True, tau_t=None,
+                 xp=np) -> float:
     """Torque at the joint before the transmission.
 
     The back-EMF term is gated by `driven`, and the distinction is not
@@ -239,9 +303,23 @@ def motor_torque(p: Params, u_volt: float, w: float, driven=True, xp=np) -> floa
     J, tau_c and b_v alone in it. Model the release as a braked motor and the
     fit reads the electrical damping as mechanical friction — thirty times too
     much of it — and every later trajectory inherits the error.
+
+    `tau_t` is the torque actually crossing the gearbox, which is what the
+    load-dependent friction scales with. `simulate()` below has it as a state and
+    passes it. Callers that do not — rl/env/walk.py and rl/eval.py, where MuJoCo
+    owns the transmission — leave it None and get the PROXY below, and the
+    conversion in it is exact rather than a fudge: forward-driving at steady
+    state the motor supplies load + friction, so tau_drive = tau_t*(1 + mu_load),
+    and dividing it back out recovers the transmitted torque. Where the proxy is
+    wrong is where those two disagree in SIGN — the load driving the motor with
+    the bridge off, i.e. a free swing, where tau_drive is zero and the gearbox is
+    still carrying the whole load. That case only arises on the bench, and on the
+    bench `simulate()` passes the real value.
     """
+    if tau_t is None:
+        tau_t = p.k_u * u_volt / (1.0 + p.mu_load)
     return (p.k_u * u_volt - xp.where(driven, p.k_w * w, 0.0)
-            - p.tau_c * _sign(w, p.v_eps, xp) - p.b_v * w)
+            - friction(p, w, tau_t, xp))
 
 
 def transmitted(p: Params, delta: float, dw: float, xp=np) -> float:
@@ -314,6 +392,7 @@ def simulate(p: Params, target, dt, q0=0.0, w0=0.0, u_bat=12.0, load_torque=None
     # hoisted, because they are read once per inner step
     kp, kd, dead, punch, dmax = p.kp, p.kd, p.deadband, p.punch, p.duty_max
     k_u, k_e, k_w, R_, tau_c, b_v = p.k_u, p.k_e, p.k_w, p.R, p.tau_c, p.b_v
+    mu_l = p.mu_load
     J_m, J_l = p.J_m, max(p.J_l, 1e-9)
     half, k_bl, c_bl = 0.5 * p.theta_bl, p.k_bl, p.c_bl
     v_eps, enc = p.v_eps, ENC_STEP_RAD
@@ -357,9 +436,9 @@ def simulate(p: Params, target, dt, q0=0.0, w0=0.0, u_bat=12.0, load_torque=None
                 # where it is reachable, and did reach it.
                 volt = max(volt0 - sag * abs(i), 0.0)
                 i = (d * volt - k_e * w_m) / R_
-            tau_m = k_u * d * volt - tau_c * math.tanh(w_m / v_eps) - b_v * w_m
-            if driven:
-                tau_m -= k_w * w_m
+            # The transmitted torque is computed FIRST now, because the
+            # friction depends on it. No circularity: it is a function of the
+            # two positions and velocities only, all of them state.
             delta = th_m - th_l
             if delta > half:
                 tau_t = k_bl * (delta - half) + c_bl * (w_m - w_l)
@@ -367,6 +446,11 @@ def simulate(p: Params, target, dt, q0=0.0, w0=0.0, u_bat=12.0, load_torque=None
                 tau_t = k_bl * (delta + half) + c_bl * (w_m - w_l)
             else:
                 tau_t = 0.0
+            tau_m = (k_u * d * volt
+                     - (tau_c + mu_l * abs(tau_t)) * math.tanh(w_m / v_eps)
+                     - b_v * w_m)
+            if driven:
+                tau_m -= k_w * w_m
             w_m += h * (tau_m - tau_t) / J_m
             w_l += h * (tau_t + load_torque(th_l)) / J_l
             th_m += h * w_m
@@ -434,6 +518,51 @@ def _selftest() -> int:
           float(motor_torque(p, 0.0, 1.0, False) - motor_torque(p, 0.0, 1.0, True)),
           p.k_w, tol=1e-12)
 
+    # --- load-dependent friction ------------------------------------------
+    # It must GROW with the transmitted torque, at exactly mu_load per N*m, and
+    # it must still oppose MOTION rather than the load: a gearbox carrying a
+    # torque one way while turning the other loses to friction just the same.
+    check("friction grows with load at mu_load",
+          float(friction(p, 1.0, 1.0) - friction(p, 1.0, 0.0)),
+          p.mu_load, tol=1e-9)
+    check("load-dependent friction opposes motion, not load",
+          float(np.sign(friction(p, -1.0, 1.0))), -1.0)
+    check("its magnitude ignores the load's sign",
+          float(friction(p, 1.0, -0.7) - friction(p, 1.0, 0.7)), 0.0, tol=1e-12)
+
+    # mu_load = 0 must reproduce the law exactly as it was before this term
+    # existed. A new term that quietly changes the old answer is not an
+    # extension, it is a different model wearing the same name.
+    p0 = Params(mu_load=0.0)
+    check("mu_load = 0 is the old law",
+          float(motor_torque(p0, 6.0, 1.0) -
+                (p0.k_u * 6.0 - p0.k_w * 1.0
+                 - p0.tau_c * _sign(1.0, p0.v_eps) - p0.b_v * 1.0)),
+          0.0, tol=1e-12)
+
+    # The proxy motor_torque() uses when no transmitted torque is available is
+    # claimed to be EXACT for forward driving at steady state, where the motor
+    # supplies load plus friction. Check the algebra rather than trusting it:
+    # feed the proxy's own implied tau_t back in and the drive must reappear.
+    U = 6.0
+    tau_t = p.k_u * U / (1.0 + p.mu_load)
+    check("the proxy inverts the steady-state balance",
+          float(tau_t + p.mu_load * abs(tau_t)), p.k_u * U, tol=1e-12)
+
+    # The two figures the docstring uses to argue there is no forward/back
+    # asymmetry. Both are the SAME symmetric law evaluated at the two load
+    # levels the bench actually measured, and both have to land near the
+    # reported 28 % forward / 62 % back-driving for that argument to hold.
+    bench = Params(tau_c=0.186, mu_load=0.251)          # holdbi at 12 V
+    fwd_load = 0.877                                    # arm horizontal-ish
+    f_fwd = bench.tau_c + bench.mu_load * fwd_load
+    check("forward loss lands near the reported 28 %",
+          round(f_fwd / (fwd_load + f_fwd), 2), 0.32, tol=0.05)
+    bwd_load = 0.941 * 2.0 / math.pi                    # mean over a free swing
+    f_bwd = bench.tau_c + bench.mu_load * bwd_load
+    check("back-driving loss lands near the reported 62 %",
+          round(f_bwd / bwd_load, 2), 0.56, tol=0.08)
+
     # the transmission is dead inside the play and continuous at its edge
     check("no torque inside the backlash",
           float(transmitted(p, 0.4 * p.theta_bl, 0.0)), 0.0)
@@ -443,7 +572,8 @@ def _selftest() -> int:
     # vendor consistency: the free-running speed is U / k_e, less friction
     # target far enough away that it never arrives: what is wanted is the
     # terminal speed, which is where the back-EMF cancels the applied voltage
-    free = simulate(Params(J_l=1e-4, theta_bl=0.0, tau_c=0.0, b_v=0.0),
+    free = simulate(Params(J_l=1e-4, theta_bl=0.0, tau_c=0.0, b_v=0.0,
+                           mu_load=0.0),
                     np.full(1200, 60.0), 0.005, u_bat=12.0)
     check("terminal speed is U / k_e",
           round(float(np.max(free["w"])), 3), round(p.no_load_speed(12.0), 3),

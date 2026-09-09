@@ -84,6 +84,11 @@ import actuator as A                                                 # noqa: E40
 FIT = [("kt_eff", 0.05, 20.0), ("g_kp", 0.05, 500.0), ("g_ke", 0.005, 10.0),
        ("g_R", 0.005, 3.0),
        ("J_m", 1e-4, 0.2), ("tau_c", 1e-4, 1.0), ("b_v", 1e-5, 1.0),
+       # Friction per N*m carried. Bounded below 0.9 because at 1.0 the friction
+       # equals the torque being transmitted and the gearbox delivers nothing;
+       # the optimiser will happily walk there to absorb a missing term, which
+       # is precisely the failure this parameter was added to stop.
+       ("mu_load", 0.0, 0.9),
        ("deadband", 1e-5, 0.05), ("punch", 0.0, 0.5), ("theta_bl", 0.0, 0.05)]
 
 W_POS = math.radians(0.3)     # rad of position error worth one unit of residual
@@ -123,9 +128,23 @@ def _smooth(x, n=SMOOTH):
 class Run:
     """One trajectory, resampled onto a uniform grid the integrator can use."""
 
+    #: Trajectories that must never be truncated. `--seconds` exists because the
+    #: cost of a fit is wall-clock and most runs say what they have to say early,
+    #: but a run whose measurement is a DIFFERENCE between its first half and its
+    #: second is not shortened by cutting the tail, it is halved. `holdbi` walks
+    #: its ladder up and then down; cut 36 s to the default 25 and the descending
+    #: pass loses two thirds of its rungs, the two halves stop lining up, and
+    #: seed_from_holdbi silently finds fewer than four paired angles and declines.
+    #: That is exactly how it behaved when this class did not know about it —
+    #: no error, no warning, mu_load left sitting on its prior.
+    WHOLE_RUN = ("holdbi",)
+
     def __init__(self, name, meta, cols, seconds, fit_hz):
         t = np.asarray(cols["t"])
-        keep = t <= (t[0] + seconds)
+        if meta.get("trajectory", name).startswith(self.WHOLE_RUN):
+            keep = np.ones(len(t), bool)
+        else:
+            keep = t <= (t[0] + seconds)
         t = t[keep]
         dt = 1.0 / fit_hz
         grid = np.arange(t[0], t[-1], dt)
@@ -160,7 +179,7 @@ class Run:
         # selects mostly unsaturated samples and drags R with them.
         lr = cols.get("load_raw")
         if lr is None or len(lr) != len(keep):
-            self.duty = None
+            self.duty = self.duty_signed = None
         else:
             # `load_raw` is written in TWO conventions and the column name is
             # honest about neither. Servo.decode() applies registers.SIGN_BIT, so
@@ -187,6 +206,13 @@ class Run:
             v = np.asarray(lr, dtype=np.float64)[keep]
             mag = np.where(v < 0, -v, np.where(v >= 1024, v - 1024, v))
             self.duty = np.interp(grid, t, mag / 1000.0)
+            # The same recovery keeping the DIRECTION. Every pass below that
+            # divides a current wants the magnitude, but seed_from_holdbi wants
+            # the sign: its whole measurement is that the duty holding a given
+            # angle differs depending on which side the joint arrived from, and
+            # an absolute value throws exactly that away.
+            sgn = np.where(v < 0, v, np.where(v >= 1024, -(v - 1024), v))
+            self.duty_signed = np.interp(grid, t, sgn / 1000.0)
 
         # PRESENT_CURRENT IS THE SUPPLY CURRENT, NOT THE MOTOR CURRENT, and every
         # pass below wants the motor's.  Behind a PWM bridge the motor sits at
@@ -233,10 +259,10 @@ def load_runs(d, seconds, fit_hz):
     return runs
 
 
-#: The trajectory names the analytic passes (seed_from_freeswing,
-#: analyse_holds) actually select on. Everything else in the directory reaches
-#: the objective only through the --refine pass.
-ANALYTIC_TRAJECTORIES = {"freeswing", "hold"}
+#: The trajectory names the analytic passes (seed_from_holdbi,
+#: seed_from_freeswing, seed_from_holds) actually select on. Everything else in
+#: the directory reaches the objective only through the --refine pass.
+ANALYTIC_TRAJECTORIES = {"freeswing", "hold", "holdbi"}
 
 
 def check_identifiable(runs) -> list[str]:
@@ -361,6 +387,129 @@ def seed_from_freeswing(runs, p: A.Params) -> A.Params:
                   "swing with a lighter, shorter arm.")
         return A.Params(**{**p.__dict__, "J_m": J_m})
     return p
+
+
+def seed_from_holdbi(runs, p: A.Params) -> A.Params:
+    """tau_c and mu_load, from the hold ladder walked in BOTH directions.
+
+    This is the only pass here that measures rather than fits, and it is the
+    only one that can see load-dependent friction at all. A static hold does not
+    settle at zero net torque, it settles wherever friction happens to balance
+    the rest, so the duty it holds depends on which side the joint arrived from.
+    Half the difference between the two approaches IS the friction at that load;
+    the mean is the torque with friction removed. Every other pass in this file
+    sees only one of those and has to guess how it splits.
+
+    Anchored to GRAVITY, not to k_u, and that is the whole point of doing it this
+    way. m*g*r*sin(q) is known exactly; k_u is the parameter that absorbs missing
+    friction and is inflated by a factor nobody has pinned down (the fit's
+    implied stall is 4.23 N*m against a spec 2.94). Seeding a friction term off
+    k_u would be circular. So both friction and gravity are measured in the same
+    duty*volt units within one run, and the ratio between them converts to N*m
+    with no electrical parameter involved.
+
+    Nothing here needs an integration, a voltage sweep or a prior, so it runs
+    FIRST — before the free swing, which subtracts tau_c to get its driving
+    torque and had been using a value roughly half this one.
+    """
+    per_run = []
+    for r in runs:
+        if r.trajectory != "holdbi" or r.mass <= 0 or r.radius <= 0:
+            continue
+        if r.duty is None:
+            continue
+        du = r.duty_signed * r.u_bat
+        mgr = r.mass * 9.80665 * r.radius
+        step = np.flatnonzero(np.abs(np.diff(r.target)) > 1e-6)
+        edges = np.concatenate(([0], step + 1, [len(r.target)]))
+        seg = []
+        for a_, b_ in zip(edges[:-1], edges[1:]):
+            n = b_ - a_
+            if n < 20:
+                continue
+            sl = slice(a_ + int(0.6 * n), b_)
+            seg.append((round(float(np.mean(r.target[sl])), 2),
+                        float(np.mean(r.q[sl])), float(np.mean(du[sl]))))
+        if len(seg) < 6:
+            continue
+        # The two passes are keyed by COMMANDED angle, not by index: each starts
+        # one rung outside the ladder so its first measured angle is approached
+        # from the right side, so the halves are offset by one and zipping them
+        # pairs every rung with its neighbour.
+        half = len(seg) // 2
+        up = {a: (q, d) for a, q, d in seg[:half]}
+        dn = {a: (q, d) for a, q, d in seg[half:]}
+        ang = sorted(set(up) & set(dn))
+        if len(ang) < 4:
+            continue
+        qm = np.array([(up[a][0] + dn[a][0]) / 2 for a in ang])
+        mean = np.array([(up[a][1] + dn[a][1]) / 2 for a in ang])
+        fric = np.array([abs(up[a][1] - dn[a][1]) / 2 for a in ang])
+        # duty*volts per N*m, from this run's own gravity — the conversion
+        slope = float(np.polyfit(np.sin(qm), -mean, 1)[0])
+        if abs(slope) < 1e-9:
+            continue
+        k_t = mgr / slope                       # N*m per duty*volt
+        tau = mgr * np.abs(np.sin(qm))
+        mu, tc = np.polyfit(tau, fric * k_t, 1)
+        per_run.append((float(tc), float(mu), float(k_t),
+                        float(np.mean(r.u_bat)),
+                        float(np.median(fric)), float(np.max(tau))))
+    if not per_run:
+        return p
+    a = np.array(per_run)
+    tc, mu = float(np.median(a[:, 0])), float(np.median(a[:, 1]))
+    print(f"  hold ladder, both approaches ({len(per_run)} runs at "
+          f"{', '.join(f'{v:.0f} V' for v in a[:, 3])}):")
+    print(f"    tau_c {tc:.4f} N*m   mu_load {mu:.4f} N*m per N*m carried   "
+          f"(spread {np.ptp(a[:, 0]):.4f} / {np.ptp(a[:, 1]):.4f})")
+
+    # DECLINE if the hysteresis is at the noise floor, and decline LOUDLY: a
+    # near-zero reading here is not "this gearbox is smooth", it is "the
+    # measurement did not resolve". PRESENT_LOAD is quantised, and half the
+    # difference of two quantised numbers has a floor of its own — on the light
+    # arm (0.19 N*m of load against 0.19 of friction) the gravity column came
+    # back non-monotonic, and a fit through it means nothing.
+    #
+    # Getting this wrong is worse than not running at all, because tau_c would
+    # be seeded near ZERO over a perfectly reasonable prior, and the free swing
+    # divides by (m*g*r*sin q0 - tau_c): measured on this file's own synthetic
+    # data, which has no static friction by construction, that pushed J_m from
+    # 0.017 to 0.023 and tau_c to a third of the truth. A seed that can be wrong
+    # in that direction has to be able to say no.
+    quantum = float(np.median(a[:, 4]))          # median friction, duty*volts
+    biggest = float(np.median(a[:, 5]))          # median max load, N*m
+    if tc <= 0.0 or mu <= 0.0 or tc + mu * biggest < 0.05 * biggest:
+        print(f"    !! that is under 5 % of the {biggest:.2f} N*m this ladder "
+              f"carries, i.e. no resolvable hysteresis. NOT seeding tau_c or "
+              f"mu_load.\n"
+              f"       On hardware this cannot happen — a real gearbox holding "
+              f"{biggest:.2f} N*m has friction. It means either the duty column "
+              f"is at its quantisation floor (a light arm), or the data came "
+              f"from a model with no static friction, which actuator.py's "
+              f"tanh(w/v_eps) is (see PLAN.md step 2b).")
+        # mu_load goes to ZERO, not left at the Params default. This pass is its
+        # only source, so declining means there is no evidence for it, and an
+        # unmeasured 0.28 is not a safe fallback: the free swing is a
+        # BACK-DRIVING run whose load varies through the fall, so an assumed
+        # load-dependent friction lands straight on J_m. Measured on the
+        # selftest, which is exactly this case: carrying the default pushed J_m
+        # from 0.0047 to 0.0070 against a truth of 0.0042. Zero reproduces the
+        # law as it was before this term existed, which actuator._selftest()
+        # asserts explicitly.
+        return A.Params(**{**p.__dict__, "mu_load": 0.0})
+    if mu <= 0.0:
+        print("    mu_load came out non-positive — friction is not growing with "
+              "load in this data. Left at its prior rather than clamped to zero.")
+        return A.Params(**{**p.__dict__, "tau_c": max(1e-4, tc)})
+    # Friction that meets or exceeds the torque carried is a gearbox that cannot
+    # transmit anything, and the bound in FIT says so; a value near it means the
+    # ladder was measuring something other than friction.
+    if mu > 0.9:
+        print("    !! mu_load past 0.9: friction would exceed the load it "
+              "carries. Not seeding it.")
+        return A.Params(**{**p.__dict__, "tau_c": max(1e-4, tc)})
+    return A.Params(**{**p.__dict__, "tau_c": max(1e-4, tc), "mu_load": mu})
 
 
 def seed_from_holds(runs, p: A.Params) -> A.Params:
@@ -640,7 +789,8 @@ def seed_from_reversal(runs, p: A.Params) -> A.Params:
 # ------------------------------------------------------------------- fit
 def to_vec(p: A.Params) -> np.ndarray:
     return np.array([p.k_u * p.R, p.kp / p.R, p.k_e / p.R, 1.0 / p.R,
-                     p.J_m, p.tau_c, p.b_v, p.deadband, p.punch, p.theta_bl])
+                     p.J_m, p.tau_c, p.b_v, p.mu_load,
+                     p.deadband, p.punch, p.theta_bl])
 
 
 def to_params(x, base: A.Params) -> A.Params:
@@ -649,8 +799,8 @@ def to_params(x, base: A.Params) -> A.Params:
     R = 1.0 / g_R
     d = dict(base.__dict__)
     d.update(R=R, kp=g_kp * R, k_e=g_ke * R, k_u=kt * g_R,
-             J_m=x[4], tau_c=x[5], b_v=x[6],
-             deadband=x[7], punch=x[8], theta_bl=x[9])
+             J_m=x[4], tau_c=x[5], b_v=x[6], mu_load=x[7],
+             deadband=x[8], punch=x[9], theta_bl=x[10])
     return A.Params(**d)
 
 
@@ -725,6 +875,10 @@ def fit(runs, holdout=None, dt_int=1e-4, max_nfev=200, base=None,
     test = [r for r in runs if r not in train]
     print(f"\nseeding from {len(train)} runs "
           f"({', '.join(sorted({r.trajectory for r in train}))})")
+    # First: it depends on no other parameter, and the free swing below
+    # SUBTRACTS tau_c to get its driving torque — it had been using a value
+    # roughly half of what the bidirectional ladder measures.
+    base = seed_from_holdbi(train, base)
     base = seed_from_freeswing(train, base)
     base = seed_R_from_stationary(train, base)  # R where omega = 0, any duty
     base = seed_from_saturation(train, base)   # R first: the holds divide by it
@@ -791,14 +945,28 @@ def fit(runs, holdout=None, dt_int=1e-4, max_nfev=200, base=None,
     print(f"refining {len(FIT)} parameters ...")
     lo = np.array([l for _, l, _ in FIT])
     hi = np.array([h for _, _, h in FIT])
+    # Indexed BY NAME, not by position. Both of the lines below used to be
+    # literal offsets into FIT, and inserting mu_load in the middle of it broke
+    # them in different ways: `scale` stayed ten long against an eleven-long
+    # vector and Powell died on the broadcast, while the punch nudge silently
+    # started nudging the DEAD ZONE instead — the same edit, one crash and one
+    # wrong answer. A list whose order is load-bearing should not be indexed by
+    # counting.
+    at = {name: k for k, (name, _, _) in enumerate(FIT)}
     x0 = np.clip(to_vec(base), lo, hi)
-    x0[8] = max(x0[8], 0.01)          # punch off the bound, so it has a gradient
+    x0[at["punch"]] = max(x0[at["punch"]], 0.01)   # off the bound, for a gradient
     x0 = np.clip(x0, lo + 1e-9, hi - 1e-9)
 
     # Characteristic magnitude of each fit variable. Powell searches along
     # directions, so this is what stops it from taking a step in g_kp (order 10)
     # that is meaningless in J_m (order 0.005).
-    scale = np.array([0.5, 2.0, 0.2, 0.05, 0.005, 0.05, 0.02, 0.003, 0.03, 0.005])
+    SCALE = {"kt_eff": 0.5, "g_kp": 2.0, "g_ke": 0.2, "g_R": 0.05, "J_m": 0.005,
+             "tau_c": 0.05, "b_v": 0.02, "mu_load": 0.05, "deadband": 0.003,
+             "punch": 0.03, "theta_bl": 0.005}
+    missing = [n for n, _, _ in FIT if n not in SCALE]
+    if missing:
+        raise SystemExit(f"no Powell step size for {missing}; add it to SCALE")
+    scale = np.array([SCALE[n] for n, _, _ in FIT])
 
     # The refinement runs on a SUBSET: one run per (trajectory, voltage) family,
     # at most `n_refine` of them. Every evaluation integrates every run at 0.1 ms,
@@ -867,8 +1035,21 @@ def _selftest(dt_int=1e-4) -> int:
     very model being fitted, no amount of real data will recover it either —
     the experiment design is wrong, not the servo.
     """
+    # mu_load = 0 here, and it is the one parameter this test CANNOT exercise.
+    # Not an oversight and not a value chosen to be easy to recover: the term is
+    # measured from the difference between a hold approached from below and one
+    # approached from above, and this model has no static friction to create that
+    # difference — actuator._sign() is tanh(w/v_eps), which is exactly zero at
+    # rest (PLAN.md step 2b). So a non-zero mu_load here would be generated into
+    # the data, be invisible to the pass that exists to measure it, and land on
+    # J_m through the free swing instead: measured, J_m went 0.0042 -> 0.0070.
+    # Setting it to zero keeps this test honest about what it covers. The
+    # hardware number (0.286, three voltages) is in
+    # ST3215_STS3215_measured_parameters.md, and bench/hysteresis.py reproduces
+    # it from the raw csv without going through any of this file.
     truth = A.Params(R=6.2, k_e=2.10, k_u=0.190, J_m=0.0042, tau_c=0.075,
-                     b_v=0.030, kp=48.0, deadband=3 * A.ENC_STEP_RAD,
+                     b_v=0.030, mu_load=0.0, kp=48.0,
+                     deadband=3 * A.ENC_STEP_RAD,
                      punch=0.03, theta_bl=math.radians(0.42))
     rng = np.random.default_rng(0)
     tmp = os.path.join(os.environ.get("TMPDIR", "/tmp"), "bam_selftest")
@@ -887,11 +1068,20 @@ def _selftest(dt_int=1e-4) -> int:
     # long one, where torque is what is being measured
     plans += [("freeswing", 12.6, 0.25, 0.06), ("freeswing", 12.6, 0.50, 0.12),
               ("triangle", 12.6, 0.50, 0.15), ("reversal", 12.6, 0.50, 0.15)]
+    # The bidirectional ladder, on the heavy arm at all three voltages, because
+    # it is the only run that carries mu_load. It also has to survive the 8 s
+    # truncation below, which would cut the descending pass off entirely and
+    # leave the new term untested by the test that exists to test it — so it
+    # runs at a shorter DWELL rather than for a shorter time.
+    plans += [("holdbi", v, 0.50, 0.15) for v in (12.6, 11.1, 9.9)]
 
     import sweep
     for traj, volts, mass, radius in plans:
-        name, T, fn, torque_all = sweep.TRAJ[traj](1.4)
-        T = min(T, 8.0)
+        if traj == "holdbi":
+            name, T, fn, torque_all = sweep.traj_holdbi(1.4, dwell=0.8)
+        else:
+            name, T, fn, torque_all = sweep.TRAJ[traj](1.4)
+            T = min(T, 8.0)
         t = np.arange(0, T, dt)
         target = np.array([fn(float(x)) for x in t])
         on = np.ones(len(t), bool)
@@ -950,6 +1140,19 @@ def _selftest(dt_int=1e-4) -> int:
     identified = {"R": .25, "k_e": .30, "k_u": .20, "k_u*R": .12,
                   "kp": .35, "J_m": .35, "tau_c": .40}
     weak = {
+        "mu_load": "the bidirectional ladder measures it on HARDWARE (0.25-0.30 "
+                   "across three voltages, robot/bench/hysteresis.py) but it is "
+                   "not recoverable from this model's own output, and that is a "
+                   "statement about the MODEL rather than the experiment. "
+                   "actuator._sign() is tanh(w/v_eps), which is exactly zero at "
+                   "rest, so the simulated servo has no static friction: a hold "
+                   "approached from below and from above settles at the same "
+                   "duty (measured, half-difference 0.00 and 0.03 V against the "
+                   "real servo's 0.29), and the approach-dependent difference "
+                   "the pass reads is not there to be read. The term is still "
+                   "live in every run where the joint MOVES, which is where it "
+                   "takes the load off k_u. Fixing the rest case needs a "
+                   "friction that can hold at w = 0 - see PLAN.md step 2b",
         "b_v": "the free swing does not oscillate at these friction levels, so "
                "it carries no viscous information, and the driven runs see it "
                "only through the smoothed residual",
@@ -1044,7 +1247,7 @@ def main():
     # are what ships, and the combinations are what the bench actually measured,
     # so a reader can tell a well-determined ratio from a split that rests on a
     # poorly-conditioned g_R.
-    for n in ("R", "k_e", "k_u", "kp", "J_m", "tau_c", "b_v",
+    for n in ("R", "k_e", "k_u", "kp", "J_m", "tau_c", "b_v", "mu_load",
               "deadband", "punch", "theta_bl"):
         print(f"  {n:<12} {getattr(p, n):.5f}")
     print(f"  {'kt_eff':<12} {p.k_u * p.R:.5f}   (= k_u*R, the hold slope)")

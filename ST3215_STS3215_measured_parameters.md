@@ -23,12 +23,12 @@ All values are **at the output shaft** (i.e. after the 1:345 reduction), SI unit
 | quantity | measured | vendor / prior | how |
 |---|---|---|---|
 | Terminal resistance `R` | **≈ 4.0 Ω** (3.84 – 4.4) | 4.44 (12 V ÷ 2.7 A) | four routes, below |
-| Torque constant `k_t` | **1.12 N·m/A** (1.17 on the clean branch) | 1.09 (2.94 N·m ÷ 2.7 A) | hold ladder, corrected motor current |
+| Torque constant `k_t` | **2.39 N·m/A** — *see the warning below* | 1.09 (2.94 N·m ÷ 2.7 A) | friction-cancelled paired holds |
 | Back-EMF constant `k_e` | **2.13 V·s/rad** | 2.55 (12 ÷ 4.71) | blocked-output stall, across speeds |
 | No-load speed | **5.64 rad/s @ 12 V** | 4.71 | derived from `k_e` |
-| **Gearbox efficiency η** | **0.44 – 0.53** | 0.43 (implied by the 3 specs) | `k_t / k_e` |
-| Reflected inertia `J_m` | **0.028 – 0.042 kg·m²** | 0.008 was a guess | two arms, free swing |
-| Coulomb friction `τ_c` | **0.16 – 0.19 N·m** | — | two ladders, both approaches |
+| **Gearbox efficiency η** | *withdrawn* — it is `k_t/k_e` and `k_t` is flagged | 0.43 (implied by the 3 specs) | see the warning |
+| Reflected inertia `J_m` | **0.0165 kg·m²** | 0.008 was a guess | free swing, at the corrected `τ_c` |
+| Coulomb friction `τ_c` | **0.18 N·m** | — | two ladders + free swing, agreeing |
 | Viscous friction `b_v` | **0.06 ± 0.07 N·m·s/rad** — *unresolved* | — | speed ladder minus back-EMF |
 | Total speed-proportional torque | **1.37 N·m·s/rad** (`b_v + k_t·k_e`) | — | speed ladder, 3 voltages |
 | Static breakaway `τ_s` | **0.23 – 0.35 N·m** | — | bracketed, hold + release |
@@ -46,6 +46,29 @@ P_COEF 32   D_COEF 32   I_COEF 0   MODE 0 (position)   ACCELERATION 0
 CW_DEAD 1   CCW_DEAD 1  STARTUP_FORCE 16   TORQUE_LIMIT 1000   MAX_TORQUE 1000
 PROTECTION_CURRENT 310  OVERLOAD_TORQUE 80  PROTECTIVE_TORQUE 20  OFFSET 85
 ```
+
+> ### ⚠ The torque constant does not reconcile with the datasheet, by 2.2×
+>
+> Measuring it properly made it worse, which is why it is flagged rather than
+> quietly averaged. Cancelling friction with the bidirectional hold ladder — the
+> right way to measure a torque constant, since friction otherwise helps hold the
+> arm and reads as extra motor torque — gives **2.39 N·m/A through the current
+> channel and 2.38 through the duty channel**. Those agree with each other to
+> 0.3 %, and imply a stall of **7.4 N·m at 12 V** against the vendor's 2.94.
+>
+> The servo does not produce 7.4 N·m. Something between the registers and N·m is
+> mis-scaled by about 2.2×, and the two candidates are both listed under "What is
+> NOT measured here": `PRESENT_CURRENT`'s 6.5 mA LSB, which has only ever been
+> confirmed against vendor numbers, and `PRESENT_LOAD`'s per-mille scaling, if
+> 1000 is not 100 % duty. An external shunt or an INA226 settles it and would pin
+> `R`, `k_t` and the efficiency at once.
+>
+> **What this does and does not contaminate.** Every friction number in this
+> document is a RATIO between two quantities in the same register units,
+> converted to N·m through `m·g·r`, which is known exactly — so a constant scale
+> error cancels out of `τ_c`, `μ_load` and the speed-proportional total, and they
+> stand. `k_t`, `R`, `k_e`, the efficiency and any stall figure derived from them
+> do not. Do not size a joint off the 7.4.
 
 ---
 
@@ -214,12 +237,17 @@ the applied torque, against ~28 % forward-driving. Both are the same 1:345 stack
 
 ## Mechanical
 
-**Reflected inertia `J_m` = 0.028 – 0.042 kg·m²** at the output. This is the number to put
-in MuJoCo's `armature`. Common priors of 0.008 are **3–5× too low**.
+**Reflected inertia `J_m` = 0.0165 kg·m²** at the output. This is the number to put in
+MuJoCo's `armature`. Common priors of 0.008 are **2× too low**.
 
-The spread is honest: 0.028 from a full trajectory fit, 0.037–0.042 from two-arm free-swing
-release. Two arms whose `J_load` differ by only 2× cannot pin it better; a wider lever
-would.
+**This value replaces the 0.028–0.042 earlier editions gave, and the reason is a lesson
+about the measurement rather than a refinement of it.** A free swing gives
+`J = (m·g·r·sin q₀ − τ_c)/α` — the driving torque is gravity *minus friction* — so `J_m`
+inherits every error in `τ_c` amplified by the ratio of the two. When the bidirectional
+ladder put `τ_c` at 0.18 instead of 0.08, the driving torque nearly halved and `J_m` came
+down with it. The old range was not measured against a wrong servo; it was measured
+against a friction estimate half the real size. Anyone quoting a free-swing inertia should
+say which `τ_c` it was computed against.
 
 Sanity check for how dominant this is: at 1:345 the reflected rotor inertia is **~73×** a
 typical small link's own inertia. In a legged robot it, not the leg, sets the joint

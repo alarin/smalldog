@@ -665,6 +665,7 @@ order, because the analytic passes are where the identification actually happens
 
 | pass | gives | from |
 |---|---|---|
+| **hold ladder, both ways** | **`tau_c`, `mu_load`** | **the up/down difference at each angle — a measurement, not a fit** |
 | free swing | `J_m`, `tau_c` | release acceleration, or the period if it oscillates |
 | holds | `k_u·R`, `kp/R`, dead-zone intercept | two linear regressions at ω = 0 |
 | saturation | `1/R`, `k_e/R` | one regression over the samples where the duty is pinned |
@@ -712,6 +713,79 @@ need. Run them in full on hardware.
 is worth more than it looks: if a parameter cannot be recovered from noise-free
 data produced by the very model being fitted, no amount of real data will recover
 it either — the trajectory set is wrong, not the servo.
+
+**One entry in that report now means the opposite of the others, and it is worth
+reading the distinction.** `mu_load` is measured cleanly on hardware and is *not*
+recoverable from synthetic data — so for once the self-test is indicting the
+MODEL rather than the experiment. See "The model has no static friction" below.
+
+### The load-dependent friction term, and what it moved
+
+`actuator.Params.mu_load` — N·m of friction per N·m crossing the gearbox — went in
+on 2026-09-09 (PLAN.md step 2), with `fit_bam.seed_from_holdbi` measuring it off
+the bidirectional ladder. It runs **first** among the analytic passes, because it
+needs nothing and the free swing needs it: that pass gets `J_m` from
+`(m·g·r·sin q₀ − tau_c)/α` and had been subtracting a `tau_c` half the real size.
+
+| | before | after |
+|---|---|---|
+| `tau_c` | 0.084 | **0.184** |
+| `J_m` | 0.0240 | **0.0165** |
+| `mu_load` | — | **0.286** |
+| position RMS | 8.96° | 8.84° |
+| current RMS | 1.25 A | 1.01 A |
+
+The `tau_c` number matters more than its size: the ladder and the free-swing fit
+are independent routes that had disagreed by 2×, and they now land on **0.184 and
+0.186**. `J_m` moving is a consequence, not a second finding — and it means the
+**0.024–0.042 range this project has been quoting for `MJ_ARMATURE` is void**,
+because it was computed against the old `tau_c`.
+
+**One trap this cost, and the guard now in `Run`.** `--seconds` truncates every
+run, because the cost of a fit is wall-clock and most runs say what they have to
+say early. `holdbi` is 36 s against a default of 25, so its descending pass lost
+two thirds of its rungs, the two halves stopped lining up, and the pass silently
+found fewer than four paired angles and declined — no error, `mu_load` left on its
+prior, and a fit that looked fine. A run whose measurement is a DIFFERENCE between
+its first half and its second is not shortened by truncation, it is halved.
+`Run.WHOLE_RUN` now names those.
+
+### The model has no static friction, and that is the next defect
+
+`actuator._sign()` is `tanh(w/v_eps)`, which is exactly **zero at rest** — so the
+simulated servo has no stiction. A hold approached from below and from above
+settles at the same duty: measured on the model, a half-difference of 0.00 and
+0.03 V against the real servo's 0.29. The term is live wherever the joint moves,
+which is where it takes load off the fit; it is the rest case that is absent, and
+it is why `--selftest` cannot recover `mu_load` from the model's own output.
+
+This also means the model cannot reproduce something this project already
+documented — that commanded corrections below the breakaway do not move the joint
+at all. PLAN.md step 2b has the shape of the fix and the reason it is not a
+one-liner: `simulate()` has every torque to hand, but `rl/env/walk.py` does not,
+because MuJoCo owns the transmission there.
+
+### The torque constant is 2.2× the datasheet, and it is not friction
+
+The plan assumed the inflated `k_u` — a fitted stall of 4.23 N·m against a spec
+2.94 — was missing friction being absorbed. It is not. **Cancelling friction
+properly makes it worse:** the friction-cancelled paired holds imply 7.4 N·m.
+
+| route | torque constant | implied stall @ 12 V |
+|---|---|---|
+| paired holds, current channel | 2.394 N·m/A | 7.40 |
+| duty channel × R | 2.382 N·m/A | 7.37 |
+| unidirectional holds (the old route) | 1.368 N·m/A | 4.23 |
+| vendor spec | 1.089 N·m/A | 2.94 |
+
+Two routes agreeing to 0.3 % and disagreeing with the vendor by 2.2× is a scale
+error, not noise, and both candidates are already on this project's "not measured"
+list: `PRESENT_CURRENT`'s 6.5 mA LSB, confirmed only against vendor numbers, and
+`PRESENT_LOAD`'s per-mille scaling if 1000 is not 100 % duty. An external shunt or
+an INA226 settles it. **`tau_c` and `mu_load` are immune** — both are ratios of
+quantities in the same register units converted through `m·g·r`, so a constant
+scale error cancels — but no stall figure from this fit should be read as a torque
+the robot has.
 
 ### Two things the fit cannot find, and the ladders that measure them instead
 
@@ -775,10 +849,14 @@ in the directory that no analytic pass reads, and says exactly that.
 
 And with `--refine` on, the enlarged set does not converge, it *diverges*: `kp` pinned at
 2017, `k_e` at 11.8, `punch` on its bound, an implied no-load speed of 1.02 rad/s against
-a spec 4.71. That is the same diagnosis as the pinned `b_v`, stated louder — put steady
-speeds in front of a model with no term that can hold them and the optimiser breaks
-physics instead. **`PLAN.md` step 2 is a prerequisite for using this data, not an
-improvement on it.**
+a spec 4.71.
+
+**That was read as missing friction, and it is not.** Step 2 added the load-dependent
+term the same day and re-ran it: `kp` still pinned (1887), `k_e` still 11.3, no-load still
+1.06 rad/s. The character of the divergence did not change at all. `kp` railing at its
+bound while `k_e` grows to compensate is a fit reaching for torque the electrical model
+cannot supply — the same shape as the torque-constant discrepancy below, and the same
+prime suspect. Do not expect a friction term to fix it.
 
 One loose end, flagged rather than guessed: at a commanded 2.0 rad/s the servo reaches
 1.8 and no more, sitting at 0.74 rad of position error **without the duty ever pinning**,
