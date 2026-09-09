@@ -25,6 +25,7 @@ USER = os.path.expanduser("~/Library/Application Support/OrcaSlicer/user/default
 HERE = os.path.dirname(os.path.abspath(__file__))
 STL  = os.path.join(HERE, "..", "out", "stl")
 STL2 = os.path.join(HERE, "..", "out", "bench", "stl")   # bench_rig.py, not the robot
+STL3 = os.path.join(HERE, "..", "out", "torque", "stl")  # torque_rig.py, likewise
 GOUT = os.path.join(HERE, "..", "out", "gcode")
 
 # what the printed BOM in README.md asks for on the leg parts
@@ -107,7 +108,7 @@ def main():
                          "(default: out/stl then out/bench/stl)")
     a = ap.parse_args()
 
-    dirs = a.stl_dir or [STL, STL2]
+    dirs = a.stl_dir or [STL, STL2, STL3]
     stls = []
     for p in a.parts:
         f = next((os.path.join(d, p + ".stl") for d in dirs
