@@ -233,6 +233,12 @@ def load_runs(d, seconds, fit_hz):
     return runs
 
 
+#: The trajectory names the analytic passes (seed_from_freeswing,
+#: analyse_holds) actually select on. Everything else in the directory reaches
+#: the objective only through the --refine pass.
+ANALYTIC_TRAJECTORIES = {"freeswing", "hold"}
+
+
 def check_identifiable(runs) -> list[str]:
     problems = []
     volts = {round(float(r.meta.get("psu_volts", 0)), 1) for r in runs}
@@ -255,6 +261,22 @@ def check_identifiable(runs) -> list[str]:
             "the leg's whole dynamics rests on.")
     if not any(r.trajectory == "hold" for r in runs):
         problems.append("no hold run: the torque constant loses its clean anchor.")
+    # A trajectory nobody reads is worse than a missing one: it costs bench time,
+    # it sits in the directory looking like evidence, and the fit comes out
+    # bit-identical to the run without it. Measured 2026-09-09 — the holdbi and
+    # speed ladders PLAN.md step 1 asks for were captured at three voltages, and
+    # every fitted parameter matched a fit on the old data to five decimals,
+    # because the analytic passes select on the two names below and the global
+    # refinement only runs under --refine.
+    seen = {r.trajectory for r in runs}
+    unread = sorted(t for t in seen if t not in ANALYTIC_TRAJECTORIES)
+    if unread:
+        problems.append(
+            "the analytic passes read only " + " and ".join(sorted(ANALYTIC_TRAJECTORIES))
+            + f" — {', '.join(unread)} reach the fit ONLY under --refine, and are "
+            f"ignored entirely without it. That is not a warning about coverage: a "
+            f"run that no pass consumes changes no parameter, so do not read an "
+            f"unchanged fit as confirmation that the new data agreed with the old.")
     regs = {json.dumps(r.meta.get("registers"), sort_keys=True) for r in runs}
     if len(regs) > 1:
         problems.append(

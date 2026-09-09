@@ -28,12 +28,13 @@ All values are **at the output shaft** (i.e. after the 1:345 reduction), SI unit
 | No-load speed | **5.64 rad/s @ 12 V** | 4.71 | derived from `k_e` |
 | **Gearbox efficiency η** | **0.44 – 0.53** | 0.43 (implied by the 3 specs) | `k_t / k_e` |
 | Reflected inertia `J_m` | **0.028 – 0.042 kg·m²** | 0.008 was a guess | two arms, free swing |
-| Coulomb friction `τ_c` | **0.08 – 0.09 N·m** | — | four independent methods |
-| Viscous friction `b_v` | **≈ 0.115 N·m·s/rad** | — | two-arm free-swing energy |
+| Coulomb friction `τ_c` | **0.16 – 0.19 N·m** | — | two ladders, both approaches |
+| Viscous friction `b_v` | **0.06 ± 0.07 N·m·s/rad** — *unresolved* | — | speed ladder minus back-EMF |
+| Total speed-proportional torque | **1.37 N·m·s/rad** (`b_v + k_t·k_e`) | — | speed ladder, 3 voltages |
 | Static breakaway `τ_s` | **0.23 – 0.35 N·m** | — | bracketed, hold + release |
-| Load-dependent friction | **+38 % of motor torque** | not modelled anywhere | hold ladder, both voltages |
+| Load-dependent friction | **+0.28 N·m per N·m carried** | not modelled anywhere | bidirectional hold ladder |
 | Back-driving loss | **≈ 62 %** of applied torque | — | free-swing energy balance |
-| Position-loop stiffness | **28.8 N·m/rad @ 12.1 V**<br>**24.5 N·m/rad @ 10.1 V** | — | steady-state droop |
+| Position-loop stiffness | **40.9 N·m/rad @ 12 V**<br>**34.4 @ 10 V, 28.1 @ 8 V** | — | droop, friction cancelled |
 | Backlash | **0.50°** at the output | ≤ 0.5° | reversal hysteresis |
 | Position dead zone | **0.36°** | `CW_DEAD`/`CCW_DEAD` = 1 count | reversal |
 
@@ -132,36 +133,82 @@ expect an inflated torque constant until you add that term.
 
 ## Friction — and why one number is not enough
 
-**Coulomb `τ_c` ≈ 0.08–0.09 N·m**, from four methods that do not share assumptions:
+Every number below comes from a **difference between two runs of the same trajectory**,
+not from a fit. That matters more than it sounds: a static hold does not settle at zero
+net torque, it settles wherever friction happens to balance the rest, so the duty it holds
+depends on which side the joint arrived from. Walk a ladder of angles once and every rung
+sits somewhere inside that band with nothing in the log to say where; walk it up and then
+down and half the difference *is* the friction while the mean is the torque without it.
+The same trick on a triangle at five periods gives the speed dependence. Both ladders are
+in `robot/bench/sweep.py` as `holdbi` and `speed`, and `robot/bench/hysteresis.py` prints
+the table below from the raw CSVs in one command.
 
-| method | `τ_c` |
-|---|---|
-| Energy balance over two free swings, solving `τ_c` and `b_v` together | 0.086 |
-| Hold-ladder intercept (gravity torque extrapolated to zero duty) | 0.079 (12 V), 0.070 (10 V) |
-| Release acceleration at ω = 0, two arms | 0.125 |
-| Full trajectory fit | 0.085 |
+| | 8 V | 10 V | 12 V |
+|---|---|---|---|
+| effective torque constant, N·m per volt of motor drive | 0.636 | 0.611 | 0.596 |
+| friction mobilised at a hold, unloaded, N·m | 0.192 | 0.181 | 0.186 |
+| **…per N·m of load carried** | **0.286** | **0.295** | **0.251** |
+| kinetic Coulomb extrapolated to zero load, N·m | 0.161 | 0.160 | 0.168 |
+| total speed-proportional torque, N·m·s/rad | 1.403 | 1.364 | 1.334 |
 
-It is voltage-independent, as friction must be. **Watch out for the single-arm trap:** an
-energy balance over free-swing drops on *one* arm gives ≈ 0.28 N·m, because it bills the
-viscous loss to Coulomb. A slow heavy swing and a fast light one fit the same decay. Two
-arms at different speeds split them, and **the viscous half is the larger one** — 0.43 N·m
-at 4.7 rad/s against 0.09 of Coulomb.
+The right-hand four rows are friction and a torque constant, so they **must not** move with
+supply voltage, and they do not — 5–16 % across a 1.5× range, which is the error bar on the
+whole method. That invariance is the check that these are physical quantities and not
+artefacts of the loop.
 
-**Stiction is separate and ~3× larger**: 0.23–0.35 N·m. Consequences you will meet:
+**Coulomb `τ_c` ≈ 0.16 – 0.19 N·m**, and that is about **twice** what indirect methods give.
+The two ladders agree with each other closely — 0.187 N·m from the static band, 0.163 from
+the moving one — while a free-swing energy balance, a one-directional hold intercept and a
+full trajectory fit all land at 0.08–0.09. The direct measurement is the one to believe:
+each of the indirect three has somewhere else to put friction (`k_u`, `b_v`, the inertia)
+and the differential measurement does not. The older numbers are kept below for anyone
+comparing methods rather than servos.
+
+| method | `τ_c` | direct? |
+|---|---|---|
+| Bidirectional hold ladder, three voltages | **0.187** | yes |
+| Speed ladder intercept, three voltages | **0.163** | yes |
+| Release acceleration at ω = 0, two arms | 0.125 | partly |
+| Energy balance over two free swings | 0.086 | no |
+| Hold-ladder intercept, one approach only | 0.079 (12 V), 0.070 (10 V) | no |
+| Full trajectory fit | 0.085 | no |
+
+**Load-dependent friction — the term most models are missing, now measured rather than
+inferred.** Friction grows with the torque being transmitted, as gear-tooth normal forces
+do: **+0.28 N·m per N·m carried**, on top of the 0.19 N·m floor, so at the 0.88 N·m the
+long arm asks for, friction is 0.43 N·m — half the load again. This supersedes the
+"+38 % of motor torque" that earlier editions of this document inferred from a
+torque-vs-duty slope ratio; that route reads a one-directional ladder, which is exactly
+the measurement the approach direction contaminates. Expressed against motor torque
+instead of load it is about +22 %, so the direction of the correction is downward.
+
+**Stiction is separate and larger**: 0.23–0.35 N·m breakaway. Note that the 0.19 N·m above
+is not the same number and is not in conflict with it — a hold settles as soon as friction
+balances, so what it mobilises is bounded by breakaway rather than equal to it.
+Consequences you will meet:
 
 - With a 1 kg mass on a 45 mm arm the servo holds anywhere in a **±14° band** around
   vertical, torque off. *Where it comes to rest is not where it hangs* — do not calibrate a
   zero from it.
 - Small commanded corrections below the breakaway do not move the joint at all.
 
-**Load-dependent friction — the term most models are missing.** Friction is not constant;
-it grows with the torque being transmitted, as gear-tooth normal forces do. The hold
-ladder's torque-vs-duty slope is **1.38× steeper** than `k_u·U` predicts, at both voltages
-(1.40 at 12 V, 1.37 at 10 V), i.e. friction ≈ `τ_c + 0.38·τ_motor`.
+**Viscous friction `b_v` is NOT resolved here, and no amount of bench time on this rig will
+resolve it.** What the speed ladder measures cleanly is the *total* torque proportional to
+speed — **1.37 N·m·s/rad**, to 5 % across three voltages. That total is `b_v + k_t·k_e`, and
+back-EMF alone accounts for 1.31 of it (`k_e` = 2.13 × `k_t_eff` = 0.614), leaving
+**0.06 ± 0.07** for viscous friction: consistent with zero, and consistent with the 0.09–0.115
+the free swings imply. The reason is structural rather than a shortage of data — back-EMF
+and viscous friction each cost a motor voltage proportional to ω, and **neither depends on
+supply**, so the three-voltage sweep that separates every other electrical term does nothing
+at all here. Splitting them needs the motor current, and `PRESENT_CURRENT` gives that only
+as `d²·U/R` at a 6.5 mA LSB. **Use the total.** For a simulator it is the total that sets
+how the joint resists being moved, and putting all of it in one term or the other changes
+nothing a walking robot can feel.
 
-And it is **asymmetric**: back-driving the gearbox (the free swing, arm falling under
-gravity) loses **~62 %** of the applied torque, against ~28 % forward-driving. Both are the
-same 1:345 stack; a single `τ_c·sign(ω) + b_v·ω` law cannot express either one.
+**Back-driving is asymmetric**: the free swing, arm falling under gravity, loses **~62 %** of
+the applied torque, against ~28 % forward-driving. Both are the same 1:345 stack; a single
+`τ_c·sign(ω) + b_v·ω` law cannot express either that or the load dependence above.
+
 
 ---
 
@@ -198,15 +245,28 @@ The servo runs its own position loop; you are configuring it, not replacing it.
 
 | supply | stiffness | droop |
 |---|---|---|
-| 12.10 V | 28.8 N·m/rad | 1.99 °/N·m |
-| 10.09 V | 24.5 N·m/rad | 2.33 °/N·m |
+| 12 V | 40.9 N·m/rad | 1.40 °/N·m |
+| 10 V | 34.4 N·m/rad | 1.67 °/N·m |
+| 8 V | 28.1 N·m/rad | 2.04 °/N·m |
 
-Ratio 1.176 against a voltage ratio of 1.199 — linear, exactly as `duty = kp_reg·err` then
+Linear in supply — 3.44 N·m/rad per volt — exactly as `duty = kp_reg·err` then
 `τ = k_u·U·duty` predicts. **Your robot gets softer as its battery drains**, and a fixed
-`kp` in a simulator cannot represent that.
+`kp` in a simulator cannot represent that. Over a 3S pack's 12.6 → 9.9 V that is a 21 %
+change in stiffness with nothing else altered.
 
-For anyone matching a MuJoCo `position` actuator to this servo at 12 V: `kp ≈ 25–29
-N·m/rad` is a good number at `P_COEF` 32.
+**These are ~40 % stiffer than earlier editions of this document said** (28.8 N·m/rad at
+12.1 V, 24.5 at 10.1), and the older numbers were wrong rather than merely different. A
+one-directional hold ladder measures the total standing offset from target and calls it
+droop, but only part of that offset is elastic — the rest is the friction band, which does
+not restore and is not stiffness. Approaching every angle from both sides and taking the
+mean cancels the band and leaves the elastic part alone. The correction matters because it
+runs the wrong way for anyone matching a simulator: the servo is stiffer *and* has more
+friction than the single-approach reading suggests, and the two errors hide each other in
+any test that only looks at where the joint ends up.
+
+For anyone matching a MuJoCo `position` actuator to this servo at 12 V: `kp ≈ 41 N·m/rad`
+at `P_COEF` 32, **with a friction term** — without one, 25–29 is the value that reproduces
+the observed droop, and it will be too soft the moment the joint moves.
 
 **Dead zone 0.36°** at the output.
 
@@ -224,6 +284,11 @@ Stated so nobody quotes an absence as a value:
   resistance rises with temperature and this does not capture that.
 - **Sample-to-sample spread** — one servo. Gearbox friction in particular is exactly the
   kind of parameter that varies between units.
+- **The `b_v` / `k_e` split** — see the friction section. Only the sum is measured, and this
+  is a structural limit of a bench with no external ammeter, not a gap that more runs close.
+- **Why the loop runs out of authority above ~1.8 rad/s** — the duty never pins, so it is
+  not the motor's ceiling. `D_COEF` is 32 and unmodelled, which would do exactly this, but
+  a run that separates a derivative term from an internal output clamp has not been taken.
 (The encoder question used to be listed here. It is answered — see below.)
 
 ---
@@ -235,13 +300,33 @@ weighed 1.053 kg disc bolted at a known radius. Two arms — 45 mm and 90 mm —
 single arm cannot separate inertia from friction. Logged at 200 Hz over a 1 Mbaud bus.
 
 Trajectories: free release from horizontal (inertia and friction, no motor torque);
-a ladder of held angles (static torque balance — the cleanest measurement here); steps;
-slow triangles through zero under load (backlash); reversals of shrinking amplitude (dead
-zone, stiction); a 0.2–8 Hz chirp (held out for validation).
+a ladder of held angles (static torque balance — the cleanest measurement here); **the same
+ladder walked up and then down, so every angle is reached from both sides** (friction, and
+the stiffness with friction removed); steps; slow triangles through zero under load
+(backlash); **the same triangle at five periods from 20 s down to 1 s, i.e. 0.1 to 2.0 rad/s**
+(the speed dependence — nothing else in the set holds a steady non-zero speed); reversals of
+shrinking amplitude (dead zone, stiction); a 0.2–8 Hz chirp (held out for validation).
 
-**Run the whole set at three supply voltages.** At one voltage the back-EMF damping and
-the viscous friction enter every equation as the same coefficient of ω, and no amount of
-data separates them. 12 / 10 / 8 V here.
+The two bold entries are what the friction section rests on, and they were added after the
+first full pass because a fit over the rest of the set could not find friction: it has three
+other places to put it and no way to tell them apart. **A differential measurement beats a
+fit here, and it costs ten minutes per voltage.**
+
+One caution on the fast end of the speed ladder: at a commanded 2.0 rad/s this servo does
+not track — it reaches 1.8 rad/s at 0.74 rad of position error, and it does so without the
+duty ever pinning, so it is not a torque ceiling in the usual sense. That row is the
+velocity ceiling, not a steady speed, and it is excluded from the regressions above.
+
+**Run the whole set at three supply voltages.** 12 / 10 / 8 V here. It is what makes the
+electrical parameters identifiable, and it is also the only check available on whether a
+number is physical at all: friction and a torque constant must not move with supply, so a
+row that does is a measurement problem. Every friction figure above is quoted at all three
+for that reason.
+
+What three voltages do **not** buy is the `b_v` / `k_e` split, and this document said for a
+while that they did. At a steady speed both cost a motor voltage proportional to ω and
+neither depends on supply, so they remain the same column of the regressor at eight volts
+as at twelve. Only the current separates them.
 
 Raw CSVs, the drive code and the fitting code are in this repository under `robot/bench/`.
 Each CSV carries its own metadata header — supply voltage, arm mass and radius, arm

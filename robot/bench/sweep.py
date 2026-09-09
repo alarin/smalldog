@@ -48,6 +48,19 @@ around that, not around covering the workspace:
   triangle   Slow, through zero, under load. The hysteresis loop at the reversal
              is the backlash, read off directly rather than inferred.
 
+  holdbi     The hold ladder walked twice, up then down, so every angle is
+             reached from both sides. At a hold the joint rests inside the
+             friction band rather than at zero net torque, so the duty depends on
+             the approach: the half-difference of the two is the friction at that
+             load and the mean is the motor torque without it. `hold` alone
+             cannot separate them and the fit puts the surplus into k_u.
+
+  speed      The same triangle at five periods, 20 down to 1 s, i.e. 0.1 to
+             2.0 rad/s. The only steady non-zero speeds in the set, and therefore
+             the only thing that can identify the viscous term: the free swing
+             was meant to, through its decay envelope, but at this friction level
+             the arm does not oscillate and b_v stays pinned on its bound.
+
   reversal   Dwell, reverse by a little, dwell. Stiction and the punch register,
              which decide whether small commanded corrections move the joint at
              all — the failure mode that makes a policy's fine control evaporate
@@ -84,6 +97,40 @@ def traj_hold(qmax):
             lambda t: steps[min(len(steps) - 1, int(t / 2.0))], True)
 
 
+def traj_holdbi(qmax, dwell=2.0):
+    """The hold ladder again, every angle approached from BELOW and then from ABOVE.
+
+    A static hold does not sit at zero net torque, it sits somewhere inside the
+    friction band: the inner loop stops as soon as motor + friction balances
+    gravity, so the duty it settles on depends on which side it arrived from.
+    Friction carries part of the load on one approach and fights it on the other,
+    and `traj_hold` walks its angles in one arbitrary order, so each of its rows
+    is somewhere in that band with nothing in the log to say where. Today's set
+    hits 0.6 rad from both sides by accident, and that single row is the only
+    place the hysteresis is visible at all.
+
+    Two monotone passes fix it with no extra machinery. The ascending pass
+    reaches every angle from below, the descending pass reaches every one from
+    above, and at a given angle the half-DIFFERENCE of the two duties is the
+    friction at that load while the MEAN is the motor torque with the friction
+    cancelled. That is the quantity step 2 needs: `actuator.py`'s friction law is
+    `tau_c*sign(w) + b_v*w`, both independent of load, so a friction that grows
+    with load has nowhere to go in the present fit except k_u — which is why the
+    stall it implies is 4.23 N*m against a spec 2.94.
+
+    Each pass starts one rung OUTSIDE the ladder so the first measured angle is
+    approached from the same side as every other one, and the ladder crosses zero
+    because the gravity torque changes sign there and the friction does not.
+    """
+    ladder = [a for a in (-0.9, -0.6, -0.3, 0.0, 0.3, 0.6, 0.9, 1.2)
+              if abs(a) <= qmax]
+    lead = 0.2
+    steps = [min(qmax, max(-qmax, q)) for q in
+             [ladder[0] - lead] + ladder + [ladder[-1] + lead] + ladder[::-1]]
+    return ("holdbi", dwell * len(steps),
+            lambda t: steps[min(len(steps) - 1, int(t / dwell))], True)
+
+
 def traj_step(qmax):
     amps = [a for a in (0.02, 0.05, 0.1, 0.2, 0.4, 0.8, 1.2) if a <= qmax]
     dwell = 1.5
@@ -110,6 +157,41 @@ def traj_triangle(qmax, amp=0.5, period=20.0, cycles=3):
         u = (t % period) / period
         return amp * (4 * u - 1 if u < 0.5 else 3 - 4 * u)
     return ("triangle", period * cycles, f, True)
+
+
+#: The speed ladder: the same triangle at these periods, in seconds. A triangle
+#: of amplitude SPEED_AMP has a constant |w| of 4*amp/T on each ramp, so with
+#: amp = 0.5 these five give 0.1 / 0.2 / 0.4 / 1.0 / 2.0 rad/s. Cycles are chosen
+#: to keep each run near 10-20 s: enough ramps to average, not enough to cook the
+#: servo at the fast end.
+SPEED_PERIODS = (20.0, 10.0, 5.0, 2.0, 1.0)
+SPEED_AMP = 0.5
+SPEED_CYCLES = {20.0: 1, 10.0: 2, 5.0: 3, 2.0: 5, 1.0: 8}
+
+
+def traj_speed(qmax, period=20.0):
+    """One triangle at one period — a ramp held at a CONSTANT speed, both ways.
+
+    This is the only trajectory in the set that offers a steady non-zero speed,
+    and b_v cannot be identified without one. The free swing was supposed to
+    supply it through the decay envelope, but at this friction level the arm does
+    not oscillate — it falls once and stops, so there is no envelope to separate
+    Coulomb from viscous and b_v sits pinned on its lower bound. `chirp` moves
+    fast but never steadily; `triangle` is steady but exists at one period only,
+    which gives one point on a line through two unknowns.
+
+    Five periods over a 20x speed range give that line. Sweeping through zero on
+    every ramp keeps the gravity torque varying across the stroke, so each speed
+    is sampled at a range of loads rather than one — which is what lets step 2's
+    load-dependent term be told apart from a plain viscous one.
+    """
+    amp = min(SPEED_AMP, qmax)
+    cycles = SPEED_CYCLES.get(period, 2)
+
+    def f(t):
+        u = (t % period) / period
+        return amp * (4 * u - 1 if u < 0.5 else 3 - 4 * u)
+    return (f"speed{period:g}s", period * cycles, f, True)
 
 
 def traj_reversal(qmax, base=0.6):
@@ -170,10 +252,12 @@ def traj_stall(qmax, q_block=0.0):
     return ("stall", 12.5, fn, True)
 
 
-TRAJ = {"hold": traj_hold, "stall": traj_stall, "step": traj_step, "chirp": traj_chirp,
+TRAJ = {"hold": traj_hold, "holdbi": traj_holdbi, "stall": traj_stall,
+        "step": traj_step, "chirp": traj_chirp, "speed": traj_speed,
         "triangle": traj_triangle, "reversal": traj_reversal,
         "freeswing": traj_freeswing}
-ORDER = ["freeswing", "hold", "step", "reversal", "triangle", "chirp"]
+ORDER = ["freeswing", "hold", "holdbi", "step", "reversal", "triangle", "speed",
+         "chirp"]
 
 
 # ------------------------------------------------------------------ running
@@ -373,6 +457,17 @@ def main():
     for name in (ORDER if a.traj == "all" else [a.traj]):
         if name not in TRAJ:
             raise SystemExit(f"unknown trajectory {name!r}")
+        if name == "speed":
+            # A family, not a trajectory: one csv per period, so each run holds a
+            # single steady speed and fit_bam can regress across them.
+            for period in SPEED_PERIODS:
+                tname, T, fn, torque_all = traj_speed(a.qmax, period)
+                print(f"\n{tname}: {T:g} s at {4 * min(SPEED_AMP, a.qmax) / period:g}"
+                      f" rad/s")
+                run_one(servo, tname, T, fn, torque_all, a, meta)
+                if not a.dry_run:
+                    time.sleep(3.0)
+            continue
         if name == "freeswing":
             tname, T, fn, torque_all = TRAJ[name](a.qmax, a.freeswing_start)
         elif name == "stall":

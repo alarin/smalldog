@@ -31,7 +31,11 @@ def write(path: str, meta: dict, rows: list[dict]) -> None:
     with open(path, "w", newline="") as f:
         for line in json.dumps(meta, indent=1, sort_keys=True).splitlines():
             f.write(f"# {line}\n")
-        w = csv.DictWriter(f, COLUMNS, extrasaction="ignore")
+        # LF, not the csv module's default CRLF. These files are versioned and
+        # .gitattributes forces `* text=auto eol=lf` so the mac, the WSL2 box and
+        # the Pi see identical bytes; writing CRLF here just makes git renormalise
+        # every run on the way in.
+        w = csv.DictWriter(f, COLUMNS, extrasaction="ignore", lineterminator="\n")
         w.writeheader()
         w.writerows(rows)
 

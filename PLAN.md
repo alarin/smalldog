@@ -18,7 +18,7 @@ project steps, not RL steps.
 | `ros2/` | generated from the CAD, trots in sim, terrain and course regressions baselined |
 | `rl/` | code complete, **never trained in earnest** — `params/st3215.json` is still vendor priors and `train_ppo.py` says so on every run |
 | `robot/` | the robot walks, tethered, on the bench at 2.55 kg with a 1 kg plate for ballast |
-| `robot/bench` | three-voltage identification set captured; the mechanical half is fitted and cross-validated, the electrical half is one model term short |
+| `robot/bench` | three-voltage identification set captured, **plus the two differential ladders of step 1 (2026-09-09)**; friction is now measured rather than fitted, and the electrical half is one model term short — step 2 |
 
 ## What each missing part gates
 
@@ -53,42 +53,77 @@ Installing it earlier costs mass in the wrong place and debugging surface for no
 
 # Steps 1–6 — nothing missing, do these now
 
-## 1. Finish the servo identification
+## 1. Finish the servo identification — **DONE 2026-09-09**
 
-Two runs, both small trajectory edits, both about five minutes per voltage at the bench.
+Both runs are in `bench/data/` at 8 / 10 / 12 V, 1.066 kg on the 90 mm arm:
+`sweep.py --traj holdbi` (the hold ladder up and then down, so every angle is reached
+from both sides) and `--traj speed` (the same triangle at 20 / 10 / 5 / 2 / 1 s, i.e.
+0.1 / 0.2 / 0.4 / 1.0 / 2.0 rad/s). `bench/hysteresis.py` reads them; the full write-up
+is `robot/README.md`, "Two things the fit cannot find", and the numbers are also in
+`ST3215_STS3215_measured_parameters.md`.
 
-- **A bidirectional hold ladder.** Every angle approached from above *and* from below. At a
-  static hold friction helps carry the load and its sign flips with approach direction, so
-  the half-difference in duty is friction at that load and the mean is the honest motor
-  torque. Today's ladder hits 0.6 rad both ways by accident and that one row is the only
-  place the hysteresis is visible.
-- **A triangle speed ladder** — the same triangle at periods 20 / 10 / 5 / 2 / 1 s, giving
-  0.1 / 0.2 / 0.4 / 1.0 / 2.0 rad/s.
+**The bidirectional ladder delivered what it promised, and more than was asked.**
+Friction at a hold is **0.19 N·m + 0.28 per N·m of load carried**, voltage-invariant to
+6 % and 16 % across a 1.5× supply range — the load-dependent term, measured directly for
+the first time rather than inferred from a slope ratio. It also caught a 40 % error
+nobody was looking for: the **position-loop stiffness is 40.9 N·m/rad at 12 V, not 28.8**.
+A one-directional ladder bills the friction band to elasticity, so the servo is both
+stiffer and rougher than the old reading said, and the two errors hide each other.
 
-**Why:** `b_v` is still pinned at its lower bound and `k_u` is inflated — the fit implies a
-stall of 4.23 N·m against a spec 2.94. The free swing cannot supply `b_v` because at this
-friction level the arm does not oscillate, so there is no decay envelope to separate
-Coulomb from viscous; only steady speeds can. And the inflated torque constant is the
-missing load-dependent friction coming out somewhere: at a hold, friction *helps*, so a
-model that cannot represent friction growing with load has nowhere to put the surplus
-except the motor.
+**The speed ladder worked and its premise did not.** It supplies steady speeds, five of
+them, and pins the total speed-proportional torque to 1.37 N·m·s/rad within 5 %. But that
+total is `b_v + k_t·k_e`, back-EMF alone accounts for 1.31 of it, and the remainder is
+0.06 ± 0.07 — consistent with zero. **This bench cannot split them and no further runs
+will.** Back-EMF and viscous friction each cost a motor voltage proportional to ω and
+neither depends on supply, so the voltage sweep that separates every other electrical
+term does nothing here; splitting them needs the motor current, which `PRESENT_CURRENT`
+gives only as `d²U/R` at a 6.5 mA LSB. The paragraph below that says "only steady speeds
+can" supply `b_v` was half right: steady speeds give the sum, and the sum is what a
+simulator needs anyway. **Use the total and stop trying to split it.**
+
+Two things this turned up that were not on anyone's list:
+
+- **A run no pass consumes changes no parameter.** The new data was captured, `fit_bam.py`
+  re-run, and every fitted parameter came back identical to five decimals to a fit on the
+  old data alone — the analytic passes select on `freeswing` and `hold`, so `holdbi` and
+  `speed` were read only under `--refine`, and not at all without it. `check_identifiable`
+  now names every trajectory in the directory that no analytic pass reads. **Do not read
+  an unchanged fit as agreement.**
+- **The servo runs out of authority at ~1.8 rad/s without the duty pinning** — 0.74 rad of
+  position error at a commanded 2.0 rad/s, at all three voltages. So it is not the motor's
+  ceiling. `D_COEF` is 32 and `actuator.py` models `kd = 0`, which would do exactly this,
+  but so would an internal output clamp; this data does not separate them. Worth one small
+  trajectory when someone is next at the bench, and worth knowing now because 1.8 rad/s is
+  inside where the 50 Hz policy commands.
 
 ## 2. Give `actuator.py` a load-dependent friction term
 
-**Why:** it is the largest thing the model is missing, and three independent measurements
-now agree it is real — the hold ladder's torque-vs-duty slope is 1.38× steeper than `k_u·U`
-predicts at both voltages, the free swings dissipate 62–65 % of the applied torque, and
-`actuator.py`'s own `eta = k_u·R/k_e` from the vendor specs says 57 %. Its law is
-`tau_c·sign(w) + b_v·w`, both independent of load. Until that term exists, step 1's numbers
-have nowhere to land and every fit will keep inflating `k_u` to absorb them.
+**Why:** it is the largest thing the model is missing, and after step 1 it is no longer
+an inference — the coefficient is **measured**: friction = `0.19 N·m + 0.28·|tau_load|`,
+from the bidirectional hold ladder at three voltages, holding to 6 % and 16 % across
+them. `actuator.py`'s law is `tau_c·sign(w) + b_v·w`, both independent of load, so this
+term has nowhere to go and the fit puts it in `k_u` — hence a fitted stall of 4.23 N·m
+against a spec 2.94. Two corroborating numbers that were the old argument and are now
+the sanity check: the free swings dissipate 62–65 % of the applied torque, and
+`actuator.py`'s own `eta = k_u·R/k_e` from the vendor specs says 57 %.
+
+**This is now blocking, not merely desirable.** With steady speeds in the data and no term
+that can hold them, `--refine` does not converge, it diverges: `kp` pinned at 2017, `k_e`
+at 11.8, `punch` on its bound, an implied no-load speed of 1.02 rad/s against a spec 4.71.
+Step 1's numbers cannot land anywhere until this exists.
 
 Note the asymmetry when writing it: forward-driving loses ~28 % of motor torque,
-back-driving ~62 %. Same gearbox, different direction.
+back-driving ~62 %. Same gearbox, different direction. And write it against **load**
+torque, which is what the ladder measures — expressed against motor torque the same
+measurement is about +22 %, not the +38 % the old slope-ratio inference gave.
 
 ## 3. Push the fitted numbers into the CAD and re-baseline
 
 `MJ_ARMATURE`, `MJ_DAMPING`, `MJ_FRICTIONLOSS` in `mini_dog.py` section 4, then
-`3d/CLAUDE.md` steps 5 and 6 in the same pass.
+`3d/CLAUDE.md` steps 5 and 6 in the same pass. `MJ_KP` moves too and further than
+expected: step 1 measured the friction-cancelled stiffness at **40.9 N·m/rad at 12 V**
+against the 28.8 that was on record, and `MJ_DAMPING` should take the *total*
+speed-proportional 1.37 N·m·s/rad rather than a `b_v` this bench cannot resolve.
 
 **Why:** `MJ_ARMATURE` is 0.008 and the bench says **0.024–0.042**. That is the dominant
 term in the joint's dynamics — `check_model.py` already measured it at ~73× the knee link's
@@ -107,8 +142,11 @@ block `fitted: false` — and the bench says it is several times low.
 `rl/params/domain_rand.json`, with the voltage range now measured rather than guessed.
 
 **Why:** step 3 gives one servo at one voltage. The robot will run a pack that sags from
-12.6 to 9.9 V, and we now know what that does — stiffness falls 25 %, and torque per unit
-duty falls with it. Randomising over it is what makes a policy survive a discharge instead
+12.6 to 9.9 V, and we now know what that does across three measured points rather than
+two — stiffness is linear in supply at **3.44 N·m/rad per volt** (28.1 / 34.4 / 40.9 at
+8 / 10 / 12 V), so the pack's range costs 21 % of it, and torque per unit duty falls with
+it. Randomise the friction too: it is the term that does *not* move with voltage, so it
+stays put while everything around it shifts. Randomising over it is what makes a policy survive a discharge instead
 of only working on a full pack. This is also the cheapest insurance against the one-sample
 problem: every number in `ST3215_STS3215_measured_parameters.md` came from **one servo**,
 and gearbox friction is exactly the parameter that varies unit to unit.

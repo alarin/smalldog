@@ -41,6 +41,16 @@ rl/.venv/
 rl/.jax_cache/
 
 # --- bench ---
-# raw servo logs: hundreds of MB, and the fit's output (rl/params/st3215.json)
-# is the thing worth versioning, not its input.
-robot/bench/data/
+# The raw servo logs ARE versioned, as of 2026-09-09. They used to be ignored on
+# the grounds that the fit's output (rl/params/st3215.json) was the thing worth
+# keeping — that was wrong twice over. The identification set is a measurement of
+# a real servo that cannot be retaken once the unit changes, and it is the only
+# evidence behind ST3215_STS3215_measured_parameters.md, which tells the public
+# the CSVs are in this repository. It is also how a bench result reaches the WSL2
+# box and the Pi: no shared filesystem, no scp, the repo is the only thing that
+# crosses. 57 runs is 25 MB raw and 4.6 MB packed.
+#
+# What still does not belong here: anything from a scratch or exploratory session
+# that no document cites. Every file under data/ should be a run some analysis
+# actually reads — bench/fit_bam.py loads the whole directory, so a junk run is
+# not inert, it is a data point.

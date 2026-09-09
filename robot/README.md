@@ -396,8 +396,8 @@ the mac have no other way to agree about which servo is `fl_knee`.
 
   **What the robot weighs today is not what the limits are for.** As it stands on
   the table it is the printed parts plus twelve servos and the URT-1: **1.55 kg,
-  62 % of the 2.499 kg design mass.** The missing 937 g is battery 420, Orange
-  Pi/BMS/wiring 250, LiDAR 230, GPS 25, camera 12, IMU 3 — and every gram of it is
+  62 % of the 2.495 kg design mass.** The missing 940 g is battery cells 420, BMS
+  55, Orange Pi/wiring 195, LiDAR 230, GPS 25, camera 12, IMU 3 — and every gram of it is
   *body* mass on the chassis, so the body is far lighter relative to the legs than
   it will ever be again. Nothing measured under load here transfers: not the
   current, not the sag, not the tracking error, and not the contact threshold.
@@ -636,6 +636,15 @@ you can *set* and two different arms.
 5. **`--traj step` / `triangle` / `reversal` / `chirp`**, same arm, same three
    voltages.
 
+6. **`--traj holdbi` and `--traj speed`, heavy long arm, same three voltages.**
+   Ten minutes per voltage, and they are the only two measurements here that do
+   not go through the fit — `bench/hysteresis.py` reads them by subtracting one
+   run from another. `holdbi` walks the hold ladder up and then down so every
+   angle is reached from both sides; `speed` is the same triangle at five periods
+   from 20 s to 1 s. See "Two things the fit cannot find" below for what they
+   found and for the reason they exist: friction is the one quantity an optimiser
+   over this model will always hide somewhere else.
+
 The three voltages are not thoroughness. At one voltage the back-EMF damping and
 the viscous friction enter every equation as the same coefficient of ω and no
 amount of data separates them; `fit_bam.py` checks for this and says so rather
@@ -703,6 +712,79 @@ need. Run them in full on hardware.
 is worth more than it looks: if a parameter cannot be recovered from noise-free
 data produced by the very model being fitted, no amount of real data will recover
 it either — the trajectory set is wrong, not the servo.
+
+### Two things the fit cannot find, and the ladders that measure them instead
+
+Measured 2026-09-09, 1.066 kg on the 90 mm arm, at 8 / 10 / 12 V.
+`bench/sweep.py --traj holdbi` and `--traj speed`, read by `bench/hysteresis.py`.
+
+**The fit was never going to find friction, because it has three other places to put
+it.** `rl/actuator.py`'s law is `tau_c*sign(w) + b_v*w`, both independent of load, so a
+friction that grows with the torque carried has nowhere to go except `k_u` — which is
+why the fitted stall is 4.23 N·m against a spec 2.94, and why `b_v` sits pinned on its
+lower bound however much data it is given. Neither symptom is a shortage of runs.
+
+So both new ladders are **differential**: they measure friction as a difference between
+two runs of the same trajectory rather than asking an optimiser to infer it.
+
+| | 8 V | 10 V | 12 V | must it move with V? |
+|---|---|---|---|---|
+| position-loop stiffness, N·m/rad | 28.1 | 34.4 | 40.9 | **yes**, 3.44 per volt |
+| effective torque constant, N·m/V | 0.636 | 0.611 | 0.596 | no |
+| friction at a hold, unloaded, N·m | 0.192 | 0.181 | 0.186 | no |
+| …per N·m of load carried | 0.286 | 0.295 | 0.251 | no |
+| kinetic Coulomb at zero load, N·m | 0.161 | 0.160 | 0.168 | no |
+| total speed-proportional, N·m·s/rad | 1.403 | 1.364 | 1.334 | no |
+
+The last four rows holding still across a 1.5× supply range is the check that they are
+physical and not artefacts of the loop; the first row moving *is* the pack-discharge
+effect, and it is the only one allowed to.
+
+Three results, in order of how much they change:
+
+1. **Friction grows with load: +0.28 N·m per N·m carried, on a 0.19 N·m floor.** At the
+   0.88 N·m the long arm asks for, friction is 0.43 N·m. This was previously inferred
+   from a torque-vs-duty slope ratio and put at +38 % of *motor* torque; the direct
+   measurement is about +22 % on the same basis, so the correction runs downward.
+
+2. **The stiffness was 40 % low, and the error hid inside the friction.** A ladder walked
+   in one direction measures the whole standing offset from target and calls it droop,
+   but only part of it is elastic — the rest is the friction band, which does not
+   restore. 40.9 N·m/rad at 12 V, not 28.8. The two errors conceal each other in any
+   test that only looks at where the joint ends up, which is most of them.
+
+3. **`b_v` is not resolvable on this bench and the plan's premise for it was wrong.**
+   The speed ladder does what it was meant to — a steady speed at last, five of them over
+   a 20× range — and it pins the *total* speed-proportional torque to 1.37 N·m·s/rad
+   within 5 %. But that total is `b_v + k_t·k_e`, and back-EMF alone accounts for 1.31 of
+   it, leaving 0.06 ± 0.07: consistent with zero. The reason is structural. Back-EMF and
+   viscous friction each cost a motor voltage proportional to ω and **neither depends on
+   supply**, so the three-voltage sweep that separates every other electrical term is
+   powerless here; splitting them needs the motor current, and `PRESENT_CURRENT` gives it
+   only as `d²U/R` at a 6.5 mA LSB. Use the total. For a simulator it is the total that
+   sets how the joint resists being moved.
+
+**The trap this cost, and the guard now in the code.** The three voltages of new data
+were captured, `fit_bam.py` was re-run, and every fitted parameter came back **identical
+to five decimals** to a fit on the old data alone. Nothing had gone wrong with the
+servo: the analytic passes select on `trajectory == "freeswing"` and `== "hold"`, so
+`holdbi` and `speed` reached the objective only under `--refine`, and not at all without
+it. A run that no pass consumes changes no parameter — so an unchanged fit is not
+evidence that new data agreed with old. `check_identifiable` now names every trajectory
+in the directory that no analytic pass reads, and says exactly that.
+
+And with `--refine` on, the enlarged set does not converge, it *diverges*: `kp` pinned at
+2017, `k_e` at 11.8, `punch` on its bound, an implied no-load speed of 1.02 rad/s against
+a spec 4.71. That is the same diagnosis as the pinned `b_v`, stated louder — put steady
+speeds in front of a model with no term that can hold them and the optimiser breaks
+physics instead. **`PLAN.md` step 2 is a prerequisite for using this data, not an
+improvement on it.**
+
+One loose end, flagged rather than guessed: at a commanded 2.0 rad/s the servo reaches
+1.8 and no more, sitting at 0.74 rad of position error **without the duty ever pinning**,
+so it is not the motor's ceiling. `D_COEF` is 32 and `rl/actuator.py` models `kd = 0`,
+which would do exactly this — but so would an internal output clamp, and this data does
+not separate them.
 
 ## Safety, on the bench and later
 
