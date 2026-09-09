@@ -204,3 +204,216 @@ sequence of three chaotic samples. `3d/CLAUDE.md` already says the unchanged tre
 both 5/7 and 4/7, and the terrain sweep, which is the arm that is read over seeds, moved
 +26 mm on a ±35 spread. It is flagged here, not acted on: the fix for a course number is
 a gait change, and there is no CAD change on the table that would put 2 g back.
+
+## 2026-09-09: the battery became a module, and the IMU moved to make room
+
+The ask was safety: no loose cells in the dog, the pack in heatshrink and a plastic case.
+The design that followed is not a wrapper round the old cradle — it replaced it. Six cells
+welded into a 3 × 2 brick, heatshrunk, the BMS beside them, all of it in `battery_case` +
+`battery_lid`, dropped into a seat recess in the tray floor as one payload. The cradle's
+four fins, two end stops, strap slots and the front BMS bay are gone.
+
+**The binding constraint was height, and it was not close.** From the tray floor at −22 to
+the old pack ceiling at 21.4 there were 43.4 mm for 42.6 mm of cell: 0.8 mm for a floor, a
+lid and a fit. What sat in the 3.6 mm above the pack was the IMU, so the IMU is what moved
+— onto the deck's top face, on two standoffs inside the Orange Pi's 7 mm standoff gap. The
+deck's cable window moved off the centreline (`IMU_WINDOW`, x −34…−12) to leave solid deck
+under the board. Three knock-ons, all forced, none cosmetic:
+
+* the module reaches x = −46.15, so the ESP32/URT-1 bay moved to `ESP_X` = −51 and `BATT_X`
+  was pushed forward to 5.0 until that strip was the 8.9 mm it had before;
+* the four corner deck screws moved from |y| = 38 to 41 — measured on the solid, at 38
+  their bosses took a 1.9 mm bite out of the module's corners — so all eight are at 41 now,
+  and `DECK_SCREWS` carries its nut-channel direction explicitly because |y| no longer
+  tells the two pairs apart;
+* the BMS went inside the module, so `BMS_KG` = 55 g is split out of `ELECTRONICS_KG` and
+  hangs at `bms_com()` instead of being averaged into the Pi's box 46 mm away and 40 mm up.
+
+Two defects were found and fixed during the build, both by measurement rather than by
+reading:
+
+* **the lid was not captured at all.** It was drawn to tuck under an inward tongue on the
+  rear wall, and a tongue cannot work when the lid is flush with the module's top — there
+  is nowhere at the lid's own height for it to be. It butted against the tongue instead.
+  It is a groove in the wall's inner face now, and the lid's rear tab is only as wide as
+  the interior, because full width put its two rear corners inside the side walls.
+* **the lid's locating lip was a slab, not a frame** — 12 cm³ of plastic doing nothing but
+  weigh 14 g, on a robot whose flat trot moves on 11.
+
+### The ladder
+
+| step | result |
+|---|---|
+| 0 baseline | `fea.py --all` at `c051e66`, in a worktree, kept for step 4 |
+| 1 `mini_dog.py` | every part valid, ROM unmoved at −90/+90, −90/+90, −110/+110, `body clear` (now covering `battery_case` and `battery_lid` too — the pack is inside `interference()` for the first time), `imu clear: +3.40 mm` to the Pi, `batt clear: +1.40 mm` to the deck, every fastener probe unchanged to the hundredth |
+| 2 bboxes | `battery_case` 102.3 × 68.2 × 46.4, `battery_lid` 96.2 × 68.2 × 3.2 — both well inside a 256 bed |
+| 3 render | three PNGs, looked at |
+| 4 `fea.py --all` | **not one SF moved, in-plane or inter-layer.** `hip_bracket_A` 46.8 / 23.4 / 7.8 / 2.4, `thigh_A` 18.8 / 9.4 / 3.1 / 1.2, `shin_A` 60.0 / 30.0 / 10.0 / 4.9 — all three identical to the baseline to a decimal, at 2.462 kg against the baseline's 2.4619. `fea.robot_mass()` had to be taught `BMS_KG` first, or it would have lost 55 g of robot when that constant was split out of `ELECTRONICS_KG` — the load cases scale with the total |
+| 5 `export_sim.py --check` | `4 feet down, upright +1.00`, base z 187 mm, terrain the same, camera axis (+0.99 +0.00 +0.10), urdf/mjcf leg mass agree |
+| 6 ROS 2 | regenerated; see below |
+
+Mass came out **+2.3 g** (2.4619 → 2.4642 kg on `fea.robot_mass()`): the deleted cradle
+almost exactly pays for the case. What did move is the **base link's centre of mass**,
++2.75 mm forward and −1.09 mm down — the cells sit 9.3 mm ahead of the module's centre
+because the BMS is behind them, and 55 g of BMS came down out of the Pi's box.
+
+### What the gait did, with a control beside it
+
+| | control, `c051e66` | after |
+|---|---|---|
+| flat trot | 790.8 mm, z 167.8 | **595.2 mm, z 174.0** |
+| terrain, seeds 7…12 | 537 ±70 mm | 498 ±76 mm |
+| course | 5/7, corridor 2778 mm | 5/7, corridor 2876 mm |
+
+**Read the terrain and course rows, not the flat one.** The two terrain means differ by
+39 mm against spreads of 70 and 76 — about half a standard deviation, and the standard
+error of the difference is 42 mm, so the two sweeps are one distribution. The course
+cleared the same five obstacles and went 98 mm further. The flat trot lost 196 mm and the
+body rides 6.2 mm higher, which is the exact signature `3d/CLAUDE.md` documents for this
+walker crossing its bifurcation on a few grams: it is the operating point moving, not the
+robot getting worse. Both causes here are real and both are the module's — +2.3 g, and
++2.75 mm of forward CoM.
+
+It is flagged, not acted on. The forward CoM is worth a second look if the flat trot ever
+becomes the number that matters: putting the BMS in the *front* zone instead of the rear
+would take about 4 mm back out of it. It is at the rear because that is where the connector
+panel is, and it is the only arrangement where the pack's leads and the BMS's leave by one
+grommet slot without crossing the cells.
+
+### The IMU move, measured rather than argued
+
+`rl/checks/imu_placement.py` runs on the mac — it needs MuJoCo and the walker, not ROS — so
+it was run here rather than left for the WSL2 box.
+
+A board bolted where the model's site is reads **0.000 m/s², 0.0°**, which is the whole
+point of the site living in `mini_dog.py`: the site moved with the board, so there is no
+error to carry. What the move does change is the *observation itself*. Measured with
+`--at 0,0,-7.6` — an accelerometer at the old site's height while the model's site is at
+the new one — the difference is **p50 0.13, p95 0.60, max 4.28 m/s², worst apparent tilt
+23.6°**.
+
+Read that as a re-baseline, not a defect. It is the size of the step between the old
+observation and the new one, so **any policy trained against the pre-2026-09-09 model is
+trained on a different signal** and `rl/` has to retrain rather than fine-tune. For scale,
+the same check puts a board left on the deck beside the Pi at 30.6 m/s² and 72.2°, and 50
+mm straight up at 28.2 and 70.8° — the new mount is nowhere near that band, and it is
+still on the centreline, which was the part of the original argument that mattered.
+
+
+## 2026-09-09, later: the hip-roll cradles became bolted parts
+
+The ask was maintenance: *"can we connect servo holders and rest of case with 4 bolts and
+nuts? it's pain in the ass to reprint and rebolt servos"*. It started from a different
+question — a report that the cutouts on the back of the dog were blocked — and the two
+turned out to be the same defect.
+
+**They were blocked, all of them, and nothing here could see it.** The two rear hip-roll
+cradles met across the centreline and formed one continuous 2.8 mm plate at
+x = −64.2…−67.0 over |y| ≤ 49.11 and |z| ≤ 15.36, with 1.2 mm of air behind the wall.
+Measured on the solid: bus window 100 % blocked, XT30 100 %, balance lead 100 %, the
+XT60's top 3.61 mm — and the XT mating halves stand 1.5 mm proud of x = −63, i.e. to
+−64.5, already 0.3 mm *inside* the plate. Not one could ever have been plugged in.
+`interference()` pairs the static body parts and the cradles **were** `chassis_bottom`, so
+this was one part standing in front of its own hole.
+
+### What was built
+
+`cradle_front` and `cradle_rear`, one off each, each carrying both of that end's roll
+servos, four M3 × 12 per end through a spigot register into a locally thickened tray wall.
+One part per end and not four quarters because the two halves' rails overlap on the
+centreline — four quarters are not four separable bodies. `chassis_bottom` goes from
+213 × 110 × 50 mm / 208 g to **126 × 92 × 50 / 127 g**; the cradles are 38 g each.
+
+The flange is a **frame**, and its opening is what lets the connector panel out. The panel
+was relaid inside it: bus window 22 × 16 (was 32 × 20), XT30 at y = +32, balance at
+y = −32, and the XT60 *above* the cradle at z = +20, because 16.5 mm of width does not
+survive the window and the two bolt bosses.
+
+Then the second half of the ask, raised mid-run: **the fork-access channels are not needed
+any more.** They existed because the roll joint's inboard arm faced the chassis with
+`FORK_GAP` of air and the fork could only go on after the cradle was welded to the tray.
+With the cradle bolted, the fork goes on with it *in hand* and all four screws are in open
+air — 0 mm³ against the cradle alone against 569 mm³ against the cradle on the tray. So the
+two ⌀6 channels through the tray's front corner and the corner deck bosses are gone, eight
+holes with them, and `fork_access()` reads *all six arms* rather than five. One feature
+replaces them: `FORK_DRIVER_R`, the driver's swept circle relieved through the flange,
+derived from `HUB_BC` and `DRIVER_D`. Without it the outermost screw at y = 42.9 fouls the
+frame's rib at 43.11 by 38 mm³ — which is what the check read the moment the channels
+stopped relieving it by accident.
+
+### Three probes added, and all three earned their place on the first run
+
+* `panel_clear()` — every rear-wall opening along −x against the assembled body. This is
+  the one that found the defect above.
+* `cradle_clear()` — a driver's run to each of the eight cradle screws. Found the
+  ESP32/URT-1 divider rib standing 0.5 mm in the two lower rear screws' runs; its half
+  width was `BMS_W`/2 + 1.5, and the BMS moved inside the battery module weeks ago, so the
+  number was already stale. Now `ESP_RIB_Y`.
+* `cradle_head_clear()` — the eight ISO 7380 heads against the battery module. Found them
+  0.4 mm inside the pack: the front seat's face is at x = 57.4, the module's front at
+  56.15, and a head is 1.65 tall. `CRADLE_CB` = 2 mm of counterbore; +1.60 mm now. Same
+  class as the thrust clamp's cap head and the hub screws' heads — the part in the way is
+  hardware, so `isValid()`, `interference()` and `rom_scan` are all blind to it.
+
+### The ladder
+
+| step | result |
+|---|---|
+| 0 baseline | `fea.py --all` on the unchanged tree, kept for step 4 |
+| 1 `mini_dog.py` | every part valid, volumes positive; ROM unmoved at −90/+90, −90/+90, −110/+110; `body clear` (now nine parts), `imu clear +3.40`, `batt clear +1.40`, `module clear`, `foot bolt` ok, `clamp clear +1.43`, `head clear +0.65`, `fork access: all six arms`, `panel clear`, `cradle bolts … +1.60 mm of air to the pack` |
+| 2 bboxes | `chassis_bottom` 213.0 × 110.2 × 50.0 → **126.0 × 92.0 × 50.0**; `cradle_front`/`_rear` 30.7 × 110.2 × 45.5. Nothing else moved |
+| 3 render | three PNGs, looked at |
+| 4 `fea.py --all` | no inter-layer SF dropped: `hip_bracket_A` 46.9 / 23.4 / 7.8 / 2.4, `thigh_A` 18.9 / 9.4 / 3.1 / 1.2, `shin_A` 60.1 / 30.1 / 10.0 / 4.9 — all within a rounding step of the baseline, marginally up on −6 g. **`cradle_front` is new in the set**: 4.0 / 2.0 / **0.7** / 3.0 |
+| 5 `export_sim.py --check` | `4 feet down, upright +1.00`, base z 187 mm, 2.488 kg, terrain the same, camera axis (+0.99 +0.00 +0.10), urdf/mjcf leg mass agree, 13 STL |
+| 6 ROS 2 | regenerated; only `base_link.stl` moved — no leg mesh changed |
+
+### The gait, with a control beside it
+
+| | control, unchanged tree, 2.493 kg | after, 2.487 kg |
+|---|---|---|
+| flat trot | 595.2 mm | 556.6 mm |
+| terrain, seeds 7…12 | 498 ±81 mm | **520 ±67 mm** |
+| course, seeds 7 / 8 / 9 | 5/7 2876, 3/7 2023, 4/7 2441 — all upright | 1/7 1506, 5/7 2872, 4/7 2582 — all upright |
+
+The terrain sweep is the arm to read and its two means differ by 22 mm against spreads of
+81 and 67 — one distribution. The flat trot moved 39 mm on −6 g, inside the band
+`3d/CLAUDE.md` calls hypersensitive. The course is a report and it has to be read over
+seeds: **an intermediate version of this change, 8 g lighter, read 1/7 and went DOWN on
+seed 7** while its terrain sweep (501 ±89) was indistinguishable from the control. On one
+seed that looks like a regression and is not. On three it is 5/3/4 against 1/5/4, all
+upright, and the mean corridor is 2447 against 2320.
+
+### The one thing that is not clean
+
+**`cradle_front` is the weakest printed part on the robot.** Interlayer SF **1.35** at
+`land3g` on `--orient`'s build-direction index, against 3.08 for `thigh_A`, 8.52 for
+`hip_bracket_A` and 19.36 for `shin_A`. Read `--orient` and not the `SF xy / z` column —
+the crude column assumes the worst stress orientation and says 0.7.
+
+It is **not a regression**. This geometry was inside `chassis_bottom`, which `fea.py` has
+never covered, so it had never been analysed at all — and the first run found two real
+defects in it: a **1.4 mm notch** where the narrow strap stopped at x = 72.1 while the wide
+one starts at 73.5, and a **27.6 mm step** where the width jumps from `STRAP_Y` = 21.5 to
+49.11 in one plane. Both are re-entrant corners in the strap that carries the whole leg.
+Closing the notch took the peak von Mises 53.7 → 26.4 MPa and the deflection 1.58 → 1.01
+mm; tapering the step over `STRAP_TAPER` holds it. The part now reads 29.7 MPa at 1.00 mm,
+mesh-converged (26.4 at 2.0 mm, 26.5 at 1.5).
+
+The remainder is structural and has no cheap fix: everything the leg puts into the sleeve
+funnels back to the flange through a section capped at `STRAP_Y`, and the space that would
+widen it is swept by the fork over the ±90° roll ROM — a version with full-width straps
+and only the arm's disc cut deflects 0.27 mm instead of 1.00, and reads `hip_roll
++0 .. +0`. **Three fixes were tried and all three made the peak worse**: filling the neck
+solid (35.3 MPa), closing it with a `WALL` web (31.8), thickening the straps (29.5→). Do
+not re-try them.
+
+It is also printed in its *worst* build direction on purpose. `--orient` ranks flange-down
+1.35, lying flat 1.67, on end 2.15; flange-down is the only one that puts the two servo
+bores vertical, and a press fit wants that more than it wants the 1.67. On end is 110 mm
+tall on a 263 mm² footprint and is not a real option.
+
+`fea.py` grew a second traction patch for this part (`solve(..., load2_pred, force2)`): a
+stall torque written as "a force at a lever about the joint axis" divides by zero when the
+load patch is concentric with that axis, which the cradle's bore is, so its stall case is a
+genuine couple. Its ground cases keep the whole bore — half a bore is a different, more
+local load, and read 3 MPa hotter when the two were conflated.

@@ -64,7 +64,8 @@ name → (workplane, qty, note) and drives both the export loop and the BOM;
   single-shear horn.
 - **No metal parts, no machining, no external bearings** (628/685 etc.). FDM only, plus
   the stock aluminium hubs. This is a hard constraint from the handoff doc.
-- Nothing threads into plastic. Every screw that is not going into the stock aluminium
+- **Nothing in a torque path threads into plastic.** Every screw that carries load —
+  every joint, fork, hub, sleeve and foot — and is not going into the stock aluminium
   lands in a nut, and every one of those nuts sits in a `nut_slot()` — a channel of the
   nut's across-flats width, so its two walls stop the nut turning. When you add one,
   the `ang` argument is not cosmetic: it has to point at a face that is still reachable
@@ -74,6 +75,18 @@ name → (workplane, qty, note) and drives both the export loop and the BOM;
   servo hubs the screw threads into the stock aluminium plate (both are tapped M3) —
   there is no room for a nut there, and a hex pocket would eat over half the fork arm
   right under the screw head.
+- **Off the torque path, a screw may thread straight into the plastic** — a case lid, an
+  electronics cover, a cable clamp, a bracket that holds nothing but itself. Nothing the
+  legs load qualifies, and the test is not "is it small", it is "does a load path run
+  through this screw": if the answer is yes or you are unsure, it gets a `nut_slot()`.
+  The hole is then **not** `M3_CLR`/`M25_CLR` — a thread-forming screw needs a *smaller*
+  hole, `M3_TAP` / `M25_TAP` in the same constant block (⌀2.6 / ⌀2.1, and they are radii
+  like the clearance pair), with ≥ 1 × D of boss wall all round and 2 × D of engaged
+  length. Cut them with the constants, never a literal, and never re-tap the same hole
+  twice — a formed thread in FDM plastic is a one-assembly thread, so a lid that comes
+  off repeatedly still wants a nut or an insert. Both radii are **UNVERIFIED**: they are
+  the standard band for the thread minus what an FDM hole loses, not a measurement, so
+  print a coupon before the first part depends on one. Added 2026-09-09.
 - **A blind fastener path is invisible to every check in this repo, so the foot bolt has
   its own.** `isValid()` sees nothing wrong with a bolt hole that never breaks the
   surface, `interference()` only looks at the static body parts, and `rom_scan` only
@@ -89,19 +102,62 @@ name → (workplane, qty, note) and drives both the export loop and the BOM;
   **The same hole in the checks has now cost three fasteners, so there are three probes.**
   `thrust_clear()` is the clamp screw against the annulus the distal fork sweeps, and
   `fork_access()` is a key-sized cylinder on each fork screw's real line, run **until it
-  stands in open air**, against the part the fork bolts onto — the roll joint's inboard
-  arm has 0.6 mm of air behind it, and it is `fork_access_channels()` in `chassis_bottom`
-  that makes those four screws reachable at all: two ⌀6 channels leaning `KEY_TILT`
-  outboard through the tray's front corner, which serve all four screws because the hub
-  circle turns with the leg (`fork_channels_cover()`). Note where that cut lives: on the
-  ASSEMBLED chassis, because the path crosses solids that get unioned and cutting any one
-  alone lets the union fill the others back in. The first version was four coaxial bores
-  into the tray with a probe that stopped inside the bore; it passed with one screw in
-  four reachable. A probe has to end in air, not in a hole.
+  stands in open air**, against the part the fork bolts onto. All six arms take a straight
+  key now, and the thing that made the roll pair reachable was not a hole, it was the
+  **assembly order**: the cradle is a bolted part, so the fork goes on with it in hand and
+  those four screws are in open air (0 mm³ against the cradle alone, 569 against the cradle
+  bolted to the tray). One feature serves it — `FORK_DRIVER_R`, the driver's swept circle
+  relieved through the flange — and it is derived from `HUB_BC` and `DRIVER_D`, not typed.
+  **Two earlier answers are deleted and both are worth remembering.** Four coaxial ⌀6 bores
+  into the tray reached one screw of four and passed anyway, because the probe stopped
+  inside the bore; a probe has to end in air, not in a hole. Two ⌀6 channels leaning 20°
+  through the tray's front corner then *worked* — and still cost the chassis eight holes,
+  through the corner posts and the corner deck bosses. An access problem that keeps needing
+  cleverer holes is usually telling you the part boundary is in the wrong place. Deleted
+  2026-09-09; `README.md`, "Reaching the fork screws", keeps the measurements.
   When you add a fastener, ask the three questions separately: does the hole reach,
   does the head clear, and can a driver get to it. The
   length follows from `FOOT_CB_Z`, `FOOT_NUT_Z` and `M3_NUT_H` — if you move any of
   those, `FOOT_BOLT_L` and the BOM line in `README.md` move with them. Fixed 2026-08-31.
+- **The hip-roll cradles are BOLTED parts, not part of the tray, and the joint is four
+  screws plus a register.** `cradle_front` and `cradle_rear`, one off each, each carrying
+  both of that end's roll servos - one part per end because the two halves' rails overlap
+  on the centreline, so four quarters are not four separable bodies. This took
+  `chassis_bottom` from 213 x 110 x 50 and 208 g to 126 x 92 x 50 and 127 g, and it is what
+  makes a tray change stop meaning "reprint four cradles and unbolt four servos".
+  **The register is not decoration**: four M3 carry 22 N of axial and 28 N of shear at
+  worst, which is nothing, but they do not replace 795 mm2 of welded face for STIFFNESS -
+  the roll axis is 27 mm outboard of the joint and the foot 187 mm below, so a tenth of a
+  millimetre of slop is 0.7 mm at the ground. Each screw runs through a `CRADLE_REG_D`
+  spigot into a pocket in a locally thickened tray wall. **Where the screws may go is
+  decided by the fork**: the flange is only `CRADLE_T` = 4 mm deep (its outer face is
+  `FORK_GAP` behind the fork's rear arm) and an M3 nut does not fit in 4 mm, so the nut
+  bosses run out to `CRADLE_BOSS_X` - which is legal only because past that face the one
+  thing in the way is the arm's `ARM_R` disc, the spine's 23...34 annulus being swept only
+  on the outboard side. `rom_scan` checks the arm, `cradle_clear()` checks a driver reaches
+  the heads, `cradle_head_clear()` checks the heads against the battery module. A version
+  that ran the straps full width and cut only the arm's disc read `hip_roll +0 .. +0`;
+  `STRAP_Y` is a hard ROM limit, not a guess. Added 2026-09-09.
+- **`cradle_front` is in `fea.py`'s set and it is the weakest printed part on the robot.**
+  Interlayer SF **1.35** at `land3g` on `--orient`'s build-direction index, against 3.08
+  for `thigh_A`, 8.52 for `hip_bracket_A`, 19.36 for `shin_A`. Read `--orient`, not the
+  `SF xy / z` column, for this part: the crude column assumes the worst stress orientation
+  and says 0.7. **It is not a regression** - this geometry was inside `chassis_bottom`,
+  which `fea.py` has never covered, so nobody had ever looked, and the first run found two
+  real defects in it (a 1.4 mm notch in the strap and a 27.6 mm step in its width; peak
+  53.7 -> 29.7 MPa). The rest is structural and does not have a cheap fix: everything the
+  leg puts into the sleeve funnels back through a section capped at `STRAP_Y`, and the
+  space that would widen it is swept by the fork. Filling the neck solid, closing it with
+  a web and thickening the straps were each tried and each made the peak WORSE - do not
+  re-try them without reading this line. It is also printed in its WORST build direction
+  on purpose: flange-down is the only one that puts the two servo bores vertical, and a
+  press fit wants that more than the 1.67 lying flat would score.
+- **`solve()` in `fea.py` takes a second traction patch, and only one part uses it.** A
+  stall torque expressed as "a force at a lever about the joint axis" divides by zero when
+  the load patch is CONCENTRIC with that axis, which the cradle's bore is. Its stall case
+  is a real couple - `couple=(pred1, pred2)` in `part_specs()`. Its ground cases keep the
+  whole bore: putting a ground reaction on half of it is a different, more local load and
+  it read 3 MPa hotter when the two were conflated. Added 2026-09-09.
 - **Nothing goes into 23 < r < 34 of a joint axis over the sleeve's length.** The distal
   fork's spine sweeps that annulus, and the hip bracket's inboard web already comes to
   r = 22.0. It is the binding constraint on the sleeve thrust clamp, and **screws count**:
@@ -122,7 +178,9 @@ name → (workplane, qty, note) and drives both the export loop and the BOM;
   window recovered none of it (0.5). The clamp that survives is the one that adds material
   and takes the play out in thrust (`THRUST_*`), not the one that cuts the ring.
 - **The camera's slot at the nose is four measured walls, and three of them belong to
-  other parts.** Floor `CAM_LEDGE` = 15.36 (the hip-roll cradles and their root gusset),
+  other parts,** and since 2026-09-09 one of them is a BOLTED part: `CAM_LEDGE` is
+  `CRADLE_Z1`, so the camera's floor and its two nuts are on `cradle_front`, not on the
+  tray. Floor `CAM_LEDGE` = 15.36 (the front cradle's own top face),
   ceiling the LiDAR pedestal's base disc at z = 29 (hence `LIDAR_BASE_FLAT`), back the
   chassis front face at x = 63, front the hip-roll fork's rear arm at
   `ROLL_X + FORK_Y0` = 68.1 — a disc that sweeps r <= 34 about the roll axis over the whole
@@ -131,6 +189,19 @@ name → (workplane, qty, note) and drives both the export loop and the BOM;
   `roll_module`'s rails moves one of those walls; `interference()` and `rom_scan` will say
   so, but the fix is in the camera block, not in a part function. A 90 x 15 mm board in a
   5 x 15 mm slot has ~1 mm everywhere: treat every one of these as load-bearing.
+- **Every opening in the rear wall opened into solid plastic, and no check could see it.**
+  The two rear cradles met across the centreline as one continuous 2.8 mm plate 1.2 mm
+  behind the wall: bus window 100 % blocked, XT30 100 %, balance lead 100 %, the XT60's top
+  3.61 mm - and the XT mating halves stand `PANEL_LIP_T` proud of the wall, i.e. already
+  0.3 mm INSIDE the plate. `interference()` pairs the static body parts and the cradles
+  WERE `chassis_bottom`, so this was one part standing in front of its own hole; a part
+  cannot interfere with itself. The block that positioned the panel reasoned about deck
+  bosses 30 mm further away, and was stale about those too. `panel_clear()` now probes
+  every opening along -x against the assembled body and prints on every run; treat
+  `!! PANEL` as a failure like `!! INTERFERENCE`. The layout is now inside the cradle
+  flange's frame opening and around the four bolt bosses, and **the XT60 does not fit
+  there** - it goes above the cradle at z = +20, in the 9.64 mm band between `CRADLE_Z1`
+  and `BODY_Z1`, which is why its z is not a round number. Fixed 2026-09-09.
 - **The servo envelope must not be cut from the link that bolts to that servo's hubs.**
   `servo_envelope(hub=False)` exists for exactly that case, and each forked part passes
   its own joint to `env_all(no_hub=...)`. Sweeping the hub discs out of a part that has
@@ -174,6 +245,52 @@ name → (workplane, qty, note) and drives both the export loop and the BOM;
   different servo strength** — and which sim you loaded decided how strong the servo
   was. Fixed 2026-08-31 with the re-baseline in the same commit; `rl/` loads the ROS 2
   model, so that was the one that mattered.
+- **The battery is a MODULE, and the tray is now its.** Six cells welded into a 3 x 2
+  brick, heatshrunk, its BMS beside them, all of it in `battery_case` + `battery_lid`,
+  which drop into a seat recess in the tray floor as one payload. The old cradle - four
+  printed fins and two end stops with six loose cells between them - is gone, and so is
+  every check's blindness to it: cells were a payload, so `interference()` could not see
+  them, and nothing at all could see a welded tab chafing against a printed edge. The case
+  IS a part, with a `PARTS` entry and a place in `BODY_PARTS`, so `interference()` now
+  covers the pack against the chassis for the first time. What it is NOT is structure:
+  nothing on the robot loads it, which is why its lid screws are one of the only two places
+  a screw threads into plastic. **A case costs about 3.5 mm the bay never had**, and there
+  was exactly one place to take it from - the IMU's slot - which is why that block moved in
+  the same commit. Three knock-on constraints came with it and are all load-bearing: the
+  module reaches x = -46.15, so the ESP32/URT-1 bay moved to `ESP_X` = -51 and `BATT_X` was
+  pushed forward to 5.0 to keep that strip at 8.9 mm; the four corner deck screws moved
+  from |y| = 38 to 41, because at 38 their bosses took a 1.9 mm bite out of the module's
+  corners; and `DECK_SCREWS` now carries its nut-channel direction explicitly, because |y|
+  no longer tells the two pairs apart. `batt_clear()` prints the air over the lid on every
+  run - it is 1.4 mm, it is where a foam strip goes, and it may never be negative.
+  **And the two things INSIDE the module are payloads, so they get their own probe**, the
+  same way the foot bolt and the IMU do: `module_clear()` intersects the case and the lid
+  against `brick_solid()` and `bms_solid()`, and both must be zero. It is not decoration -
+  it caught two defects on the day it was written. The lid was first drawn with a locating
+  lip round the whole opening, 2 mm deep, into an interior the wrapped brick fills to
+  `BATT_FIT`/2 = 0.2 mm a side; and the BMS's retaining ribs stood 1.2 mm inside the brick.
+  `isValid()` was happy with both, `interference()` cannot see a payload, and the parts
+  would have printed. The lid now hangs one bar, over the BMS zone only, where there is
+  room, and `BMS_GAP` is the number that has to swallow the rib as well as the air.
+  Added 2026-09-09.
+- **The IMU is on top of the deck, not under it, and that was the battery's doing.** It
+  used to hang from two tabs in the deck's window in the 3.6 mm over the pack. It now sits
+  on two standoffs on the deck's TOP face, on the centreline, inside the Orange Pi's own
+  7 mm standoff gap, and the deck's cable window moved off the centreline (`IMU_WINDOW`)
+  to leave solid deck under it. `imu_clear()` still exists but looks UP now, and measures
+  against the Pi's BOARD rather than `OPI_BOX`, whose floor is the deck itself - the board
+  shares that envelope's standoff gap on purpose. **The site rose from z = 23.4 to 31.0**,
+  and `rl/checks/imu_placement.py` was RUN rather than argued from - it needs MuJoCo and
+  the walker, not ROS, so it runs on the mac. A board bolted at the site reads
+  0.000 m/s2, which is the point of the site living here. What the 7.6 mm changes is the
+  OBSERVATION: `--at 0,0,-7.6` measures p50 0.13, p95 0.60, max 4.28 m/s2, worst apparent
+  tilt 23.6 deg between the old height and the new one. **That is a re-baseline for `rl/`,
+  not a defect** - a policy trained against the pre-2026-09-09 model saw a different signal
+  and has to retrain, not fine-tune. For scale, the same check puts a board out on the deck
+  beside the Pi at 30.6 m/s2 and 72.2 deg, and one 50 mm straight up at 28.2 and 70.8 - the
+  new mount is nowhere near that band, and it is still on the centreline, which was the part
+  of the original argument that mattered. Re-run it whenever this block or the gait moves.
+  Moved 2026-09-09.
 - **The IMU's mounting point is a model constant, not a mount detail** — `IMU_*` in
   section 3, reached through `imu_xyz()`, and both sim exporters read the `imu` site from
   there. This was the same defect a **fourth** time and it had been shipping: the ROS 2
@@ -187,17 +304,21 @@ name → (workplane, qty, note) and drives both the export loop and the BOM;
   — 42° of apparent tilt — on the existing trot for a board out by the Pi, against 25° on
   the centreline. Re-run it whenever the mount or the gait moves, and never let the site
   and the board be chosen in different files again.
-- **The IMU board's slot is 3.6 mm and interference() cannot see either wall.** Above it is
-  the deck's underside at `BODY_Z1`; below it is the battery pack's top at
-  `BODY_Z0 + BATT_H` = 21.4, and the pack is a payload, so `imu_clear()` exists for it the
-  way `gps_clear()` exists for `OPI_BOX`. The board and its components are 2.8 mm of the
-  3.6, which is why `IMU_STACK` says headerless and why `ref/imu/README.md` says solder to
-  the pads. Moving `DECK_T`, `BATT_H`, the deck window or `IMU_TAB_T` moves one of those
-  two walls; the build prints the remaining gap on every run, and it is allowed to be
-  small but never negative.
+- **The IMU board's clearance is a payload gap, and interference() cannot see it.** It was
+  the 3.6 mm slot under the deck until 2026-09-09; the board now sits on the deck's top
+  face inside the Orange Pi's 7 mm standoff gap, so the wall that is thin is the Pi's own
+  board 3.4 mm above it. Neither the Pi nor the pack is a part, which is why `imu_clear()`
+  exists the way `gps_clear()` exists for `OPI_BOX`. Note what it measures against: the
+  Pi's BOARD, one `OPI_STAND_H` above the deck, not `OPI_BOX`, whose floor is the deck
+  itself and whose standoff gap the IMU now shares on purpose. The board and its
+  components are 2.8 mm, which is why `IMU_STACK` says headerless and why
+  `ref/imu/README.md` says solder to the pads. Moving `DECK_T`, `OPI_STAND_H`,
+  `IMU_STAND_H` or `IMU_WINDOW` moves one of its walls; the build prints the remaining gap
+  on every run, and it is allowed to be small but never negative.
 - **A boolean that fails on a degenerate contact comes back INVERTED, not broken, and
   `isValid()` still says True.** This is the OCC silent-failure note above generalised off
-  the shin lofts, and it shipped: `fork_access_bores()` - since replaced by `fork_access_channels()`, which cuts through the corner instead - cut its four @6 bores before the
+  the shin lofts, and it shipped: `fork_access_bores()` - long since deleted, see the
+  fastener-probe note above - cut its four @6 bores before the
   rear connector pads were unioned on, and those pads start at exactly the plane the bores
   end on - `xw+WALL` = -60.2 against the bores' `BODY_L/2-WALL` = 60.2. They share **no
   volume at all**; the pad's inner face is welded straight onto the bore's circular
@@ -256,24 +377,33 @@ name → (workplane, qty, note) and drives both the export loop and the BOM;
 1. `.venv/bin/python mini_dog.py` — all parts valid, and check the ROM table it prints.
    Hip pitch collapsing to ±15° means the pitch axis lost its 30 mm drop below the roll axis.
    The run also ends with either `body clear:` or one `!! INTERFERENCE` line per pair of
-   `chassis_bottom` / `chassis_top` / `lidar_mount` / `gps_mount` / `camera_mount` — and
-   the camera module itself, which is not a printed part but is bolted to the same body —
-   that
+   `chassis_bottom` / `chassis_top` / `lidar_mount` / `gps_mount` / `camera_mount` /
+   `battery_case` / `battery_lid` / `cradle_front` / `cradle_rear` — and the camera module
+   and the IMU board, which are not
+   printed parts but are bolted to the same body — that
    share more than 1 mm³ of solid, and with `gps clear:` — the GPS mast against the Orange
    Pi's `OPI_BOX` envelope, which `interference()` cannot see because the Pi is a payload
-   and not a part.
+   and not a part — `imu clear:` (the board against the Pi above it), `batt clear:`
+   (the battery module's lid against the deck), `panel clear:` (every rear-wall opening
+   against the assembled body) and `cradle bolts:` (a driver's run to each of the eight
+   cradle screws, and the heads against the pack).
    That is a failure, not a warning — `isValid()` never sees it, and `rom_scan` only covers
    the parts that move. Keep it cheap: three static solids, no sweep.
 2. Mass and print bbox in the same table: parts must fit a normal 256 mm bed.
 3. `.venv/bin/python render.py` and actually look at the three PNGs.
 4. **Strength, every time** — `.venv/bin/python fea.py --all` (covers `hip_bracket_A`,
-   `thigh_A`, `shin_A` over all four load cases). Run it *before* the change too, or keep
+   `thigh_A`, `shin_A` and `cradle_front` over all four load cases). Run it *before* the change too, or keep
    the previous run's output, so there is a baseline to compare against. Judge on the
    **inter-layer** SF (the second of the `SF xy / z` pair) — that is the one FDM parts
    actually fail at. Any part whose inter-layer SF drops is a regression: fix it or report
    the before/after numbers explicitly, do not just note that the parts are still valid.
    Run `--selftest` first if you touched `fea.py` itself, and `--orient` if you changed a
-   part's `PRINT_ORIENT` entry.
+   part's `PRINT_ORIENT` entry. **For `cradle_front`, read `--orient` and not the SF
+   column** — see the invariant above; the numbers are 1.35 there against 0.7 here, and
+   the difference is that the SF column assumes the worst stress orientation.
+   Baseline, 2026-09-09, at 2.46 kg, inter-layer: `hip_bracket_A` 46.9 / 23.4 / 7.8 / 2.4,
+   `thigh_A` 18.9 / 9.4 / 3.1 / 1.2, `shin_A` 60.1 / 30.1 / 10.0 / 4.9,
+   `cradle_front` 4.0 / 2.0 / 0.7 / 3.0.
 5. **Re-export the sim model, every time** — `.venv/bin/python export_sim.py --check`.
    It rebuilds `out/sim/` and then loads both files in MuJoCo and stands the robot up for
    3 s: `4 feet down, upright +1.00` and a base height near the CAD stance is the pass.
@@ -305,6 +435,17 @@ name → (workplane, qty, note) and drives both the export loop and the BOM;
    this venv's libpython on its own); it changes no dynamics - verified, the 5 s trot comes
    out at the same millimetre with and without it - so it is a diagnostic, never the
    regression itself.
+
+   **Re-baselined 2026-09-09 by the cradle split.** Same seeds, same day, the unchanged
+   tree beside the changed one, at 2.493 kg control against 2.487 kg after:
+   **flat 595.2 mm control / 556.6 after**; **terrain seeds 7..12 498 ±81 control /
+   520 ±67 after** — 22 mm of means against spreads of 81 and 67, i.e. one distribution,
+   and that is the arm to read; **course seeds 7/8/9 5/7, 3/7, 4/7 all upright control /
+   1/7, 5/7, 4/7 all upright after** (corridor 2876/2023/2441 against 1506/2872/2582).
+   Read the course over seeds or not at all — an INTERMEDIATE version of this change, 8 g
+   lighter, read 1/7 and went DOWN on seed 7 while its terrain sweep was indistinguishable
+   from the control, which is exactly the trap the paragraphs below describe.
+   The 2026-09-08 numbers, superseded: flat 790.8, terrain 537 ±67, course 5/7 2778.
 
    **Re-baselined 2026-09-08 by the foot contact fix** (`MJ_FOOT_CONDIM` above), which
    changed no geometry and no mass and moved every figure in this step, because

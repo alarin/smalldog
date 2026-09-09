@@ -106,6 +106,60 @@ and without it.
 Range of motion is measured by swept boolean interference against the real solids
 (`rom_scan()` in the script), not estimated.
 
+### The cradle joint
+
+The four hip-roll cradles are **not part of the tray**. They are two printed parts —
+`cradle_front` and `cradle_rear`, one off each — and each carries both of that end's roll
+servos. Four M3 hold each one on.
+
+**Why.** `chassis_bottom` used to be 213 × 110 × 50 mm and 208 g, of which 110 g was servo
+cradle, so every change to the tray — a deck screw, the battery seat, the connector panel
+— meant reprinting all four cradles and taking all four hip servos out of their sleeves.
+The tray is now 126 × 92 × 50 and 127 g, and the cradles are 38 g each.
+
+**One part per end, not four quarters**, and that is forced rather than tidy: the two
+halves' rails overlap on the centreline (each reaches y = ∓14), so the four quarters are
+not four separable bodies. Merging them is free and then some — one duct instead of two,
+one flange instead of two, and a bolt pattern that spans the full 98 mm.
+
+**Four screws and a register.** The screws are nowhere near their limit: worst case,
+`land3g` and `stall` adding, is 22 N of axial and 28 N of shear on an M3, ~3 MPa of bearing
+in a 4 mm flange. What four fasteners do *not* replace is 795 mm² of welded face for
+**stiffness** — the roll axis is 27 mm outboard of this joint and the foot 187 mm below,
+so a tenth of a millimetre of slop at the flange is 0.7 mm at the ground. So each screw
+runs through a spigot: the cradle's flange carries a ⌀`CRADLE_REG_D` = 7 boss standing
+`CRADLE_REG` = 2 mm proud of its face, into a pocket in a locally thickened tray wall. The
+four spigots take the shear and the torsion; the screws only clamp.
+
+**Where the screws may go is decided by the fork, not the flange.** The flange face is
+98 × 30.7 mm but only `CRADLE_T` = 4 mm deep, because its outer face sits `FORK_GAP`
+behind the roll fork's rear arm — and an M3 nut does not fit in 4 mm with any wall left.
+Past that face, over the flange's z band, the only thing in the way is that arm: a disc of
+`ARM_R` about each roll axis. The spine's 23 < r < 34 annulus is swept only on the
+*outboard* side over a ±90° ROM and at |z| ≤ `CRADLE_Z1` never gets inboard of the axis at
+all — which is also why the rails have always been allowed to run full length at
+|y| ≤ 14. So a nut boss may run out to `CRADLE_BOSS_X` = 71.5 (the servo case starts at
+72.5) anywhere that clears `ARM_R`, and the four screws sit at (±17, ±10.5) with their
+nearest boss corner at r = 15.0 against `ARM_R` = 13.5. `rom_scan` is what checks the arm;
+`cradle_clear()` checks a driver can reach the heads, and `cradle_head_clear()` checks the
+heads themselves against the battery module — 1.65 mm of ISO 7380 head on a seat 1.25 mm
+off the pack, which is why `CRADLE_CB` = 2 mm of counterbore exists.
+
+**The flange is a frame, and the opening is not decoration** — it is what lets the rear
+connector panel out. See *Payload bays*.
+
+**What it does not fix.** `cradle_front` is now in `fea.py`'s set, and it is the weakest
+printed part on the robot: interlayer SF **1.35** at `land3g` on `--orient`'s
+build-direction index, against 3.08 for `thigh_A`, 8.52 for `hip_bracket_A` and 19.36 for
+`shin_A`. That is not a regression — this geometry was inside `chassis_bottom`, which
+`fea.py` has never covered, so nobody had ever looked. Two things were found and fixed on
+the first run (a 1.4 mm notch in the strap, and a 27.6 mm step in its width; peak von Mises
+53.7 → 29.7 MPa), and the rest is structural: everything the leg puts into the sleeve has
+to funnel back to the flange through a section capped at `STRAP_Y` = 21.5, and the space
+that would widen it is swept by the fork over the ±90° roll ROM. Filling the neck solid,
+closing it with a web and thickening the straps were all tried and all made the peak
+*worse*. It is above 1 and it is the number to watch.
+
 ### Reaching the fork screws
 
 The fork's two arms are bolted to the hubs **last**, and there is no order in which they
@@ -115,59 +169,55 @@ it, along the joint axis. Whether a driver fits there is a property of whatever 
 be sitting behind that arm — the fork is identical at all three joints, its neighbours are
 not.
 
-**At the roll joint the inboard arm has 0.6 mm.** The passive-hub arm's outer face is at
-x = 68.1 and `roll_module`'s root gusset ends at 67.5. Behind that sits 2.8 mm of solid
-wall, and behind *that* the gusset's own hollow, which opens into the tray. So the four
-inboard screws on every `hip_bracket` are unreachable with the leg on the robot, and there
-is no assembly order that avoids it.
+**At the roll joint the inboard arm used to have 0.6 mm, and the fix was the assembly
+order, not a hole.** Since 2026-09-09 the hip-roll cradles are separate bolted parts
+(*The cradle joint*), so the fork goes on with the cradle **in hand**, before its four
+screws hold it to the tray. At that moment all four inboard screws are in open air: they
+sit on the ⌀14 hub circle, i.e. y 29…43 and z ±7, and the cradle's flange is a frame whose
+opening is y ±43.11 by z ±9.36. Measured on the solid, a ⌀5 driver on all four axes is
+blocked by **0 mm³ against the cradle alone and 569 mm³ against the cradle bolted to the
+tray** — the order is what makes it reachable, and the order is free, because the cradle
+has to come off to change a servo anyway.
+
+One feature exists for this and only this: `FORK_DRIVER_R` = `HUB_BC`/2 + `DRIVER_D`/2 +
+`CLR` = 9.85, the circle a driver sweeps, relieved through the flange at each roll axis.
+Most of it is already inside the frame's opening; what it takes out is the crescent past
+the opening's edge. Without it the outermost screw at y = 42.9 fouls the rib starting at
+43.11 by 38 mm³ — which is exactly what `fork_access()` read the moment the old channels
+came out and stopped relieving it by accident.
 
 `fork_access()` is the check, and it is the third of a family: `foot_bolt_check()` probes
 a bolt path through its own part, `thrust_clear()` probes a screw head against a swept
 annulus, and this one probes a **driver** against the neighbouring part. All three exist
 because the same defect kept arriving by the same route — `isValid()` is happy with a
 screw nobody can turn, `interference()` only looks at the static body, and `rom_scan` only
-looks at what moves. A fastener whose *access* is blocked is invisible to all three.
+looks at what moves. A fastener whose *access* is blocked is invisible to all three. It
+now reads `all six arms open to a straight key within 40 mm`; it used to read five.
 
-**The first fix was four ⌀6 bores per leg, coaxial with the screws and driven from inside
-the tray — and measured on the solid it reached one screw of four.** The corner deck boss
-at (52, 38) stood in front of two; the outboard bore's axis ran 0.2 mm inside the tray's
-own side wall, so its ⌀6 came out through the skin with nothing left; and a bore coaxial
-with the screw only lets a key tilt (D − d)/2 over its length — 12.5°, not the 24° that
-was claimed. `fork_access()` passed through all of it because its probe stopped inside the
-bore. `MAC.md` of 2026-09-03 has the measurements. That investigation also found that no
-path *into* the tray can work at all: the battery cradle's front end stop is full height
-and spans y ±37, and every screw axis meets it within 18 mm.
+#### What that deleted
 
-**The fix that stands is two channels per leg, leaning outboard, and turning the leg
-between screws.** Two facts make it work:
+Two answers to this were built before the cradle was split off, and both are worth keeping
+on the record because the second one *worked* and was still the wrong shape of answer.
 
-- The four screws sit on the ⌀14 hub circle, and that circle **turns with the leg**. A
-  channel at one position on the circle serves every screw within a quarter turn of it,
-  so two channels 90° apart serve all four. With the outboard arm still unbolted the fork
-  turns freely on the passive hub — the leg is turned by hand, no servo command, no
-  torque-off. `fork_channels_cover()` is the closed-form check: the worst screw is 90° from
-  its nearest channel, against the `FORK_TURN` = 90° the hip has.
-- Leaving the screw head at `KEY_TILT` = 20° *outboard* puts the key in open air past the
-  tray's front corner almost at once, without entering the tray. The "out" channel (world
-  y = `ROLL_Y` + 7, z = 0) crosses the gusset's inner skin and the tray's corner post and
-  is outside at x = 60 — 8 mm of material. The "top" channel (y = `ROLL_Y`, z = +7)
-  crosses the gusset skin, the front wall, the corner deck boss at z 4…10 (its M3 hole
-  starts at z = 11, its nut slot at 19) and the side wall, and comes out through the side
-  vent at x = 41 — 29 mm. A ball-end key works to ~25°; the 5° is margin.
+**The first was four ⌀6 bores per leg, coaxial with the screws and driven from inside the
+tray — and measured on the solid it reached one screw of four.** The corner deck boss at
+(52, 38) stood in front of two; the outboard bore's axis ran 0.2 mm inside the tray's own
+side wall, so its ⌀6 came out through the skin with nothing left; and a bore coaxial with
+the screw only lets a key tilt (D − d)/2 over its length — 12.5°, not the 24° claimed.
+`fork_access()` passed through all of it because its probe stopped inside the bore.
+`MAC.md` of 2026-09-03 has the measurements.
 
-`fork_access_channels()` cuts them — ⌀`FORK_ACCESS_D` = 6, `FORK_ACCESS_L` = 55 mm along
-the leaning line — on the *assembled* chassis and last: the "top" channel crosses four
-solids that are unioned in separately, and cutting any one alone lets the union fill the
-others back in. `fork_access()` now runs a ⌀5 probe along the same two lines for the same
-55 mm, i.e. **until it stands in open air**, and a straight 40 mm behind the five arms
-that have air behind them; a boolean that fails counts as blocked, not as clear.
+**The second was two ⌀6 channels per leg leaning 20° outboard through the tray's front
+corner**, with the leg turned a quarter turn by hand between screws so that two channels
+served all four (the screw circle turns with the leg). That one was real and it passed.
+What it cost the chassis was a ⌀6 hole through the front corner post and another through
+the lower half of each corner deck boss, out into the side vent — eight holes, in a part
+whose whole job is to be a stiff box.
 
-Because neither channel enters the tray, the legs go on and off **with the deck on and the
-battery in**. On a chassis already printed they are a drill job: ⌀6, from outside, aimed
-20° inboard of the body's long axis at the screw — "out" enters the side wall 3 mm behind
-the front face at axis height, "top" enters through the side vent 22 mm behind the front
-face and 18 mm below the top edge. Stop at the gusset face (8 and 28 mm in) or the drill
-meets the servo.
+Splitting the cradle off gives the same access for **no holes at all**, which is the
+general lesson: an access problem that keeps needing cleverer holes is usually telling you
+the part boundary is in the wrong place. A chassis printed against the old geometry still
+has the eight holes and is not wrong, just drilled.
 
 **The screw heads were not in the model either**, and they are the same defect as the
 thrust clamp's cap head: the arm's outer face had 0.6 mm to the gusset and an ISO 7380
@@ -241,34 +291,92 @@ Two-view packaging drawing of the whole body — side elevation and plan on a sh
 axis, every part's position, extent, mass and fixing: [docs/payload_bays.html](docs/payload_bays.html).
 Hand-drawn from `mini_dog.py`'s constants, so it is only as current as the run it was
 drawn from; the list of parameters that invalidate it is in the file's own header.
+**It is stale as of 2026-09-09** — it still draws the six-cell battery cradle and the IMU
+in the deck window, and both are gone. Redraw it before relying on it.
 
-- 3S2P 6 × 21700 (Molicel P42A class): cradle for two layers of three, cells along X,
-  four fins on the cell pitch, two strap slots. Sits on the floor, centred → low CG.
-  Every dimension is derived from `CELL_D`/`CELL_L` — the P42A's datasheet maxima over the
-  wrap — so the three channels come out at exactly `CELL_D + CELL_FIT` = 21.7 mm, with
-  `BATT_TAB` = 4 mm at each cell end for the welded nickel and 3.6 mm over the pack to the
-  deck. It was a literal 67 mm wide until 2026-08-28, which left a 19.5 mm channel for a
-  21.3 mm cell: the pack it was drawn for did not exist. Do not put the width back.
-- 3S BMS: bay in the front, ESP32 + Feetech URT-1 bay in the rear.
-- IMU (BMI088 breakout, 20 × 15 mm): under the deck on the centreline, bolted up against
-  two tabs that bridge the deck's own window, component face down. The position is not a
-  packaging choice — it is `imu_xyz()`, and both simulators emit their `imu` site there, so
-  the board and the model agree by construction. `rl/checks/imu_placement.py` is what forces
-  that: an accelerometer offset by r from the site the model calls `imu` reads
+- **Battery module** — 3S2P 6 × 21700 (Molicel P42A class), and it is a *module*, not six
+  cells in the chassis. The cells are welded into a 3 × 2 brick, the brick is heatshrunk,
+  and the brick and its BMS live in a printed case (`battery_case` + `battery_lid`) that
+  drops into the tray as one payload. It fills the tray: 102.3 × 68.2 × 46.4 mm, from
+  z = −22.8 to 23.6, with 1.4 mm of air to the deck. `CELL_D`/`CELL_L` are the P42A's
+  datasheet maxima over the wrap and everything else derives from them — inside the brick
+  the cells *touch*, which is what welding and shrinking them does, so the old per-cell fin
+  and slip fit are gone with the cradle they belonged to.
+
+  Two zones along x. The **BMS** stands on edge against the rear wall, so its leads and
+  the pack's leave by one grommet slot and reach the connector panel without crossing the
+  cells; it is held by the rear wall and two ribs in x, by the case's own side walls in y
+  (64.0 mm of board across a 65.0 mm interior — a press, not a slot), by the ribs' ledge
+  below and by one bar under the lid above. The **brick** fills the rest, right up to the
+  front wall. That **front wall** is thickened to 7.5 mm and is the module's only screwed
+  fixing: the lid's rear edge slides into a groove in the rear wall and its front edge
+  takes two M2.5 straight down into the front one. The bar over the BMS is the only thing
+  hanging below the lid — over the brick there is 0.2 mm, not 2, which is a mistake this
+  design made once and `module_clear()` now catches. Two vents high in the rear wall: a
+  sealed box around six cells is the wrong kind of safe, and a cell that vents goes out of
+  the back, away from the deck.
+
+  What it cost, because it was not free: a case needs about 3.5 mm the bay did not have,
+  and the only 3.5 mm near it was the IMU's slot, so the IMU moved onto the deck (below).
+  The module reaches x = −46.15, so the ESP32 + URT-1 bay moved back to x = −51 and `BATT_X`
+  was pushed forward to 5.0 until that strip was the 8.9 mm it had before. The four corner
+  deck screws moved from |y| = 38 to 41 — at 38 their bosses took a 1.9 mm bite out of the
+  module's corners — so all eight deck screws are at |y| = 41 now.
+- 3S BMS: **inside the battery module** (above). Its old bay at x = +46 is gone. ESP32 +
+  Feetech URT-1 bay at x = −51, behind the module.
+- IMU (BMI088 breakout, 20 × 15 mm): on the deck's **top** face on the centreline, on two
+  2 mm standoffs inside the Orange Pi's own standoff gap, component face down. The position
+  is not a packaging choice — it is `imu_xyz()`, and both simulators emit their `imu` site
+  there, so the board and the model agree by construction. `rl/checks/imu_placement.py` is
+  what forces that: an accelerometer offset by r from the site the model calls `imu` reads
   ω × (ω × r) + α × r on top of gravity, which on the existing 0.2 m/s trot is 9.0 m/s² —
-  42° of apparent tilt — for a board out on the deck beside the Pi, against 25° here. The
-  slot is 3.6 mm (pack top at z = 21.4, deck underside at 25) and the board is 2.8 of it,
-  so **the header has to come off and the wires get soldered to the pads** — see
-  `ref/imu/README.md`. Everything about this is **verify**: no BMI088 has been measured.
+  42° of apparent tilt — for a board out on the deck beside the Pi, against 25° on the
+  centreline.
+
+  It used to hang under two tabs bridging the deck's window, in the 3.6 mm between the pack
+  and the deck. That slot was the only reason the battery could not be a module, so the
+  board moved up out of the tray into 7 mm of air nothing else uses. The site rises from
+  z = 23.4 to 31.0 — |r| grows 7.6 mm and the ω × (ω × r) term with it, about a third, on
+  the centreline where the whole term is small. **Re-run `rl/checks/imu_placement.py`**:
+  that is the check that puts a number on it, and this has not been through it yet. The
+  deck's cable window moved off the centreline (`IMU_WINDOW`, x −34…−12) to leave solid deck
+  under the board, and the two M2.5 form their own thread 5 mm down through the standoff
+  and into that deck — one of only two places on the robot where a screw threads into
+  plastic (see *Screws into plastic*). **The header still has to come off and the wires get
+  soldered to the pads** — see `ref/imu/README.md`. Everything about this is **verify**: no
+  BMI088 has been measured.
 - Rear connector panel, around the bus window: **XT60** (master disconnect / bench supply,
   on the fused P+), **XT30** (charge) and a pass-through for the 3S JST-XH balance lead.
   The two XT shells are different sizes on purpose — a charger cannot be plugged into the
   servo bus. Each XT sits in a pocket in a locally thickened wall and goes in **from
   inside, before the deck**; the outer 1.5 mm of wall is left as a 0.8 mm lip all round and
-  that lip takes the unplug force, so the mating half stands 1.5 mm proud. The XT60 is
-  below the window rather than beside it because the strip between the window's edge and
-  the rear deck boss is 16.2 mm and an XT60 needs 16.5. Size the charge lead for 5 A
-  (18 AWG) and the bus lead for the 30–35 A fuse (14 AWG).
+  that lip takes the unplug force, so the mating half stands 1.5 mm proud. Size the charge
+  lead for 5 A (18 AWG) and the bus lead for the 30–35 A fuse (14 AWG).
+
+  **Every one of these opened into solid plastic until 2026-09-09, and nothing in the
+  repository could see it.** The two rear hip-roll cradles met across the centreline and
+  formed one continuous 2.8 mm plate at x = −64.2…−67.0 over |y| ≤ 49.11 and |z| ≤ 15.36,
+  with 1.2 mm of air behind the wall and no way through. Measured on the solid: the bus
+  window 100 % blocked, the XT30 100 %, the balance lead 100 %, the XT60's top 3.61 mm —
+  and the XT mating halves stand 1.5 mm proud of x = −63, i.e. to −64.5, already 0.3 mm
+  *inside* the plate. Not one of them could ever have been plugged in. `interference()`
+  pairs the static body parts and the cradles **were** `chassis_bottom`, so the plate was
+  `chassis_bottom` standing in front of `chassis_bottom`'s own hole; `isValid()` and
+  `rom_scan` see nothing either. The note that used to stand here reasoned about the deck
+  bosses at |y| = 32.2 and never about the cradle, which was 30 mm closer — and was itself
+  stale, because the deck screws moved to |y| = 41 with the battery module.
+
+  What fixed it is the cradle becoming a bolted part with a **frame** flange (*The cradle
+  joint*): the frame's opening is y ±43.11 by z ±9.36, and the panel is laid out inside it
+  and around the four bolt bosses, whose tray-side seats reach y = 23 and z = 16.5. The bus
+  window is 22 × 16 (it was 32 × 20), the XT30 sits at y = +32 and the balance lead at
+  y = −32. **The XT60 is the one that does not fit inside the frame** — 16.5 mm of width
+  does not survive the window and the two bosses — so it goes *above* the cradle, at
+  z = +20 on the centreline, where the rear wall is clear from z = 15.36 to 25 and the
+  interior is the ESP32/URT-1 strip. That band is 9.64 mm for an 8.5 mm body, so its z is
+  not a round number and moving `BODY_Z1`, `CRADLE_Z1` or `PANEL_XT60` moves it.
+  `panel_clear()` probes every opening along −x against the assembled body on every run,
+  and it is a failure line like `!! INTERFERENCE`, not a note.
 - Orange Pi 5 Pro: four printed standoffs on the deck (92 × 54 pattern — **verify**).
   With that pattern the rear pair lands at x = −68 on a deck that ends at −63, i.e. 0.8 mm
   clear of it, so `chassis_top` currently comes out as three solids. That is the hole
@@ -468,10 +576,14 @@ OV5693 module for the sensor, not the megapixels: 1/2.8" is ~3× the area of the
 | part | qty | material / settings |
 |---|---|---|
 | `chassis_bottom` | 1 | PETG/ASA, 4 walls, 30 % gyroid |
+| `cradle_front` | 1 | PETG/ASA, 5 walls, 40 % — flange face down |
+| `cradle_rear` | 1 | PETG/ASA, 5 walls, 40 % — flange face down |
 | `chassis_top` | 1 | PETG/ASA, 4 walls, 25 % |
 | `lidar_mount` | 1 | PETG/ASA, 4 walls, 30 % |
 | `gps_mount` | 1 | PETG/ASA, 4 walls, 30 % — platform down, no support |
 | `camera_mount` | 1 | PETG/ASA, 4 walls, 40 % — back skirt down |
+| `battery_case` | 1 | PETG/ASA, 4 walls, 25 % — open side up, no support |
+| `battery_lid` | 1 | PETG/ASA, 4 walls, 25 % — flat |
 | `hip_bracket_A` / `_B` | 2 + 2 | PETG/ASA/PA-CF, 5 walls, 40 % |
 | `thigh_A` / `_B` | 2 + 2 | PETG/ASA/PA-CF, 5 walls, 40 % |
 | `shin_A` / `_B` | 2 + 2 | PETG/ASA/PA-CF, 5 walls, 40 % |
@@ -479,6 +591,11 @@ OV5693 module for the sensor, not the megapixels: 1/2.8" is ~3× the area of the
 | `servo_gauge` | 1 | **print this first** |
 
 `_A` = FL + RR, `_B` = FR + RL (the two chiralities; front/rear are the same part rotated).
+The cradles are the exception to that rule: each already spans both sides of its end, so
+front and rear are two distinct prints rather than a mirrored pair — which is also why only
+`cradle_front` carries the camera's two nuts. Both print flange-down: it is the only
+build direction that puts the two servo bores vertical, and a press fit wants that more
+than it wants the 1.67 that lying flat would score on `fea.py --orient`.
 
 ### The bench fixture — not part of the robot
 
@@ -562,13 +679,16 @@ one `sleeve()` + one `fork()`, four `DECK_SCREWS` × 2, `CAM_FOOT_Y`, `LIDAR_N`,
 | M3 × 10 **set screw** (grub, hex socket) + M3 nut (sleeve thrust clamp, 2 per joint) | 24 |
 | M3 × 30 socket head + M3 nut (foot → shin ankle) | 4 |
 | M3 × 12 + M3 nut (deck → tray bosses) | 8 |
+| M3 × 12 + M3 nut (cradle → tray, 4 per end — see *The cradle joint*) | 8 |
 
 **Payload — none of it is needed to walk:**
 
 | | qty |
 |---|---|
 | M2.5 × 8 + M2.5 nut (Orange Pi → deck standoffs) | 4 |
-| M2.5 × 6 + M2.5 nut (BMI088 → the IMU tabs, from below) | 2 |
+| M2.5 × 8 **thread-forming**, no nut (BMI088 → the deck's top, through its standoff) | 2 |
+| M2.5 × 8 **thread-forming**, no nut (battery lid → the module's front wall) | 2 |
+| foam strip, ~1.4 × 20 × 90 mm (over the battery module's lid, under the deck) | 1 |
 | M3 × 20 + M3 nut (camera mount → the chassis gusset) | 2 |
 | M3 × 16 + M3 nut (LiDAR pedestal → deck, from underneath) | 4 |
 | M3 × 12 (Unitree L2 → pedestal, into the L2's own M3 threads) | 4 |
@@ -605,15 +725,35 @@ well as a floor — a longer screw is not the safe direction:
   5.35. It stands 0.65 proud of the deck's top face, under the Pi's 7 mm standoffs.
   The board thickness is `IMU_BOARD` and is still **verify**; so is this length.
 
-**Nothing threads into plastic anywhere on the robot.** Every screw above that is not going
-into the stock aluminium lands in a nut, and every one of those nuts sits in a side-loaded
-slot (`nut_slot()` in the script) whose two walls hold the nut's flats so it cannot turn.
+**Nothing in a torque path threads into plastic.** Every screw above — they are all load
+paths — that is not going into the stock aluminium lands in a nut, and every one of those
+nuts sits in a side-loaded slot (`nut_slot()` in the script) whose two walls hold the nut's
+flats so it cannot turn.
 The slot always opens toward the face that is still reachable at the point in the assembly
-order where that nut goes in — outward for the LiDAR legs, toward the middle of the tray
-for the corner deck bosses, along +x for the mid pair (inboard of them is the pack),
-outboard for the Orange Pi standoffs, forward under the chin for the camera gusset, toward
-x = 0 into the deck window for the IMU tabs, and above the foot's top face for the ankle
-bolt. No heat-set inserts.
+order where that nut goes in — outward for the LiDAR legs, inboard in y for the corner deck
+bosses, along +x for the mid pair (inboard of them is the battery module), outboard for the
+Orange Pi standoffs, forward under the chin for the camera gusset, and above the foot's top
+face for the ankle bolt. No heat-set inserts. The corner deck channels are closed by the
+battery module once it is in, so a deck nut is not replaceable with the pack in the tray —
+all eight go in with the deck off and before the module.
+
+### Screws into plastic
+
+**Off the torque path a screw is allowed to thread straight into the print** — a case lid,
+an electronics cover, a cable clamp, a bracket that holds nothing but itself. No part of
+the leg, the fork, the sleeve, the hub or the foot qualifies, and the question is not how
+big the screw is but whether a load path runs through it; if it does, or you are unsure,
+it gets a nut in a `nut_slot()` like everything above.
+
+Such a hole is **smaller than a clearance hole**, because the screw forms its own thread:
+`M3_TAP` = ⌀2.6 and `M25_TAP` = ⌀2.1 (radii in `mini_dog.py`, beside `M3_CLR`/`M25_CLR`).
+That is just under the middle of the band between the thread's minor and pitch diameter —
+2.459…2.675 for M3, 2.013…2.208 for M2.5 — with ~0.1 mm taken off for an FDM hole printing
+undersize. Two rules travel with the number: at least one screw diameter of boss wall all
+round, and two diameters of engaged length, because a formed thread in plastic strips at
+about one. It is a **one-assembly** thread; anything meant to come off repeatedly still
+wants a nut. Both figures are **verify** — the standard band minus a printer allowance, not
+a measured value. Print a coupon before the first part depends on one.
 
 No nuts at the hubs: the holes in both aluminium plates are tapped M3, so the screw
 goes in from the outside of the fork arm and threads into metal. There is no room for a nut
@@ -632,15 +772,18 @@ FAQ says stalls and burns the servo.
    hubs to the servo → bolt the fork arms to the hubs (bottom arm's ⌀23 pad enters the
    case-base recess). The thrust bolts come first: once the fork is on, its spine sweeps
    over the lug. **The fork cannot go on before the servo** — its arms straddle the
-   sleeve — so its screws are always last. At the hips bolt the **inboard** arm first,
-   through the two ⌀6 channels in the tray's front corner, with a **ball-end 2 mm** key
-   (ISO 7380 M3 takes 2 mm) leaning 20° outboard: turn the leg by hand until an arm hole
-   shows at the bottom of a channel, nudge the passive hub into line with the screw tip,
-   drive the M3 × 6 into its counterbore, turn the
-   leg a quarter turn to the next hole and repeat — between them the two channels reach
-   all four. Then line the outboard arm up with the driven hub and drive its four in open
-   air. Deck and battery stay where they are. See *Reaching the fork screws*, and run
+   sleeve — so its screws are always last. At the hips this happens with the
+   **cradle off the tray**, and that is what makes the inboard arm's four screws
+   reachable: straight 2 mm key (ISO 7380 M3 takes 2 mm), no tilt, no turning the leg,
+   through the flange's own opening and the `FORK_DRIVER_R` relief. Do both arms, then
+   bolt the cradle to the tray — step 3b. See *Reaching the fork screws*, and run
    `mini_dog.py` for the `fork access:` line.
+3b. Cradles onto the tray, **before the battery module goes in**: four M3 nuts into the
+   channels in each cradle's nut bosses, then the cradle's four ⌀7 spigots into their
+   pockets in the tray's end wall, then four M3 × 12 from *inside* the tray, heads in the
+   counterbored seats. The order is not a preference — the front seats sit 1.25 mm off the
+   battery module's front face, so the heads go in first and the pack goes in after. Run
+   `mini_dog.py` for the `cradle bolts:` line.
 4. Legs: hip bracket → thigh → shin → press the TPU foot onto the ⌀18 spigot, then the M3
    up through the foot into the nut in the ankle slot. The slot sits above the foot's top
    face, so the nut goes in with the foot already fitted, and the foot stays removable.
@@ -649,20 +792,30 @@ FAQ says stalls and burns the servo.
    17.7 mm above `FOOT_Z`, so nothing shorter is fully engaged. It was specified as
    M3 × 16 until 2026-08-31, which no position of the head can reach — see the foot-bolt
    invariant in `CLAUDE.md`. The head ends up ~2 mm inside the sole, clear of the ground.
-5. Chassis, and the order matters because half these nuts stop being reachable later:
-   8 M3 nuts into the tray bosses' slots (the corner pair's open toward the middle of the
-   tray, the mid pair's along +x — inboard of those two is the battery bay) →
+5. Battery module, off the robot and before anything else goes in the tray: weld the six
+   cells into a 3 × 2 brick and heatshrink it → BMS down its rib slot in the case's rear
+   zone, sitting on the ledge, leads through the grommet slot → brick in → lid's rear edge
+   under the rear wall's tongue, front edge down, 2 M2.5 into the front wall. Those two
+   **form their own thread** and it is a one-assembly thread — a pack opened and closed
+   often wants the holes drilled out and nutted (see *Screws into plastic*).
+6. Chassis, and the order matters because half these nuts stop being reachable later:
+   8 M3 nuts into the tray bosses' slots (the corner pair's open inboard in y, the mid
+   pair's along +x — inboard of those two is the battery bay). **All eight before the
+   module goes in**: the module closes the corner channels, so a deck nut cannot be
+   replaced with the pack in the tray →
    XT60 and XT30 into their rear-panel pockets from inside, balance lead out through its
    pass-through (all three are trapped by the deck afterwards) →
-   battery + BMS in the tray, servo bus routed out through the side ports →
+   battery module into its seat recess, foam strip on its lid, servo bus routed out
+   through the side ports — over the module there is 1.4 mm, so cables go round its ends
+   or straight out through the side ports, never across the top →
    4 M3 nuts into the pedestal legs' lower slots and bolt the pedestal to the deck **from
    underneath, with the deck still off the tray** →
-   2 M2.5 nuts into the IMU tabs' slots and the BMI088 up under them, **also with the deck
-   off** — the channels open toward x = 0 into the deck window, which is open air only
-   while the deck is in your hand, and once the Orange Pi is on there is no reaching the
-   board at all →
    deck onto the tray →
-   4 M2.5 nuts into the standoff slots, Orange Pi, ESP32/URT-1 →
+   BMI088 onto its two deck-top standoffs on the centreline, 2 M2.5 forming their own
+   thread into the deck — component face down into the standoff gap, and **before the
+   Orange Pi**, which sits directly over it →
+   4 M2.5 nuts into the standoff slots, Orange Pi, ESP32/URT-1 (their bay is at x = −51
+   now, behind the battery module) →
    GPS mast onto the rear pair of deck screws, swapping them for M3 × 24, then the
    receiver into its rails and two ties (it arches over the Pi, so the Pi goes in first
    and the mast has to come off again to lift the Pi out) →
@@ -674,7 +827,7 @@ FAQ says stalls and burns the servo.
    base is tapped M3 6 mm deep, and 12 mm is 7 mm of flange plus 5 mm of thread. Do not
    substitute a longer screw: it bottoms in the blind hole and lifts the sensor off its
    seat without ever feeling loose.
-6. Zero all joints at the mechanical zero pose (legs straight down) before powering the gait.
+7. Zero all joints at the mechanical zero pose (legs straight down) before powering the gait.
 
 ## Onshape import
 
@@ -854,6 +1007,11 @@ frame above.
    XT60 16.5 × 8.5, XT30 12.0 × 6.6, JST-XH 3S plug 13.0 × 6.0. All four are catalogue
    numbers, not measurements — check them against the parts in your hand before printing
    the tray, because a pocket that is 0.3 mm small is a connector that does not go in.
+   **The BMS outline got sharper teeth on 2026-09-09**: it went inside the battery module,
+   where its 64.0 mm length crosses a 65.0 mm interior. Half a millimetre a side is a press
+   fit if the number is right and a case that will not close if it is not, and the interior
+   width is `max(BRICK_W + BATT_FIT, BMS_L + 1.0)` precisely so a re-measured BMS widens
+   the case instead of jamming in it. Measure this one first.
 5. Servo cable/connector envelope: the sleeve window is 15 × 12 mm at the far end face.
 6. Orange Pi stack envelope `OPI_BOX` (currently 100 × 62 × 20 over the deck) — it is now
    a keep-out, not just a mass box: `gps_mount` is shaped around it.

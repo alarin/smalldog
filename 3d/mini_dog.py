@@ -62,10 +62,20 @@ ARM_BOT_TOP = -17.90                  # bottom-arm top face (0.4 under the case 
 FORK_Y0, FORK_Y1 = ARM_BOT_TOP-ARM_T, HUB_TOP_Z+ARM_T   # fork outer faces, on the axis
 SPINE_R0, SPINE_R1, SPINE_W = 23.0, 31.0, 28.0
 LIGHT_L, LIGHT_D = 20.0, 12.0         # sleeve cooling window: obround, length x width
-M25_CLR, M3_CLR = 1.45, 1.70
+M25_CLR, M3_CLR = 1.45, 1.70          # clearance-hole RADII: @2.9 / @3.4
 M25_NUT_AF, M25_NUT_H = 5.00, 2.00
 M3_NUT_AF, M3_NUT_H = 5.60, 2.70
 NUT_CLR    = 0.25                     # slide fit on a nut pocket's flats
+# Thread-FORMING radii, for the one case a nut is not required: a cover or a bracket that
+# carries no torque path (see README, "Screws into plastic").  The screw cuts its own
+# thread, so the hole is between the thread's minor and pitch diameter - M3 is 2.459 and
+# 2.675, M2.5 is 2.013 and 2.208 - and these sit just under the middle of that band
+# because an FDM hole prints ~0.1 mm undersize on top of it.  Two rules travel with them:
+# the boss wall is >= the screw diameter all round (@3 M3 hole -> >= 9 mm of boss), and
+# the engaged length is 2 x D, because a formed thread in plastic strips at ~1 x D.
+# Never use these on a joint, a fork, a hub or anything the leg loads.  UNVERIFIED until
+# a printed coupon says otherwise - print one before the first part relies on it.
+M25_TAP, M3_TAP = 1.05, 1.30          # thread-forming RADII: @2.1 / @2.6
 # Sleeve thrust clamp.  The case sits in the sleeve on CLR alone and nothing holds it:
 # 0.35 mm on the 45 mm flats is ~+-0.9 deg of knock per joint, ~+-2.5 deg at the foot, and
 # PETG that wears a little more every time the gait reverses.  Two M3s through the -x end
@@ -110,38 +120,42 @@ THRUST_SEAT = 3.00                    # lug behind each nut - this is what takes
 # from OUTSIDE it, along the joint axis.  Whether a driver fits there is a property of the
 # neighbouring part, not of the fork, so fork_access() probes it against the real solid.
 #
-# At the pitch and knee that is a plain key with open air behind it.  At the roll joint the
-# inboard arm faces the chassis with 0.6 mm to spare, and the first answer - four @6 bores
-# coaxial with the screws, driven from inside the tray - reached one screw of four: a deck
-# boss stood in front of two, the outboard bore's axis ran 0.2 mm inside the tray's own
-# side wall, and a coaxial bore only lets a key tilt 12 deg.  Behind the front wall the
-# battery cradle's end stop closes EVERY path that stays inside the tray within 18 mm.
+# At the pitch and knee that is a plain key with open air behind it, and SINCE 2026-09-09
+# so is the roll joint - because the cradle is a bolted part now (see the CRADLE_* block).
+# The fork goes on with the cradle IN HAND, before its four screws hold it to the tray, and
+# at that moment all four hub screws are in open air: they sit on the @14 hub circle, i.e.
+# y 29..43 and z +-7, and the flange is a FRAME whose opening is y +-43.11 by z +-9.36.
+# Measured on the solid: a DRIVER_D key on all four axes is blocked by 0.7 mm3 against the
+# cradle alone, and by 569 against the cradle bolted to the tray.  So the order is what
+# makes it reachable, and the order is free - the cradle has to come off to change a
+# servo anyway.
 #
-# What works is two things together.  The screws sit on the @14 hub circle and that circle
-# TURNS WITH THE LEG, so a channel at one position on it serves every screw within a
-# quarter turn of that position, and two channels 90 deg apart serve all four - with the
-# outboard arm still unbolted the leg is turned by hand, no servo involved.  And the
-# channels do not go into the tray at all: they leave the screw head leaning KEY_TILT
-# OUTBOARD and stand in open air past the tray's front corner after 9 mm (the "out" screw)
-# and 29 mm (the "top" one, which passes under the corner deck boss's screw hole and comes
-# out through the side vent).  fork_access_channels() cuts them and fork_access() probes
-# them to open air; the leg goes on and off with the deck on and the pack in.
+# WHAT THAT DELETED, because it is worth knowing why the geometry looks simpler than the
+# history: the roll joint's inboard arm used to face the chassis with FORK_GAP of air and
+# the fork could only go on after the servo was in its bore, so those four screws were
+# always last and always blind.  Two answers were built for that.  The first was four @6
+# bores coaxial with the screws, driven from inside the tray; it reached ONE screw of four
+# - a deck boss stood in front of two, the outboard bore's axis ran 0.2 mm inside the
+# tray's own side wall, and a coaxial bore only lets a key tilt 12 deg (MAC.md, 2026-09-03).
+# The second was two @6 channels leaning 20 deg outboard through the tray's front corner,
+# with the leg turned a quarter turn by hand between screws so two channels served all
+# four.  That one worked, and it cost the chassis a @6 hole through its front corner post
+# and another through the lower half of each corner deck boss, out into the side vent.
+# Splitting the cradle off gives the same access for no holes at all.
 DRIVER_D      = 5.00                  # hex driver shank, and the room to turn it
 KEY_D         = 2.00                  # the key: ISO 7380 M3 button heads take 2 mm, not
                                       # the 2.5 a DIN 912 cap head would
-KEY_TILT      = 20.0                  # deg off the screw axis the roll channels lean.  A
-                                      # ball-end key works to ~25; the 5 deg is margin
-KEY_REACH     = 40.0                  # straight run a plain key wants behind a screw, at
-                                      # the five arms that have open air behind them
-FORK_ACCESS_D = 6.00                  # the channel bore, around KEY_D
-FORK_ACCESS_L = 55.0                  # ... and how far it is cut: well past the point
-                                      # where it is in open air, so the probe stands in
-                                      # air too and not in a bore that leads nowhere
-FORK_CHANNELS = ((-HUB_BC/2, 0.0),    # servo-local: the "out" screw, world y ROLL_Y+7, z 0
-                 (0.0, -HUB_BC/2))    # ... and the "top" one, world y ROLL_Y, z +7.  The
-                                      # lean is toward local -x, i.e. outboard (world +y)
-FORK_TURN     = 90.0                  # deg the leg is turned between screws: a quarter
-                                      # turn, which is also what rom_scan allows the hip
+KEY_REACH     = 40.0                  # straight run a plain key wants behind a screw.
+                                      # All six arms now, not five.
+FORK_DRIVER_R = HUB_BC/2 + DRIVER_D/2 + CLR   # 9.85 - the circle a driver sweeps reaching
+                                      # the four hub screws, and what the cradle's flange
+                                      # is relieved to.  Derived from the hub circle on
+                                      # purpose: the outermost screw sits at y = 42.9 and
+                                      # the frame's rib starts at 43.11, so without this
+                                      # the flange fouls the driver by 38 mm3 - which is
+                                      # what fork_access() read the moment the two tilted
+                                      # channels came out and stopped relieving it by
+                                      # accident.
 # The hub screws as bought: ISO 7380 button heads, M3 x 6, one length for all 96.  The
 # head is the part that matters and it was never in the model: 1.65 tall on an arm whose
 # outer face has FORK_GAP of air to the chassis gusset.  A cap head is 3.0 and would not
@@ -221,32 +235,238 @@ SHIN_PROFILE = (
 SHIN_WALL, SHIN_RIB = 3.2, 2.6                # wall, and the central shear web
 SHIN_CAV   = (36.0, 62.0)                     # cavity: closed by a bulkhead at either end
 SHIN_TIE_U = (45.0, 51.0)                     # one tie anchor: in one slot, out the other
-# 3S2P pack: 6 x 21700, two layers of three, cells along X.  The cradle is DERIVED from
-# the cell, not styled.  At the old literal 67 mm the four fins left a 19.5 mm channel for
-# a 21.3 mm cell - the pack it was drawn for did not exist.  CELL_D and CELL_L are the
-# datasheet MAXIMA of a Molicel INR21700-P42A over its wrap; a cell that measures bigger is
-# a cell to re-measure, not a number to shave here.
+# THE BATTERY IS A MODULE, NOT SIX CELLS IN THE CHASSIS.
+#
+# It used to be a cradle: four printed fins on the cell pitch, two end stops, a strap, and
+# six loose 21700 sitting in the tray with their welded nickel a millimetre under the
+# deck.  That is the arrangement every check in this repo is blind to - the cells are a
+# payload, so interference() cannot see them, and nothing at all can see a tab that has
+# chafed through its insulation against a printed edge.  The pack is now a self-contained
+# unit: six cells welded into a 3 x 2 brick, HEATSHRUNK over the whole brick, its BMS in
+# the same box, and a printed case with a screwed lid around both.  Two leads leave it and
+# nothing else.  The robot carries one payload, not seven loose ones, and a pack that
+# comes out for charging or storage is still enclosed when it is out.
+#
+# CELL_D and CELL_L are the datasheet MAXIMA of a Molicel INR21700-P42A over its wrap; a
+# cell that measures bigger is a cell to re-measure, not a number to shave here.  Inside
+# the brick the cells TOUCH - that is what welding and shrinking them does - so the old
+# CELL_FIT and BATT_FIN are gone with the cradle they belonged to.
 CELL_D, CELL_L = 21.3, 70.2           # 21700, at its maximum over the wrap
-CELL_FIT       = 0.4                  # slip fit, per cell, into its channel
-BATT_FIN       = 2.4                  # printed separator between cells
 BATT_TAB       = 4.0                  # welded nickel + insulation, at each cell end
-BATT_PITCH     = CELL_D + CELL_FIT + BATT_FIN
-BATT_L = CELL_L + 2*BATT_TAB          # clear length between the end stops
-BATT_W = 3*BATT_PITCH + BATT_FIN      # fin-cell-fin-cell-fin-cell-fin, overall
-BATT_H = 3.0 + 2*(CELL_D+CELL_FIT)    # tray floor + two layers
-BMS_L, BMS_W, BMS_H    = 64.0, 27.0, 13.0
+BATT_WRAP      = 0.30                 # heatshrink over the finished brick, per side
+BATT_FIT       = 0.4                  # slip fit of the wrapped brick into the case, total
+BATT_CASE_T    = 1.6                  # case floor and side walls - 4 perimeters at 0.4
+BATT_LID_T     = 1.2                  # the lid: a cover, and the deck is above it
+BATT_REB       = 1.0                  # rebate the lid drops into, all round
+BATT_SEAT      = 0.8                  # register recess in the tray floor: what locates the
+                                      # module in x and y now that there are no fins
+BATT_FRONT_T   = 7.5                  # the FRONT wall, thickened, and the module's only
+                                      # screwed fixing: the lid's front edge lands on it
+                                      # and two M2.5 form their own thread straight down
+                                      # into it.  2.7 mm of wall each side of an M25_TAP
+                                      # hole, against the >= 1 x D the rule asks for.
+                                      # It is a wall and not a pair of corner posts, and
+                                      # the reason is length: posts wanted a 9 mm zone in
+                                      # front of the brick, and the 9 mm came out of the
+                                      # rear strip the ESP32/URT-1 bay lives in.
+BATT_POST_L    = 5.0                  # ... engaged thread, 2 x D
+BMS_L, BMS_W, BMS_H = 64.0, 27.0, 13.0        # **verify** - outline, not a datasheet
+BMS_GAP        = 2.0                  # air between the BMS and the brick's -x nickel, and
+                                      # it has to swallow the retaining rib as well as the
+                                      # gap: rib at BMS_X1+CLR, 0.8 wide, leaves 0.85 mm.
+                                      # BMS_H is **verify**, so this is the number that
+                                      # absorbs a BMS that measures thicker.
+# The brick, wrapped.  This is what the case has to swallow and what the exporters hang
+# BATTERY_KG on - see batt_com().
+BRICK_L = CELL_L + 2*BATT_TAB         # 78.2, along x
+BRICK_W = 3*CELL_D + 2*BATT_WRAP      # 64.5, three cells across y
+BRICK_H = 2*CELL_D + 2*BATT_WRAP      # 43.2, two layers
+# The case interior.  Width is the BRICK or the BMS standing on edge, whichever is wider -
+# the BMS is 64.0 long and the brick 64.5, so they are within half a millimetre of each
+# other and the max() is not decoration.  Length is BMS + gap + brick + the front zone.
+BATT_IN_W = max(BRICK_W + BATT_FIT, BMS_L + 1.0)
+BATT_IN_H = BRICK_H + BATT_FIT
+BATT_IN_L = BMS_H + BMS_GAP + BRICK_L
+BATT_L = BATT_IN_L + BATT_CASE_T + BATT_FRONT_T    # 102.3 - the module's own outside
+BATT_W = BATT_IN_W + 2*BATT_CASE_T                 # 68.2
+BATT_H = BATT_CASE_T + BATT_IN_H + BATT_LID_T      # 46.4
+BATT_X  = 5.0                         # module centre in x.  Not the body origin and not
+                                      # the middle of the tray either: it is pushed
+                                      # forward until the rear strip is 8.9 mm, which is
+                                      # what the ESP32 + URT-1 bay needs.  That leaves
+                                      # 4.3 mm at the front, and the front is where there
+                                      # is nothing to fit.
+BATT_Z0 = BODY_Z0 + 3.0 - BATT_SEAT   # the case's underside, sitting in its seat recess
+BATT_Z1 = BATT_Z0 + BATT_H            # ... and its top: 23.6, with 1.4 mm to the deck
+# The interior, and the three zones along it.  Derived once here because battery_case(),
+# battery_lid(), the payload envelopes and both sim exporters all have to agree on them.
+BATT_XI0 = BATT_X - BATT_L/2 + BATT_CASE_T    # -48.35, the rear wall's inner face
+BATT_XI1 = BATT_X + BATT_L/2 - BATT_FRONT_T   # the front wall's - thicker than the rest
+BATT_YI  = BATT_IN_W/2                        #  32.50
+BATT_ZI0 = BATT_Z0 + BATT_CASE_T              # -21.20, the floor's top face
+BATT_ZI1 = BATT_Z1 - BATT_LID_T               #  22.40, where the lid sits down
+BMS_X0   = BATT_XI0                           # BMS on edge against the rear wall: BMS_H
+BMS_X1   = BATT_XI0 + BMS_H                   # thick in x, BMS_L across y, BMS_W tall
+BRICK_X0 = BMS_X1 + BMS_GAP                   # -33.85
+BRICK_X1 = BRICK_X0 + BRICK_L                 # ... and so the brick is NOT centred on
+                                              # the module: batt/brick_com() differ
+BATT_SCREW_Y = 22.0                           # the lid's two screws, in the front wall
+BATT_FRAME_W = 3.0                            # the lid's BMS retaining bar: width in x
+BATT_FRAME_D = 2.0                            # ... and how far it hangs below the lid.
+                                              # It exists ONLY over the BMS zone.  A lip
+                                              # round the whole opening was drawn first
+                                              # and is impossible: the wrapped brick fills
+                                              # the interior to BATT_FIT/2 = 0.2 mm on
+                                              # every side, so anything hanging 2 mm into
+                                              # it crushes the pack - and the pack is a
+                                              # payload, so no boolean in this file would
+                                              # ever have said so.  module_clear() is the
+                                              # check that does.
+BMS_RIB_Y    = 22.0                           # the BMS's two rib pairs, on y
+BMS_Z0       = BATT_ZI1 - BATT_FRAME_D - BMS_W    # ... and the ledge they sit on: the
+                                              # board's top edge lands exactly on the
+                                              # underside of the lid's retaining bar
+BATT_GROOVE = 1.2                     # a groove in the rear wall's inner face, at lid
+                                      # height: the lid's rear edge slides INTO it and
+                                      # only the front end is screwed.  A groove and not
+                                      # an overhanging tongue - a tongue cannot work here,
+                                      # because the lid is flush with the module's top and
+                                      # so a tongue at the lid's own height has nowhere to
+                                      # be.  There is nowhere for a rear post either: the
+                                      # BMS is 64.0 across a 65.0 interior and fills the
+                                      # rear corners completely.
+BATT_VENT_D = 4.0                     # two vents high in the rear wall.  A sealed case
+                                      # around six cells is the wrong kind of safe - a
+                                      # cell that vents has to have somewhere to go, and
+                                      # it goes out the back, away from the electronics.
+ESP_RIB_Y = 13.5                      # ... and its half length: clear of the driver run
+                                      # to the lower pair of rear CRADLE_BOLT screws
+ESP_X     = -51.0                     # the ESP32 + URT-1 divider rib, behind the
+                                      # module and in front of the connector panel's pads
+BATT_WIRE = (14.0, 8.0)               # grommet slot in the rear wall: pack leads and the
+                                      # 3S balance lead, out to the rear connector panel
+#
+# WHAT THE MODULE COST, AND WHERE IT CAME FROM.  A case is walls, and the bay had none to
+# give: from the tray floor at BODY_Z0+3 = -22 to the old pack ceiling at 21.4 there were
+# 43.4 mm for 42.6 mm of cell, i.e. 0.8 mm for a floor, a lid and a fit.  What was above
+# the pack was the IMU, in a 3.6 mm slot.  The IMU moved out - onto the deck's TOP face,
+# inside the Orange Pi's standoff gap, see the IMU_* block - and the module now runs from
+# -22.8 to 23.6 with 1.4 mm of air under the deck.  Nothing was thinned and no cell format
+# changed; the slot was simply the wrong home for the board.
 DECK_BOSS_R  = 5.8                    # tray boss: fat enough to swallow an M3 nut slot
 DECK_NUT_DZ  = 6.0                    # ... its floor, below the boss top
-# Deck screws as (x, |y|), once: chassis_bottom grows a boss under each, chassis_top drills
-# each.  The mid pair sits at |y| = 41 and the corners at 38, and that is not a style: the
-# corner bosses stand beyond the pack's end stops, but the mid pair stands BESIDE the pack,
-# and at |y| = 38 a DECK_BOSS_R boss reaches y = 32.2, i.e. 2.7 mm inside the outer cell.
-# There is nowhere else to put it - the tray floor between the cradle and the side wall is
-# 5.9 mm, an M3 nut needs 9.5 - so the boss is pushed out until it clears the cell and
-# clipped back to the body's own face, and its nut channel opens along +x, because inboard
-# is the battery bay.  It blocks the side cable channel at x = +-18; cables cross over the
-# pack (3.6 mm under the deck) or out through the side ports.
-DECK_SCREWS  = ((-52.0, 38.0), (-18.0, 41.0), (18.0, 41.0), (52.0, 38.0))
+# Deck screws as (x, |y|, nut-channel direction), once: chassis_bottom grows a boss under
+# each and chassis_top drills each.
+#
+# ALL FOUR pairs sit at |y| = 41 now, and that is the battery module's doing.  The corner
+# pair used to be at 38, which was already 2.7 mm inside the outer cell and only got away
+# with it because the old cradle ended at x = +-42 and the bosses stand at +-52.  The
+# module is 104.9 mm long - it reaches x = +-52 - so those bosses are no longer beside it
+# in x, and the only way past them is to be outboard of it in y.  Measured on the solid:
+# the module at |y| <= 34.1 against a DECK_BOSS_R boss whose inboard face is at 35.2, so
+# 1.1 mm, and at |y| = 38 it was a 1.9 mm bite out of the module's corners.
+#
+# The channel direction is now explicit rather than derived from |y|, because |y| no
+# longer distinguishes the two pairs.  It is given for the +y instance and mirrored in y
+# for the -y one, the same way the boss itself is.  The mid pair opens along +x into the
+# clear strip beside the module; the corner pair opens INBOARD in y, leaving its boss at
+# y = 35.2 into the tray's own air.  Both are open air at the moment those nuts go in,
+# which is with the deck off and BEFORE the module - and after the module the corner
+# channels are closed by it, so a deck nut is not replaceable with the pack in.  The
+# corner pair must not open along x at all: at x = +-52 a DECK_BOSS_R+6 channel runs out
+# through the tray's own inner face at +-60.2.
+# The mid pair still blocks the side cable channel at x = +-18; cables go around the
+# module's ends or out through the side ports, not over it - there is 1.4 mm over it.
+DECK_SCREWS  = ((-52.0, 41.0, (0.0, -1.0, 0.0)),
+                (-18.0, 41.0, (1.0,  0.0, 0.0)),
+                ( 18.0, 41.0, (1.0,  0.0, 0.0)),
+                ( 52.0, 41.0, (0.0, -1.0, 0.0)))
+# The hip-roll cradles are BOLTED parts, not part of the tray.
+# ---------------------------------------------------------------------------------
+# There are TWO of them - cradle_front and cradle_rear - and each carries both of that
+# end's hip-roll servos.  They used to be four quarters unioned into chassis_bottom, and
+# that made the tray the biggest print on the robot: 213 x 110 x 50 and 208 g, of which
+# 110 g was servo cradle.  So every change to the tray - a deck screw, the battery seat,
+# this connector panel - meant reprinting all four cradles and taking all four hip servos
+# out of their sleeves, which is the whole reason this joint exists.
+#
+# ONE PART PER END, not four quarters, and that is forced rather than tidy: the two rails
+# OVERLAP on the centreline (roll_module reaches y = -14 and its mirror reaches +14), so
+# the four quarters are not four separable bodies.  Merging them is free and then some -
+# one duct instead of two, one flange instead of two, and a bolt pattern that can span the
+# full 98 mm instead of 63.
+#
+# THE JOINT IS FOUR SCREWS AND A REGISTER, and the register is not decoration.  The screws
+# are nowhere near their limit: worst case, land3g and stall adding, is 22 N of axial and
+# 28 N of shear on an M3, against ~3 MPa of bearing in a 4 mm flange.  What four fasteners
+# do NOT replace is 795 mm2 of welded face for STIFFNESS, and stiffness is the whole point
+# of the joint being here - the roll axis is 27 mm outboard of it and the foot 187 mm
+# below, so a tenth of a millimetre of slop at the flange is 0.7 mm at the ground.  Each
+# screw therefore runs through a spigot: the cradle's flange carries a CRADLE_REG_D boss
+# standing CRADLE_REG proud of its face, into a pocket in a locally thickened tray wall.
+# The four spigots take the shear and the torsion; the screws only clamp.
+#
+# WHERE THE SCREWS MAY GO IS NOT FREE, and what decides it is the fork, not the flange.
+# The flange face is 98 x 30.7 mm but only CRADLE_T deep, because its outer face sits
+# FORK_GAP behind the roll fork's rear arm - and an M3 nut does not fit in 4 mm with any
+# wall left.  Past that face, over the flange's own z band, the ONLY thing in the way is
+# that arm: a disc of ARM_R about each roll axis.  The spine's 23 < r < 34 annulus is
+# swept only on the OUTBOARD side over a +-90 deg ROM, and at |z| <= CRADLE_Z1 it never
+# gets inboard of the axis at all - which is also why the rails have always been allowed
+# to run the full length at |y| <= 14.  So a nut boss may run out to CRADLE_BOSS_X (the
+# servo case starts at 72.5) anywhere that clears ARM_R, and the four screws sit just
+# inboard of the two arms with ~1.5 mm to spare.  Do not take that on trust: `rom_scan`
+# is what checks the arm, and `cradle_clear()` is what checks a driver can reach the
+# heads - a screw nobody can turn is the failure mode this repo has now shipped twice.
+CRADLE_X      = BODY_L/2              # 63.0 - the joint plane, the tray's end wall face
+CRADLE_T      = 4.0                   # flange depth: 63..67 = (ROLL_X-21.9) - FORK_GAP
+CRADLE_Y1     = ROLL_Y + 13.11        # 49.11 - flange half width (the old root gusset's)
+CRADLE_Z1     = S_W/2 + SLEEVE_W      # 15.36 - ... and half height.  CAM_LEDGE is this.
+CRADLE_RIB    = 6.0                   # the flange is a FRAME: rib width round the opening.
+                                      # The opening is what lets the connector panel out -
+                                      # see the panel block below, which is laid out
+                                      # against it and against the four nut bosses.
+CRADLE_BOLT   = ((17.0, 10.5), (17.0, -10.5), (-17.0, 10.5), (-17.0, -10.5))
+CRADLE_BOSS   = 10.0                  # nut boss, square in y and z.  y 12..22 keeps it
+                                      # 1 mm off the camera's foot at y = 23 and 1 mm off
+                                      # the bus window at y = 11; its nearest corner is
+                                      # r = 15.0 from the roll axis against ARM_R = 13.5.
+CRADLE_BOSS_X = 71.5                  # ... and how far out it runs (servo case at 72.5)
+CRADLE_NUT_X  = 67.0                  # nut-slot floor: the full CRADLE_T under the nut,
+                                      # which is what takes the clamp.  A pocket in the
+                                      # 4 mm flange instead would leave 1.3 mm and creep.
+CRADLE_NUT_RUN = 5.5                  # nut channel: opens toward the centreline, in air
+                                      # between the rail box at |y| = 14 and the boss
+CRADLE_REG_D  = 7.0                   # register spigot on the cradle's flange face ...
+CRADLE_REG    = 2.0                   # ... standing this proud of CRADLE_X
+CRADLE_SEAT   = 2.8                   # tray boss inboard of the wall: it is what makes
+                                      # room for a 2.2 mm register pocket AND leaves a
+                                      # flat head seat, in a wall that is only WALL thick
+CRADLE_CB_D   = 6.5                   # the head is COUNTERBORED into the tray's seat, and
+CRADLE_CB     = 2.0                   # that is not tidiness: the front seat's face is at
+                                      # x = 57.4 and the battery module's front face is at
+                                      # 56.15, so a 1.65 mm ISO 7380 head standing on that
+                                      # face reaches 55.75 and eats 0.4 mm of the pack.
+                                      # Counterbored it sits at 57.75, +1.60 mm clear.
+                                      # Same class of defect
+                                      # as the thrust clamp's cap head and the hub screws'
+                                      # - the part in the way is HARDWARE, so isValid(),
+                                      # interference() and rom_scan are all blind to it.
+                                      # cradle_head_clear() is what prints the margin.
+CRADLE_BOLT_L = 12.0                  # M3 x 12: counterbore floor 59.4 to the nut's far
+                                      # face at 69.7 is 10.3, and 12 is the next length up
+STRAP_Y       = 21.5                  # the strap's outboard edge where it passes the fork
+                                      # arm.  A hard ROM limit, not a guess - see the
+                                      # straps in roll_module().
+STRAP_TAPER   = 8.0                   # ... and how far past the sleeve it takes to open
+                                      # out to CRADLE_Y1, instead of stepping there
+CRADLE_REACH  = 25.0                  # straight run a socket wants behind each head, and
+                                      # what cradle_clear() probes against the tray
+PANEL_REACH   = 20.0                  # ... and how far panel_clear() looks out from the
+                                      # rear wall.  The plate that blocked every opening
+                                      # started 1.2 mm behind it, so this is generous on
+                                      # purpose: the question is "is anything there", not
+                                      # "does the plug's own length fit".
 # Rear connector panel: the pack's three ways out of the tray, around the bus window.
 #   XT60  master disconnect / bench supply, on the pack's fused P+ ;
 #   XT30  charge, and it is deliberately the SMALLER XT - a charger physically cannot be
@@ -258,18 +478,44 @@ DECK_SCREWS  = ((-52.0, 38.0), (-18.0, 41.0), (18.0, 41.0), (52.0, 38.0))
 # not glue - is what takes the unplug force, which on an XT60 is the big one.  The mating
 # half therefore stands PANEL_LIP_T proud of the wall; XT pins are ~7 mm long against ~5 mm
 # of engagement, so it still seats.  Nothing threads into plastic here either.
-# The XT60 sits BELOW the window rather than beside it, and that is geometry, not taste:
-# the clear strip between the window's edge at |y| = 16 and the rear deck boss's inboard
-# face at |y| = 32.2 is 16.2 mm, and an XT60 needs 16.5.
+# EVERY ONE OF THESE OPENED INTO SOLID PLASTIC UNTIL 2026-09-09, and nothing in this
+# repository could see it.  The two rear hip-roll cradles met across the centreline and
+# formed one continuous 2.8 mm plate at x = -64.2 .. -67.0 over |y| <= 49.11 and
+# |z| <= 15.36, with 1.2 mm of air behind the wall and no way through.  Measured on the
+# solid: the bus window 100 % blocked, the XT30 100 %, the balance lead 100 %, the XT60's
+# top 3.61 mm - and the XT mating halves stand PANEL_LIP_T proud of x = -63, i.e. to
+# -64.5, which is already 0.3 mm INSIDE the plate.  Not one of them could ever have been
+# plugged in.  `interference()` pairs the static body parts and the cradles WERE
+# chassis_bottom, and a part cannot interfere with itself; `isValid()` and `rom_scan` see
+# nothing either.  The block below reasoned about the deck bosses at |y| = 32.2 and never
+# about the cradle, which was 30 mm closer.
+#
+# What fixed it is the cradle becoming a bolted part with a FRAME flange (see the CRADLE_*
+# block): the frame's opening is y +-43.11, z +-9.36, and everything here is laid out
+# inside it and around the four CRADLE_BOLT bosses, whose tray-side seats reach y = 23 and
+# z = 16.5.  `panel_clear()` probes each opening along -x against the assembled body on
+# every run, and it is a failure line like `!! INTERFERENCE`, not a note.
+# THE XT60 IS THE ONE THAT DOES NOT FIT INSIDE THE FRAME.  16.5 mm of width does not
+# survive the bus window and the two bosses, so it goes ABOVE the cradle instead: the
+# rear wall is clear of everything for z = 15.36 .. 25, the interior there is the
+# ESP32/URT-1 strip, and the deck closes it at 25.  That band is 9.64 mm for an 8.5 mm
+# body - 0.6 mm of margin top and bottom, so PANEL_AT's z is not a round number and moving
+# BODY_Z1, CRADLE_Z1 or PANEL_XT60 moves it.  The old note here - "the clear strip between
+# the window's edge and the rear deck boss's inboard face at |y| = 32.2 is 16.2 mm" - was
+# stale twice over: the deck screws went to |y| = 41 with the battery module, so that face
+# is at 35.2, and the strip was never clear in the first place.
 PANEL_XT60   = (16.5, 8.5)            # body over the moulding, + fit         **verify**
 PANEL_XT30   = (12.0, 6.6)            #                                       **verify**
 PANEL_BAL    = (13.0, 6.0)            # JST-XH 3S plug, passing through       **verify**
 PANEL_T      = 8.0                    # pocket depth, from the wall's outer face
 PANEL_LIP    = 0.8                    # ... the lip left at the outer face, all round
 PANEL_LIP_T  = 1.5                    # ... and how thick that lip is
-PANEL_AT     = ((0.0, -16.0, PANEL_XT60),     # (y, z, size) - XT60 under the window,
-                (25.0, 0.0, PANEL_XT30))      # XT30 in the strip beside it
-PANEL_BAL_AT = (-24.0, 0.0)           # ... balance lead, in the strip on the other side
+PANEL_WIN    = (22.0, 16.0)           # the bus window: w x h, on the centreline.  It was
+                                      # 32 x 20 and blocked; 22 keeps 1 mm off the bolt
+                                      # bosses at y = 12 and 16 fits the frame's opening.
+PANEL_AT     = ((0.0, 20.0, PANEL_XT60),      # (y, z, size) - XT60 ABOVE the cradle,
+                (32.0, 0.0, PANEL_XT30))      # XT30 outboard of the bolt boss
+PANEL_BAL_AT = (-32.0, 0.0)           # ... balance lead, mirrored on the other side
 OPI_X        = -22.0                  # Orange Pi 5 Pro board centre on the deck
 OPI_HOLES    = (92.0, 54.0)
 OPI_STAND_R, OPI_STAND_H = 4.8, 7.0   # standoff: r fits an M2.5 nut slot, h clears the nut
@@ -297,31 +543,64 @@ OPI_BOX      = (100.0, 62.0, 20.0)
 # export_sim.py's BODY_Z1, so the two files described robots whose IMUs were 25 mm apart -
 # the same defect a fourth time, and the one rl/ was reading.
 #
-# The bay decides the rest, and it is tight.  On the centreline the only opening is the
-# deck's own window at x +-16, |y| <= 34; under it the pack's top is at BODY_Z0+BATT_H =
-# 21.4 and the deck's underside is at BODY_Z1 = 25.  That is 3.6 mm; the board and its
-# components are 2.8 of it; and the deck's 4 mm above is not free space either - it is
-# OPI_BOX's floor.  So the board bolts up under two tabs that bridge the window, component
-# face DOWN, and the 0.8 mm left over is the whole margin.  This is the camera's slot
-# again: treat every number here as load-bearing.  imu_clear() is what checks the pack,
-# because the pack is a payload and interference() cannot see one.
+# WHERE THE BAY IS, AND WHY IT IS NO LONGER UNDER THE DECK.  The board used to hang from
+# two tabs bridging the deck's own window, component face down, in the 3.6 mm between the
+# pack's top at 21.4 and the deck's underside at 25 - 2.8 mm of board and 0.8 mm of
+# margin.  That slot was the only reason the battery could not be a module: a cased pack
+# needs about 3.5 mm the bay did not have, and this was the only 3.5 mm anywhere near it.
+# So the board moved UP, out of the tray entirely, onto the deck's TOP face - inside the
+# Orange Pi's own standoff gap, which is 7 mm of air nothing else uses.  Two M2.5
+# standoffs on the centreline, component face DOWN into the gap under the board, the same
+# nut-in-a-slot as the Pi's own four.  The battery module's lid now runs to 23.6 and the
+# deck's underside above it is solid.
+#
+# WHAT THAT COSTS, STATED PLAINLY: the site rises from z = 23.4 to 31.0, so |r| from the
+# body origin grows by 7.6 mm and the omega x (omega x r) term the paragraph above is
+# about grows with it - about a third, on the centreline, where the whole term is small.
+# It is not a guess that has to be lived with: rl/checks/imu_placement.py measures exactly
+# this by adding real accelerometers at candidate mounts through MjSpec, and it is the
+# check to re-run whenever this block or the gait moves.  The board is still ON the
+# centreline, which is the part of the argument above that mattered - 42 deg of apparent
+# tilt was a board out beside the Pi in x and y, not one 7.6 mm higher.
+#
+# imu_clear() still exists but now looks UP: the wall that is thin is the Pi's own board
+# over it (OPI_BOX's floor), not a battery under it.
 IMU_BOARD    = (20.0, 15.0, 1.6)      # PCB: x, y, thickness          **verify** ref/imu/
-IMU_STACK    = 1.2                    # components over the PCB, and HEADERLESS: a 2.54 mm
-                                      # pin header is 8.5 mm and misses this bay by 3x.
-                                      # Solder to the pads.           **verify** ref/imu/
+IMU_STACK    = 1.2                    # components under the PCB, and HEADERLESS: a
+                                      # 2.54 mm pin header is 8.5 mm and would fill the
+                                      # standoff gap.  Solder to the pads.  **verify**
 IMU_HOLE_P   = 15.0                   # M2.5 mounting holes, on x     **verify** ref/imu/
 IMU_X, IMU_Y = 0.0, 0.0               # the centreline - as near the body origin as the
-                                      # bay goes, which is what the whole block is for
-IMU_TAB      = (9.0, 10.0)            # the tabs that carry it: reach in x from the window
-                                      # wall, width in y.  The reach is set by IMU_HOLE_P:
-                                      # the hole at x = 7.5 has to land on solid tab.
-IMU_TAB_T    = DECK_T - M25_NUT_H - NUT_CLR    # 1.75.  The tab takes the deck's bottom,
-                                      # the nut channel takes exactly the rest of DECK_T
-                                      # and comes out flush with the top face, so nothing
-                                      # here reaches into OPI_BOX.
-IMU_Z0       = BODY_Z1                # ... and so the PCB's top face IS the deck's own
-                                      # underside plane.  Not a coincidence: it is what
-                                      # the line above leaves.
+                                      # deck allows, which is what the whole block is for
+IMU_STAND_R  = 4.4                    # standoff: 3.35 mm of wall round an M25_TAP hole,
+                                      # against the >= 1 x D the rule wants; two of them
+                                      # IMU_HOLE_P apart still leave 6.2 mm between their
+                                      # walls for the board's own components
+IMU_STAND_H  = 2.0                    # ... and its height: IMU_STACK plus 0.8 mm, so the
+                                      # component face clears the deck's top face
+IMU_TAP_L    = 5.0                    # M2.5 FORMED thread, 2 x D, down through the 2 mm
+                                      # standoff and 3 mm into the deck's own 4 - it does
+                                      # not break through the underside.  This is the
+                                      # second of the two places on the robot that thread
+                                      # into plastic (battery_lid() is the other): a 3 g
+                                      # breakout that holds nothing but itself, exactly
+                                      # the case CLAUDE.md's "off the torque path" rule
+                                      # was written for.  A nut cannot go here - a 2 mm
+                                      # standoff cannot swallow a 2.25 mm pocket, and
+                                      # under the deck is the battery module.  It is a
+                                      # ONE-ASSEMBLY thread; a board reseated often wants
+                                      # the hole drilled out and a nut under the deck.
+IMU_WINDOW   = (-34.0, -12.0)         # the deck's cable window, x.  It used to be at
+                                      # x +-16 and the IMU hung in it; the board needs
+                                      # solid deck under it now, so the window moved off
+                                      # the centreline to the Pi's side.  It clears the
+                                      # board's -x hole at -7.5 by 4.5 mm, and |y| <= 34
+                                      # keeps it clear of the deck screws at |y| = 41.
+IMU_Z0       = BODY_Z1 + DECK_T + IMU_STAND_H + IMU_BOARD[2]
+                                      # the PCB's TOP face, at 32.6.  imu_xyz() takes one
+                                      # board thickness off it to get the component face,
+                                      # which is where the BMI088's package actually is,
+                                      # exactly as before - only the plane moved.
 # LiDAR pedestal.  LIDAR_X is shared: chassis_top drills the bolt circle at it and
 # lidar_mount is built on it, and they used to be two independent literals.
 # LIDAR_BASE_R is set by the Orange Pi standoffs, not by the pedestal: at the old 30.0 the
@@ -583,9 +862,13 @@ CAM_OPT      = 12.0                   # entrance pupil, up the axis from the PCB
 CAM_FOV_D    = 90.0                   # the fitted lens, DIAGONAL                 **verify**
 CAM_PIX      = (3840, 2160)           # the mode the pipeline runs; H and V FOV follow
 CAM_RATE     = 15.0                   # frames/s at CAM_PIX over USB 2.0 MJPEG    **verify**
-CAM_LEDGE    = S_W/2 + SLEEVE_W       # 15.36 - roll_module's own top face, and the only
-                                      # flat surface anywhere near the camera.  It is a
-                                      # derived number there too, spelled as a literal.
+CAM_LEDGE    = CRADLE_Z1              # 15.36 - the front cradle's own top face, and the
+                                      # only flat surface anywhere near the camera.  It
+                                      # used to be spelled S_W/2 + SLEEVE_W a second time
+                                      # here; it is the cradle's half height, so it is
+                                      # read from there.  Note what that means now the
+                                      # cradle is a bolted part: the camera's floor and
+                                      # its two nuts are on cradle_front, not on the tray.
 # The mount is a C-section standing on that ledge.  It cannot grip the FRONT of the board's
 # lower half (0.5 mm to the fork arm) and it cannot put a nut behind the board (2.9 mm of
 # depth, an M3 nut is 5.85 across), so the board slides in endwise and is trapped: a slot
@@ -625,8 +908,11 @@ PRINT_FILL        = {"chassis_bottom": 0.93, "chassis_top": 0.80, "lidar_mount":
                      "thigh_A":        0.97, "thigh_B":       0.97,
                      "shin_A":         0.92, "shin_B":        0.92,
                      "servo_gauge":    0.94, "foot":          0.65}
-# gps_mount is deliberately absent: it has not been sliced yet, so part_rho() gives it
-# PRINT_FILL_MEAN.  Slice it and put the measured factor in the table.
+# gps_mount, cradle_front and cradle_rear are deliberately absent: none has been sliced
+# yet, so part_rho() gives them PRINT_FILL_MEAN.  Slice them and put the measured factor
+# in the table.  chassis_bottom's own 0.93 was measured on the part WITH the four cradles
+# in it and is now the tray's alone - it is a thin-walled box either way, so the number is
+# still the right order, but it is one of the things to re-slice.
 PRINT_FILL_MEAN   = 0.92          # PETG parts, mass-weighted - the fallback for an
 TPU_FILL_MEAN     = 0.65          # unmeasured part and for consumers that carry a union
 PRINT_RHO         = PETG_RHO * PRINT_FILL_MEAN   # g/cm3 - solid volume x this
@@ -635,8 +921,17 @@ SERVO_KG          = 0.060         # ST3215 incl. both hubs and the bolts - **ver
                                   # ref/, vendor figure only.  Weigh one before trusting it;
                                   # 12 of them are a third of the robot.
 N_SERVO           = 12
-BATTERY_KG        = 0.42          # 3S2P, 6x21700
-ELECTRONICS_KG    = 0.25          # Orange Pi 5 Pro / BMS / wiring
+BATTERY_KG        = 0.42          # the six wrapped cells alone - 3S2P, 6 x 21700.  NOT
+                                  # the module: battery_case and battery_lid are printed
+                                  # parts with PARTS entries, so their mass comes off
+                                  # their own solids like every other part's.  It hangs
+                                  # at brick_com(), which is not the module's centre.
+BMS_KG            = 0.055         # **verify** - split out of ELECTRONICS_KG when the BMS
+                                  # moved inside the battery module.  It is no longer at
+                                  # opi_com() and never was; it used to be averaged into
+                                  # the Pi's box 46 mm away and 40 mm up.  Hangs at
+                                  # bms_com().
+ELECTRONICS_KG    = 0.195         # Orange Pi 5 Pro / wiring - was 0.25 with the BMS in it
 LIDAR_KG          = 0.230         # Unitree L2 on the pedestal - confirmed, L2 manual
                                   # Parameter Specifications: 230 g, 75x75x65 mm, 12 V 10 W
 CAMERA_KG         = 0.012         # IMX415 module: PCB, M12 holder, lens, connector.
@@ -762,6 +1057,13 @@ def rrect(x,y,r,c=(0,0,0)):
             .lineTo(hx, -y/2).radiusArc(( x/2, -hy), -r)
             .lineTo(x/2,  hy).radiusArc(( hx,  y/2), -r).close().wire().val())
 def loft(wires): return W(cq.Solid.makeLoft(wires, False))
+def tri(pts, z0, z1):
+    """triangular prism from three (x, y) points, z0..z1 - for tapering a step out of a
+    box.  A re-entrant corner between two boxes is a stress riser and fea.py sees it."""
+    w = cq.Workplane("XY", origin=(0, 0, z0)).moveTo(*pts[0])
+    for q in pts[1:]:
+        w = w.lineTo(*q)
+    return W(w.close().extrude(z1-z0).val())
 def mono(xs, ys):
     """Fritsch-Carlson monotone cubic through (xs, ys) -> f(x).  C1 and, unlike a plain
     spline, guaranteed not to overshoot the control points between them."""
@@ -1004,77 +1306,194 @@ def env_all(no_hub=None):
     return _ENV[key]
 
 # =====================================================================================
-# PART: chassis_bottom
+# PART: cradle_front / cradle_rear, and chassis_bottom
 # =====================================================================================
 def roll_module():
-    """front-left hip-roll cradle: sleeve + boxed neck back to the chassis front wall.
+    """ONE HALF of a cradle - the front-left: sleeve + boxed neck back to the tray's front
+    wall.  Not a part on its own: cradle() unions this with its own mirror, because the
+    two halves overlap on the centreline (this reaches y = -14, the mirror reaches +14).
     Nothing may sit in the swept sector of the rotating fork (outboard, r<31)."""
     s = mv(sleeve(), ROLL_LOC)
-    xa, xb = BODY_L/2, ROLL_X + SLEEVE_LEN/2                 # 63 .. 104.5
+    xa, xb = CRADLE_X, ROLL_X + SLEEVE_LEN/2                 # 63 .. 106.5
     xm = ROLL_X - 21.9                                       # rear fork-arm plane
-    s = s.union(bxc(xa, xb, -14.0, 2.0, -15.36, 15.36)       # inboard rail
+    s = s.union(bxc(xa, xb, -14.0, 2.0, -CRADLE_Z1, CRADLE_Z1)       # inboard rail
                 .cut(bxc(xa-1, xb-6.0, -11.0, -1.0, -11.0, 11.0)))
-    for z0, z1 in ((12.36, 15.36), (-15.36, -12.36)):
-        s = s.union(bxc(xa, xm+SLEEVE_W+1.0, -14.0, 21.5, z0, z1))   # narrow past the fork arm
-        s = s.union(bxc(ROLL_X-SLEEVE_LEN/2, xb, -14.0, ROLL_Y+13.11, z0, z1))
-    s = s.union(bxc(xa, xm-FORK_GAP, -14.0, ROLL_Y+13.11, -15.36, 15.36)  # root gusset
-                .cut(bxc(xa-1, xm-FORK_GAP-WALL, -10.0, ROLL_Y+9.0, -11.0, 11.0)))
+    # The top and bottom straps.  Narrow to STRAP_Y past the fork, then full width - and
+    # the two things that are NOT obvious here are both stress, found the first time this
+    # part went into fea.py's set (it was chassis_bottom before, and fea.py has never
+    # covered that).  land3g read 53.7 MPa peak against a p99 of 7.3 - interlayer SF 0.4.
+    #
+    #   * the narrow strap used to stop at xm+SLEEVE_W+1 = 72.1 while the wide one starts
+    #     at 73.5, leaving a 1.4 mm NOTCH in the strap that carries the whole leg.  It
+    #     runs to the sleeve now.  Peak 53.7 -> 26.4.
+    #   * the width then STEPPED 21.5 -> 49.11 in one plane, and that re-entrant corner
+    #     was the next hottest thing in the part.  The wide strap is tapered back to the
+    #     narrow one over STRAP_TAPER instead.
+    #
+    # STRAP_Y itself is not free and was not over-conservative: rom_scan puts the hip
+    # bracket into everything from y = 22 outward at strap height over the fork arm's own
+    # x band at +-90 deg of roll.  A version of this that ran full width and cut only the
+    # arm's disc read `hip_roll +0 .. +0`.  Do not widen it without re-running the scan.
+    for z0, z1 in ((12.36, CRADLE_Z1), (-CRADLE_Z1, -12.36)):
+        s = s.union(bxc(xa, ROLL_X-SLEEVE_LEN/2, -14.0, STRAP_Y, z0, z1))
+        s = s.union(bxc(ROLL_X-SLEEVE_LEN/2, xb, -14.0, CRADLE_Y1, z0, z1)
+                    .cut(tri(((ROLL_X-SLEEVE_LEN/2, STRAP_Y),
+                              (ROLL_X-SLEEVE_LEN/2, CRADLE_Y1+1),
+                              (ROLL_X-SLEEVE_LEN/2+STRAP_TAPER, CRADLE_Y1+1)),
+                             z0-1, z1+1)))
+    s = s.union(bxc(xa, xm-FORK_GAP, -14.0, CRADLE_Y1, -CRADLE_Z1, CRADLE_Z1))  # flange
     return s
 
-def fork_channel_dir():
-    """servo-local unit vector along a roll channel: away from the inboard arm (local -z),
-    leaning KEY_TILT toward local -x, which is outboard on the robot (world +y)."""
-    t = math.radians(KEY_TILT)
-    return (-math.sin(t), 0.0, -math.cos(t))
+def cradle_frame():
+    """The flange's opening: everything inside the CRADLE_RIB frame is air, and that is
+    what the rear connector panel and the bus window come out through.  It used to be a
+    smaller pocket that left a continuous 2.8 mm skin across the whole face - see the
+    PANEL_* block for what that cost."""
+    return bxc(CRADLE_X-1, CRADLE_X+CRADLE_T+1,
+               -(CRADLE_Y1-CRADLE_RIB), CRADLE_Y1-CRADLE_RIB,
+               -(CRADLE_Z1-CRADLE_RIB), CRADLE_Z1-CRADLE_RIB)
 
-def fork_access_channels(d=FORK_ACCESS_D, length=FORK_ACCESS_L):
-    """The two channels that let a key reach the roll joint's inboard fork screws.
+def cradle_bolt_axes():
+    """(y, z) of the four screws that hold one cradle on, in robot coordinates.  The same
+    tuple positions the cradle's nut bosses and the tray's seats, so the two can never
+    drift apart the way a hand-copied pattern would."""
+    return CRADLE_BOLT
 
-    Each starts on a screw head - one of FORK_CHANNELS on the hub circle, at the arm's
-    outer face FORK_Y0 - and runs `length` along fork_channel_dir(), which puts its far
-    end in open air outboard of the tray's front corner with room to spare.  They are NOT
-    coaxial with the screws: a coaxial bore lets the key tilt (D-d)/2 over its length, 12
-    deg for @6 around @2.5 through 8 mm, and 12 deg does not get a key past the tray's
-    side wall.  Cut along the leaning line, the bore IS the key's path and the tilt is
-    whatever KEY_TILT says.
+def cradle_bolts(cradle=True):
+    """The four screw features for one end of the robot.
 
-    Measured on the solid, front-left, "out" channel: through the gusset's inner skin and
-    the tray's corner post, in air at x = 60 (8 mm of material).  "top" channel: gusset
-    skin, front wall, the corner deck boss at z 4..10 - under its M3 hole, which starts at
-    z = 11 - the side wall, and out through the side vent at x = 41 (29 mm).  Neither
-    enters the tray's interior, which is why the battery can stay in.
+    cradle=True  -> (bosses to union on, cuts to take off the cradle)
+    cradle=False -> (seats to union on, cuts to take off the tray)
 
-    Cut from the ASSEMBLED chassis, last: the "top" channel crosses four solids that are
-    unioned in separately, and the union would fill any one of them back in if it were cut
-    alone.  Only two of the four screw positions get a channel, on purpose - see
-    FORK_CHANNELS and fork_channels_cover()."""
-    b = None
-    for px, py in FORK_CHANNELS:
-        c = cyl(d/2, length, (px, py, FORK_Y0), axis=fork_channel_dir())
-        b = c if b is None else b.union(c)
-    return mv(b, ROLL_LOC)
+    Kept in one function on purpose: a bolted joint is the one place in this model where
+    two parts have to agree to a tenth of a millimetre, and the way that goes wrong is
+    someone editing the hole and not the boss.  Here there is one number for each."""
+    boss = cut = seat = tcut = None
+    b2 = CRADLE_BOSS/2
+    for y, z in cradle_bolt_axes():
+        # --- cradle: nut boss out to CRADLE_BOSS_X, register spigot proud of the face
+        # clipped to the flange's own footprint: at z = 10.5 a CRADLE_BOSS square stands
+        # 0.14 mm proud of CRADLE_Z1, and CRADLE_Z1 is the camera mount's shelf.
+        bs = bxc(CRADLE_X, CRADLE_BOSS_X, y-b2, y+b2, z-b2, z+b2).intersect(
+             bxc(CRADLE_X-1, CRADLE_BOSS_X+1, -CRADLE_Y1, CRADLE_Y1,
+                 -CRADLE_Z1, CRADLE_Z1))
+        bs = bs.union(cyl(CRADLE_REG_D/2, CRADLE_REG, (CRADLE_X-CRADLE_REG, y, z),
+                          axis=(1, 0, 0)))
+        boss = bs if boss is None else boss.union(bs)
+        c = cyl(M3_CLR, CRADLE_BOSS_X-CRADLE_X+CRADLE_REG+2,
+                (CRADLE_X-CRADLE_REG-1, y, z), axis=(1, 0, 0))
+        # the nut channel opens toward the centreline: at x >= CRADLE_NUT_X the only solid
+        # is the boss itself and the rail box at |y| <= 14, so it ends in air between them
+        c = c.union(nut_slot((CRADLE_NUT_X, y, z), (0.0, -1.0 if y > 0 else 1.0, 0.0),
+                             up=(1, 0, 0), run=CRADLE_NUT_RUN))
+        cut = c if cut is None else cut.union(c)
+        # --- tray: a boss inboard of the wall, deep enough for the register pocket AND a
+        # flat head seat.  WALL alone is 2.8 mm and holds neither.
+        x0 = CRADLE_X - WALL - CRADLE_SEAT
+        st = bxc(x0, CRADLE_X, y-b2-1.0, y+b2+1.0, z-b2-1.0, z+b2+1.0)
+        seat = st if seat is None else seat.union(st)
+        t = cyl(CRADLE_REG_D/2+CLR, CRADLE_REG+CLR+1,
+                (CRADLE_X-CRADLE_REG-CLR, y, z), axis=(1, 0, 0))
+        t = t.union(cyl(M3_CLR, CRADLE_X-x0+2, (x0-1, y, z), axis=(1, 0, 0)))
+        t = t.union(cyl(CRADLE_CB_D/2, CRADLE_CB+1, (x0-1, y, z), axis=(1, 0, 0)))
+        tcut = t if tcut is None else tcut.union(t)
+    return (boss, cut) if cradle else (seat, tcut)
+
+def cradle_screws():
+    """The eight M3 heads that hold the cradles on, as solids in robot coordinates.
+
+    Here for the reason fork_screws() and thrust_bolts() are: the head is hardware, so no
+    check in this file can see it, and this robot has now been bitten by exactly that three
+    times - the thrust clamp's cap head inside the fork spine, the hub screws' heads
+    against the gusset, and this one, 0.4 mm inside the battery module.  Modelled as the
+    ISO 7380 button the rest of the machine uses.
+    """
+    x0 = CRADLE_X - WALL - CRADLE_SEAT
+    h = None
+    for sx in (1.0, -1.0):
+        for y, z in cradle_bolt_axes():
+            c = cyl(HUB_HEAD_D/2, HUB_HEAD_H,
+                    (sx*(x0+CRADLE_CB), y, z), axis=(-sx, 0.0, 0.0))
+            h = c if h is None else h.union(c)
+    return h
+
+def cradle(front=True):
+    """One end of the robot's hip-roll cradle, as ONE printed part: two sleeves, the rail
+    box back to the tray's end wall, the top and bottom straps, and the flange frame that
+    bolts to it.  The rear is not this mirrored in y - that is the same part - it is this
+    mirrored in x, so the two ends are two prints, one off each.
+
+    Which is why only the FRONT carries the camera's two nuts: CAM_LEDGE is this part's
+    top face, and with front and rear already distinct there is nothing to be gained by
+    drilling the rear for a camera it does not have."""
+    s = roll_module()
+    s = s.union(mirY(s))                       # the two halves, overlapping at |y| <= 2
+    # ONE duct, not the two the halves bring.  Their ducts are y -11..-1 and 1..11, so
+    # unioning the halves leaves a 4 mm web straight down the centreline - which is
+    # exactly where the bus window comes out.  panel_clear() found it; interference()
+    # never could, because it is one part standing in front of its own hole.
+    s = s.cut(bxc(CRADLE_X-1, ROLL_X + SLEEVE_LEN/2 - 6.0, -11.0, 11.0, -11.0, 11.0))
+    s = s.cut(cradle_frame())                  # ... and the frame's opening through it
+    # the driver's swept circle through the flange, at each roll axis.  Most of it is
+    # already inside the frame's opening; what it actually takes out is the crescent past
+    # the opening's edge, and that is the difference between the four hub screws being
+    # reachable with the cradle in hand and not.
+    rel = cyl(FORK_DRIVER_R, CRADLE_T+2, (CRADLE_X-1, ROLL_Y, ROLL_Z), axis=(1, 0, 0))
+    s = s.cut(rel).cut(mirY(rel))
+    boss, cut = cradle_bolts(cradle=True)
+    s = s.union(boss)
+    if front:
+        # the camera's two M3, into nuts in slots opening forward - open air under the
+        # chin, and the only face still reachable with the board in its channel
+        for fy in CAM_FOOT_Y:
+            s = s.cut(cyl(M3_CLR, 20.0, (CAM_FOOT_X, fy, CAM_LEDGE-CAM_NUT_DZ-4.0)))
+            s = s.cut(nut_slot((CAM_FOOT_X, fy, CAM_LEDGE-CAM_NUT_DZ), (1.0, 0.0, 0.0),
+                               run=8.0))
+        ky, kl, kd = CAM_KEY                   # ... and the pocket its far end keys into
+        s = s.cut(bxc(CAM_FOOT_X-3.0-CLR, CAM_FOOT_X+3.0+CLR, ky-kl/2-CLR, ky+kl/2+CLR,
+                      CAM_LEDGE-kd-CLR, CAM_LEDGE+1.0))
+    s = s.cut(cut)                             # bolt holes and nut channels
+    s = s.cut(env_all())
+    return s if front else mirX(s)
+
+def cradles():
+    """both cradles, placed in robot coordinates - what interference(), the ROM scan, the
+    assembly and both sim exporters need.  The base link is the tray plus these."""
+    return (cradle(True), cradle(False))
 
 def chassis_bottom():
     s = (bxc(-BODY_L/2, BODY_L/2, -BODY_W/2, BODY_W/2, BODY_Z0, BODY_Z1)
          .cut(bxc(-BODY_L/2+WALL, BODY_L/2-WALL, -BODY_W/2+WALL, BODY_W/2-WALL,
                   BODY_Z0+3.0, BODY_Z1+1)))
-    rm = roll_module()
-    for f in (lambda w: w, mirY, mirX, lambda w: mirX(mirY(w))):
-        s = s.union(f(rm))
-    # 6x 21700 cradle: two layers of three, cells along X, low and central.  Four fins on
-    # BATT_PITCH, so each of the three channels comes out exactly CELL_D+CELL_FIT wide.
-    for i in range(4):
-        y = -BATT_W/2 + BATT_FIN/2 + i*BATT_PITCH
-        s = s.union(bxc(-BATT_L/2-1, BATT_L/2+1, y-BATT_FIN/2, y+BATT_FIN/2,
-                        BODY_Z0+3.0, BODY_Z0+BATT_H))
-    for x in (-BATT_L/2-3.0, BATT_L/2):                       # end stops
-        s = s.union(bxc(x, x+3.0, -BATT_W/2, BATT_W/2, BODY_Z0+3.0, BODY_Z0+BATT_H))
-    for x in (-24.0, 24.0):                                   # battery strap slots
-        for y in (-BODY_W/2-1, BODY_W/2-WALL-1):
-            s = s.cut(bxc(x-1.7, x+1.7, y, y+WALL+2, BODY_Z0+3.0, BODY_Z0+6.5))
-    # BMS bay (front) and ESP32 + URT-1 bay (rear)
-    for xc in (46.0, -46.0):
-        s = s.union(bxc(xc-1.5, xc+1.5, -BMS_W/2-1.5, BMS_W/2+1.5, BODY_Z0+3, BODY_Z0+16))
+    # The four hip-roll cradles used to be unioned on here, all 110 g of them.  They are
+    # two bolted parts now (see the CRADLE_* block and cradle()); what the tray owes them
+    # is a seat per screw - a boss inboard of the end wall carrying the register pocket
+    # and a flat head seat, because WALL alone is 2.8 mm and holds neither.
+    seat, tcut = cradle_bolts(cradle=False)
+    s = s.union(seat).union(mirX(seat))
+    # Battery module seat.  There is no cradle any more - no fins, no end stops, no strap:
+    # the pack is a cased module (see the battery block, and battery_case()) and what the
+    # tray owes it is a register, not a nest.  A BATT_SEAT-deep recess in the floor,
+    # CLR proud of the module all round, locates it in x and y; the deck closes the 1.4 mm
+    # above it in z, over a strip of foam that is a BOM line and not a printed feature.
+    #
+    # The recess is a POCKET in the floor, not a hole through it: the floor is the box's
+    # bottom skin and it keeps 2.2 of its 3.0 mm here.  Cut, not unioned - which is why it
+    # is safe this early, before anything is added near it.
+    s = s.cut(bxc(BATT_X-BATT_L/2-CLR, BATT_X+BATT_L/2+CLR,
+                  -BATT_W/2-CLR, BATT_W/2+CLR, BATT_Z0, BODY_Z0+3.0+1))
+    # ESP32 + URT-1 bay, in the strip between the module's rear face and the connector
+    # panel's pads.  It moved back from x = -46 because the module reaches -46.15 - the
+    # battery took the tray, which is the honest consequence of making it a module - and
+    # BATT_X was pushed forward until this strip was the 8.9 mm the bay had before.  Its
+    # opposite number at x = +46 was the BMS bay and is simply gone: the BMS is inside the
+    # module now, which is the point of putting it there - a pack that leaves the robot
+    # leaves protected.
+    # ESP_RIB_Y and not BMS_W/2+1.5: that half width was the BMS bay's and the BMS went
+    # inside the battery module, so it was already stale - and at 15.0 it took 0.5 mm out
+    # of the driver's run to the two lower REAR cradle screws.  cradle_clear() found it.
+    s = s.union(bxc(ESP_X-1.5, ESP_X+1.5, -ESP_RIB_Y, ESP_RIB_Y,
+                    BODY_Z0+3, BODY_Z0+16))
     # deck bosses.  The deck screw lands in a nut, not in a printed thread: the boss is
     # drilled M3 clearance and carries a nut slot near its top, opening toward the middle
     # of the tray - the one direction that is open air with the deck off, which is when
@@ -1083,63 +1502,195 @@ def chassis_bottom():
     # The mid pair is the exception on both counts - see DECK_SCREWS: it is clipped to the
     # body's own side face, and its channel opens along +x, into the free strip beside the
     # pack, because inboard of it is the battery.
-    for x, ay in DECK_SCREWS:
-        for y in (-ay, ay):
+    for x, ay, out in DECK_SCREWS:
+        for sy in (-1.0, 1.0):
+            y = sy*ay
             b = cyl(DECK_BOSS_R, BODY_Z1-(BODY_Z0+3.0), (x, y, BODY_Z0+3.0))
             s = s.union(b.intersect(bxc(-BODY_L/2, BODY_L/2, -BODY_W/2, BODY_W/2,
                                         BODY_Z0, BODY_Z1)))
             s = s.cut(cyl(M3_CLR, 15.0, (x, y, BODY_Z1-14.0)))
-            out = ((1.0, 0.0, 0.0) if abs(y) > 40.0 else
-                   (0.0, -1.0 if y > 0 else 1.0, 0.0))
-            s = s.cut(nut_slot((x, y, BODY_Z1-DECK_NUT_DZ), out, run=DECK_BOSS_R+6.0))
+            s = s.cut(nut_slot((x, y, BODY_Z1-DECK_NUT_DZ),
+                               (out[0], sy*out[1], out[2]), run=DECK_BOSS_R+6.0))
     for y in (-BODY_W/2-1, BODY_W/2-WALL-1):                  # vents / side cable ports
         for x in (-34.0, 0.0, 34.0):
             s = s.cut(bxc(x-11, x+11, y, y+WALL+2, -4.0, 14.0))
-    s = s.cut(bxc(-BODY_L/2-1, -BODY_L/2+WALL+1, -16, 16, -10, 10))
+    pw, ph = PANEL_WIN                                        # the bus window
+    s = s.cut(bxc(-BODY_L/2-1, -BODY_L/2+WALL+1, -pw/2, pw/2, -ph/2, ph/2))
     # Rear connector panel - see the PANEL_* block.  Pad, then the pocket out of it, then
-    # the lip's smaller opening through the wall's outer skin.
+    # the lip's smaller opening through the wall's outer skin.  The pad is clamped at BOTH
+    # ends now: the XT60 sits high enough that an unclamped pad would stand proud of the
+    # tray's top edge and foul the deck.
     xw = -BODY_L/2                                            # the wall's outer face
     for cy, cz, (w, h) in PANEL_AT:
         s = s.union(bxc(xw+WALL, xw+PANEL_T, cy-w/2-3.0, cy+w/2+3.0,
-                        max(cz-h/2-3.0, BODY_Z0+3.0), cz+h/2+3.0))
+                        max(cz-h/2-3.0, BODY_Z0+3.0), min(cz+h/2+3.0, BODY_Z1)))
         s = s.cut(bxc(xw+PANEL_LIP_T, xw+PANEL_T+1, cy-w/2, cy+w/2, cz-h/2, cz+h/2))
         s = s.cut(bxc(xw-1, xw+PANEL_LIP_T, cy-w/2+PANEL_LIP, cy+w/2-PANEL_LIP,
                       cz-h/2+PANEL_LIP, cz+h/2-PANEL_LIP))
     by, bz = PANEL_BAL_AT
     s = s.cut(bxc(xw-1, xw+WALL+1, by-PANEL_BAL[0]/2, by+PANEL_BAL[0]/2,
                   bz-PANEL_BAL[1]/2, bz+PANEL_BAL[1]/2))
-    # Camera mount: two M3 come down through the gusset into nuts in slots that open
-    # forward, on the gusset's own front face - open air under the chin, and the only face
-    # still reachable once the module is in its channel.  CAM_FOOT_X is outboard of the
-    # gusset's lightening void, so the nut's two walls are solid PETG.
-    for fy in CAM_FOOT_Y:
-        s = s.cut(cyl(M3_CLR, 20.0, (CAM_FOOT_X, fy, CAM_LEDGE-CAM_NUT_DZ-4.0)))
-        s = s.cut(nut_slot((CAM_FOOT_X, fy, CAM_LEDGE-CAM_NUT_DZ), (1.0, 0.0, 0.0),
-                           run=8.0))
-    ky, kl, kd = CAM_KEY                      # ... and the pocket its far end keys into
+    # The camera's two M3 are NOT here any more: CAM_FOOT_X is 65.5, outboard of this
+    # part's front face at 63, so both nuts live in cradle_front() - the honest consequence
+    # of the ledge the camera stands on being a bolted part.  Its KEY POCKET does still
+    # cross the joint, by 0.5 mm, so both sides cut their share of it the way both sides
+    # cut the fork channels.
+    ky, kl, kd = CAM_KEY
     s = s.cut(bxc(CAM_FOOT_X-3.0-CLR, CAM_FOOT_X+3.0+CLR, ky-kl/2-CLR, ky+kl/2+CLR,
                   CAM_LEDGE-kd-CLR, CAM_LEDGE+1.0))
-    # Key access to the inboard fork screws on every hip_bracket.  Without these they are
-    # not hard to fit, they are impossible: the arm's outer face is 0.6 mm off the root
-    # gusset and the fork can only go on after the servo is in its bore, so those screws
-    # are always last and always blind.  See README, "Reaching the fork screws".
     #
-    # LAST, and that is not tidiness either.  The bores these replaced ended exactly on the
-    # tray's inner face at x = +-60.2, and the rear connector pads are unioned on starting
-    # from exactly that plane - the XT30 pad spans y 16..34, z +-6.3, and the rear bore at
-    # y = 29 opened inside it.  They shared no volume at all: the pad's inner face was
-    # welded straight onto the bore's circular opening, and OCC's fuse on that degenerate
-    # contact returned a solid of volume -257 mm3.  isValid() said True, so nothing
-    # downstream noticed - the whole chassis collapsed to a 2.5 x 14.9 x 6.9 mm sliver, the
-    # ROM scan read hip_roll as +0..+0, and every interference pair fired at once.  The
-    # channels now run out through the corner instead of in through the wall, but the rule
-    # stands: cut after everything that adds material, and the union never sees a bored
-    # face.  (build() also fails a part whose volume is not positive, which is the check
-    # that would have named this.)
-    ch = fork_access_channels()
-    for f in (lambda w: w, mirY, mirX, lambda w: mirX(mirY(w))):
-        s = s.cut(f(ch))
+    # There are no fork-access channels here any anything more.  They used to cut a @6 hole
+    # through this part's front corner post and through the lower half of each corner deck
+    # boss, out into the side vent, so a key could reach the roll joint's inboard fork
+    # screws - which were blind because the fork could only go on with the cradle already
+    # welded to the tray.  The cradle bolts on now, so the fork goes on with it in hand and
+    # those screws are in open air; see the block above DRIVER_D.  A chassis printed
+    # against the old geometry still has the holes and is not wrong, just drilled.
+    #
+    # The ORDERING rule they were an example of still stands, and the bolt holes below are
+    # the next thing it applies to: cut a through-path AFTER everything that adds material
+    # near it.  The bores these replaced ended exactly on the tray's inner face at
+    # x = +-60.2, and the rear connector pads are unioned on starting from that same plane;
+    # they shared no volume at all, and OCC's fuse on that degenerate contact returned a
+    # solid of volume -257 mm3.  isValid() said True, so nothing downstream noticed - 240
+    # cm3 of chassis became a 2.5 x 14.9 x 6.9 mm sliver, the ROM scan read hip_roll as
+    # +0..+0, and every interference pair fired at once.  build() also fails a part whose
+    # volume is not positive, which is the check that names it in one line.
+    s = s.cut(tcut).cut(mirX(tcut))           # bolt holes and register pockets, also last
     return s.cut(env_all())
+
+# =====================================================================================
+# PART: battery_case / battery_lid
+# =====================================================================================
+def battery_case():
+    """The battery module: six 21700 welded into a 3 x 2 brick, heatshrunk, its BMS beside
+    them, and this box around both.  It is a robot part - it has a PARTS entry, a mass in
+    the budget and a place in interference() - but it is not structure: nothing on the
+    robot loads it, which is why its two lid screws are one of only two places on this
+    machine where a screw threads straight into the print - the IMU's standoffs are the
+    other (M25_TAP, see CLAUDE.md, "Off the torque path").
+
+    Two zones along x, and the order is not arbitrary.  The BMS stands on edge against the
+    REAR wall, so its leads and the pack's leave through the same grommet slot and reach
+    the rear connector panel without crossing the cells; the brick fills the rest, right up
+    to the front wall.  That FRONT wall is thickened to BATT_FRONT_T and is the module's
+    only screwed fixing - the lid's rear edge lives in a groove in the rear wall and its
+    front edge takes two M2.5 down into this one.
+
+    The BMS is retained in all six directions with no fasteners: the rear wall and a pair
+    of rib pairs take it in x, the case's own side walls take it in y (64.0 across a 65.0
+    interior - that is a press, not a slot), the ribs' ledge takes it down, and the one bar
+    under the lid takes it up.  That bar is the only thing hanging below the lid: over the
+    brick there is 0.2 mm, not 2.
+
+    Two vents high in the rear wall: a sealed box around six cells is the wrong kind of
+    safe.  A cell that vents goes out of the back of the module, away from the deck and
+    the electronics above it."""
+    s = bxc(BATT_X-BATT_L/2, BATT_X+BATT_L/2, -BATT_W/2, BATT_W/2, BATT_Z0, BATT_ZI1)
+    s = s.cut(bxc(BATT_XI0, BATT_XI1, -BATT_YI, BATT_YI, BATT_ZI0, BATT_ZI1+1))
+    # the rear wall carries on up to full height, and takes a groove in its inner face at
+    # the lid's own height: that groove is what holds the lid's rear edge, and the two
+    # screws in the front wall are what hold the other end.
+    s = s.union(bxc(BATT_X-BATT_L/2, BATT_XI0, -BATT_W/2, BATT_W/2, BATT_ZI1, BATT_Z1))
+    s = s.cut(bxc(BATT_XI0-BATT_GROOVE, BATT_XI0, -BATT_YI, BATT_YI,
+                  BATT_ZI1-CLR, BATT_Z1+1))
+    # the lid's two fixings, straight down into the thickened front wall
+    for sy in (-1.0, 1.0):
+        s = s.cut(cyl(M25_TAP, BATT_POST_L,
+                      (BATT_XI1+BATT_FRONT_T/2, sy*BATT_SCREW_Y, BATT_ZI1-BATT_POST_L)))
+    # BMS ribs.  The board stands with its TOP edge at the lid, not with its bottom on the
+    # floor: the rear zone is BMS_W = 27 of a 43.6 mm interior either way, so one end of it
+    # is dead space whichever way up it goes - and put at the top, the lid's own frame
+    # lands on the board's top edge and traps it.  Each pair of ribs is a 1.8 mm slot for
+    # its +x edge and a ledge for it to sit on; the rear wall takes the other edge.
+    for py in (-BMS_RIB_Y, BMS_RIB_Y):
+        s = s.union(bxc(BMS_X1+CLR, BMS_X1+CLR+0.8, py-5.0, py+5.0, BATT_ZI0, BMS_Z0))
+        s = s.union(bxc(BMS_X0, BMS_X1, py-5.0, py+5.0, BMS_Z0-2.0, BMS_Z0))
+    # grommet slot and vents, through the rear wall
+    w, h = BATT_WIRE
+    s = s.cut(bxc(BATT_X-BATT_L/2-1, BATT_XI0+1, -w/2, w/2, -h/2, h/2))
+    for sy in (-1.0, 1.0):
+        s = s.cut(cyl(BATT_VENT_D/2, BATT_CASE_T+2, (BATT_X-BATT_L/2-1, sy*24.0,
+                                                     BATT_ZI1-6.0), axis=(1,0,0)))
+    return s
+
+def battery_lid():
+    """The module's lid: a plate that sits on the case's walls, its rear edge in a groove
+    in the rear wall and its front edge screwed down into the thickened front wall.  It
+    goes in at an angle - rear tab into the groove first, then the front down.
+
+    The only thing hanging below it is one bar across the BMS zone, which lands on the
+    board's top edge and is what stops it lifting.  There is no lip anywhere else: over the
+    brick the interior has BATT_FIT/2 = 0.2 mm, and a lip there would press on the cells.
+
+    Off the torque path in every sense - it holds a cover on - so its two M2.5 form their
+    own thread in the front wall.  That is a ONE-ASSEMBLY thread: a pack opened and closed
+    repeatedly wants the holes drilled out and nutted, and the README says so."""
+    # The rear edge runs BATT_GROOVE into the wall's groove; the front edge overhangs the
+    # thickened front wall and is screwed to it.
+    x0, x1 = BATT_XI0-BATT_GROOVE+CLR, BATT_X+BATT_L/2
+    s = bxc(BATT_XI0, x1, -BATT_W/2, BATT_W/2, BATT_ZI1, BATT_Z1)
+    # ... and the rear tab is only as wide as the groove, which is the interior: full
+    # width here would put the lid's two rear corners inside the side walls.
+    s = s.union(bxc(x0, BATT_XI0, -BATT_YI, BATT_YI, BATT_ZI1, BATT_Z1))
+    # Locating lip: a FRAME round the interior's edge, CLR proud of it, not a slab over
+    # the whole opening - a slab was 12 cm3 of plastic doing nothing but weigh 14 g, on a
+    # robot whose flat trot moves on 11.  It starts clear of the groove; the plate itself
+    # is what lands on the BMS's top edge and holds the board down.
+    s = s.union(bxc(BMS_X0+CLR, BMS_X0+CLR+BATT_FRAME_W, -BATT_YI+CLR, BATT_YI-CLR,
+                    BATT_ZI1-BATT_FRAME_D, BATT_ZI1))
+    for sy in (-1.0, 1.0):                                    # ... into the front wall
+        s = s.cut(cyl(M25_CLR, BATT_LID_T+2,
+                      (BATT_XI1+BATT_FRONT_T/2, sy*BATT_SCREW_Y, BATT_ZI1-1.0)))
+    return s
+
+def brick_com():
+    """Centroid of the six wrapped cells - what BATTERY_KG hangs on in both sim exporters.
+    It is NOT the module's centre: the BMS sits at the rear, so the brick is pushed
+    2.75 mm forward of it.  Both exporters used to build this box from a literal
+    (0, 0, BODY_Z0+3+BATT_H/2), which was the cradle's centre and is now nothing's."""
+    return ((BRICK_X0+BRICK_X1)/2.0, 0.0, BATT_ZI0 + BATT_FIT/2.0 + BRICK_H/2.0)
+
+def bms_com():
+    """Centroid of the BMS, standing on edge against the module's rear wall, on the ribs
+    that put its top edge at the lid."""
+    return ((BMS_X0+BMS_X1)/2.0, 0.0, BMS_Z0 + BMS_W/2.0)
+
+def brick_solid():
+    """The six wrapped cells as one solid - a payload, not a part, but the thing the case
+    exists to hold.  See module_clear()."""
+    return bxc(BRICK_X0, BRICK_X1, -BRICK_W/2, BRICK_W/2,
+               BATT_ZI0+BATT_FIT/2, BATT_ZI0+BATT_FIT/2+BRICK_H)
+
+def bms_solid():
+    """The BMS as a solid, on its ribs against the rear wall.  Also a payload."""
+    return bxc(BMS_X0, BMS_X1, -BMS_L/2, BMS_L/2, BMS_Z0, BMS_Z0+BMS_W)
+
+def module_clear():
+    """mm3 of the two things INSIDE the battery module that are inside its printed walls.
+
+    This is the foot bolt's lesson in a new place: the brick and the BMS are payloads, so
+    `interference()` cannot see them, `isValid()` is happy either way, and the case can be
+    drawn round a pack it would crush without one boolean in this file objecting.  It has
+    already caught one - the lid was first drawn with a locating lip round the whole
+    opening, 2 mm deep, into an interior the wrapped brick fills to 0.2 mm a side.
+
+    Returns (brick_mm3, bms_mm3); both must be zero."""
+    box = battery_case().val().fuse(battery_lid().val())
+    out = []
+    for w in (brick_solid(), bms_solid()):
+        try:    out.append(box.intersect(w.val()).Volume())
+        except Exception: out.append(-1.0)
+    return tuple(out)
+
+def batt_clear():
+    """Air between the battery module's lid and the deck's underside.
+
+    The module is a printed part, so interference() covers it against the chassis - but
+    the gap that decides the design is the one it does NOT share solid with, exactly like
+    the IMU's used to be.  This is where a strip of foam goes; it may be small, never
+    negative."""
+    return BODY_Z1 - BATT_Z1
 
 # =====================================================================================
 # PART: chassis_top / lidar_mount
@@ -1147,7 +1698,7 @@ def chassis_bottom():
 def chassis_top():
     z0, z1 = BODY_Z1, BODY_Z1+DECK_T
     s = bxc(-BODY_L/2, BODY_L/2, -BODY_W/2, BODY_W/2, z0, z1)
-    for x, ay in DECK_SCREWS:
+    for x, ay, _ in DECK_SCREWS:
         for y in (-ay, ay):
             s = s.cut(cyl(M3_CLR, 20, (x, y, z0-1))).cut(cyl(3.2, 2.2, (x, y, z1-2.2)))
     # Orange Pi 5 Pro standoffs.  M2.5 through the board, through the standoff, into a nut
@@ -1165,29 +1716,28 @@ def chassis_top():
         a = math.radians(360.0*i/LIDAR_N+45.0)
         s = s.cut(cyl(M3_CLR, 20, (LIDAR_X+LIDAR_BC/2*math.cos(a), LIDAR_BC/2*math.sin(a), z0-1)))
     s = s.cut(cyl(LIDAR_CORE_R, 20, (LIDAR_X, 0, z0-1)))   # the LiDAR cable, into the tray
-    s = s.cut(bxc(-16, 16, -34, 34, z0-1, z1+1)).cut(bxc(58, 60, -26, 26, z0-1, z1+1))
-    # IMU tabs, bridging the window just cut, on the centreline - see the IMU_* block.  The
-    # board bolts UP against their underside, so its component face looks down at the pack
-    # and nothing it carries reaches into OPI_BOX.  The M2.5 nut sits in the deck's own top
-    # 2.25 mm in a channel opening toward x = 0 - open air inside the window, and the only
-    # face still reachable at the moment it goes in, which is with the deck off the tray
-    # and before the board.  That fixes its place in the assembly order in README.md.
+    s = s.cut(bxc(IMU_WINDOW[0], IMU_WINDOW[1], -34, 34, z0-1, z1+1))
+    s = s.cut(bxc(58, 60, -26, 26, z0-1, z1+1))
+    # IMU standoffs, on the deck's TOP face on the centreline - see the IMU_* block.  The
+    # board used to hang under two tabs in the window below; a cased battery needs that
+    # 3.6 mm and the Orange Pi's standoff gap up here is 7 mm of air nothing else uses.
+    # Component face DOWN into the gap under the board, so nothing it carries reaches the
+    # Pi.  The window moved off the centreline (IMU_WINDOW) to leave solid deck here, and
+    # the two M2.5 form their own thread IMU_TAP_L deep through the standoff and into that
+    # deck - there is no nut, and the reason is in the IMU_* block.
     for sx in (-1.0, 1.0):
-        xa, xb = sx*(16.0-IMU_TAB[0]), sx*16.0
-        s = s.union(bxc(min(xa, xb), max(xa, xb), -IMU_TAB[1]/2, IMU_TAB[1]/2,
-                        IMU_Z0, IMU_Z0+IMU_TAB_T))
         hx = sx*IMU_HOLE_P/2
-        s = s.cut(cyl(M25_CLR, DECK_T+4.0, (hx, IMU_Y, IMU_Z0-1.0)))
-        s = s.cut(nut_slot((hx, IMU_Y, IMU_Z0+IMU_TAB_T), (-sx, 0.0, 0.0),
-                           af=M25_NUT_AF, h=M25_NUT_H, back=3.2, run=12.0))
+        s = s.union(cyl(IMU_STAND_R, IMU_STAND_H, (hx, IMU_Y, z1)))
+        s = s.cut(cyl(M25_TAP, IMU_TAP_L, (hx, IMU_Y, z1+IMU_STAND_H-IMU_TAP_L)))
     for y in (-BODY_W/2, BODY_W/2-3.0):                       # stiffening lips
         s = s.union(bxc(-BODY_L/2, BODY_L/2, y, y+3.0, z1, z1+6.0))
-    for x, ay in DECK_SCREWS:                                 # ... notched at the mid pair:
-        if ay > 40.0:                                         # a socket head at |y| = 41
-            for sy in (-1.0, 1.0):                            # stands 0.8 mm proud of its
-                y0 = sy*(BODY_W/2-3.0)                        # counterbore and reaches into
-                s = s.cut(bxc(x-6.0, x+6.0, min(y0, y0+sy*3.0), max(y0, y0+sy*3.0),
-                              z1, z1+2.0))
+    for x, ay, _ in DECK_SCREWS:                               # ... notched at every screw:
+        for sy in (-1.0, 1.0):                                # a socket head at |y| = 41
+            y0 = sy*(BODY_W/2-3.0)                            # stands 0.8 mm proud of its
+            s = s.cut(bxc(x-6.0, x+6.0, min(y0, y0+sy*3.0),   # counterbore and reaches
+                          max(y0, y0+sy*3.0), z1, z1+2.0))    # into the lip.  Used to be
+                                                              # the mid pair only; all four
+                                                              # sit at 41 now.
     return s
 
 def lidar_pose():
@@ -1331,19 +1881,35 @@ def imu_module():
     is: interference() and the assembly have to see the thing that is actually bolted on,
     and neither can see a number in a table.  Component face down, per ref/imu/."""
     L, W_, T = IMU_BOARD
-    return bxc(IMU_X-L/2, IMU_X+L/2, IMU_Y-W_/2, IMU_Y+W_/2,
-               IMU_Z0-T-IMU_STACK, IMU_Z0)
+    s = bxc(IMU_X-L/2, IMU_X+L/2, IMU_Y-W_/2, IMU_Y+W_/2,
+            IMU_Z0-T-IMU_STACK, IMU_Z0)
+    # ... minus the two standoffs' footprints out of the COMPONENT layer only.  A board
+    # has clear annuli round its mounting holes - that is what a mounting hole is - and
+    # without this the envelope reports the deck's own standoffs as an interference with
+    # the board that is bolted to them.  The PCB above them is untouched.
+    for sx in (-1.0, 1.0):
+        s = s.cut(cyl(IMU_STAND_R+CLR, IMU_STACK+0.2,
+                      (sx*IMU_HOLE_P/2, IMU_Y, IMU_Z0-T-IMU_STACK-0.1)))
+    return s
 
 def imu_clear():
-    """mm3 of the IMU board inside the battery pack's envelope, plus the mm of air under
-    it - the board's own binding constraint and the one thing interference() cannot see,
-    because the pack is a payload and not a part (gps_clear() exists for the same reason
-    against OPI_BOX).  Returns (overlap_mm3, gap_mm); the gap is what is actually thin."""
-    top = BODY_Z0 + BATT_H
-    pack = bxc(-BATT_L/2, BATT_L/2, -BATT_W/2, BATT_W/2, BODY_Z0+3.0, top)
-    try:    v = imu_module().val().intersect(pack.val()).Volume()
+    """The IMU board against the Orange Pi above it.  Returns (overlap_mm3, gap_mm).
+
+    It used to look DOWN, at the battery pack - that was the thin wall when the board hung
+    in the deck window.  The board now sits on the deck's top face inside the Pi's own
+    standoff gap, so the payload it can foul is the Pi, and neither is a part:
+    interference() sees a printed solid and this sees the two boxes it cannot.
+
+    Note this is deliberately measured against the Pi's BOARD (one OPI_STAND_H above the
+    deck), not against OPI_BOX, whose floor is the deck itself.  The board shares the
+    standoff gap with that envelope on purpose; OPI_BOX stays what it is for - the mass
+    box, and the keep-out gps_mount's arms are shaped around."""
+    z = BODY_Z1 + DECK_T + OPI_STAND_H
+    pi = bxc(OPI_X-OPI_BOX[0]/2, OPI_X+OPI_BOX[0]/2,
+             -OPI_BOX[1]/2, OPI_BOX[1]/2, z, z+OPI_BOX[2])
+    try:    v = imu_module().val().intersect(pi.val()).Volume()
     except Exception: v = 0.0
-    return v, (IMU_Z0 - IMU_BOARD[2] - IMU_STACK) - top
+    return v, z - IMU_Z0
 
 def gps_pose():
     """The patch antenna's phase centre in robot coordinates.
@@ -1725,8 +2291,14 @@ def rom_scan(moving, static, loc_pt, axis=(0,1,0), lo=-150, hi=150, step=10):
     if cur[1]-cur[0] > best[1]-best[0]: best = cur
     return tuple(best)
 
-BODY_PARTS = ("chassis_bottom", "chassis_top", "lidar_mount",
-              "gps_mount", "camera_mount")
+# The base link's printed parts, in one place because THREE files need the same list:
+# interference() here, export_sim.py's URDF/MJCF, and ../ros2/.../generate_model.py.  It
+# was three hand-copied tuples until the cradles were split out, which is the arrangement
+# CLAUDE.md's "masses and densities live once" note exists to stop - a part missing from
+# one of them is a robot that weighs different amounts in different simulators.
+BASE_MESHES = ("chassis_bottom", "cradle_front", "cradle_rear", "chassis_top",
+               "lidar_mount", "gps_mount", "camera_mount")
+BODY_PARTS = BASE_MESHES + ("battery_case", "battery_lid")
 INTERF_TOL = 1.0        # mm3 - under this it is two faces meeting, not two solids sharing
 
 def interference(names=BODY_PARTS):
@@ -1745,6 +2317,84 @@ def interference(names=BODY_PARTS):
             if v > INTERF_TOL:
                 bad.append((a, b, v))
     return bad
+
+def panel_clear():
+    """Does anything stand in front of the rear wall's openings?  Returns
+    {name: blocked_mm3}, and 0.0 is the only passing value.
+
+    Fourth member of the family that foot_bolt_check(), thrust_clear() and fork_access()
+    belong to, and it is here because the defect it catches SHIPPED: every opening on this
+    wall - the bus window and all three connectors - opened into the rear hip-roll
+    cradles' 2.8 mm plate, 1.2 mm behind the wall.  Nothing could see it.  interference()
+    pairs the static body parts and the cradles were part of chassis_bottom, so the plate
+    was chassis_bottom standing in front of chassis_bottom's own hole; isValid() is happy
+    with a pocket that leads nowhere, and rom_scan only looks at what moves.
+
+    The probe is the opening extruded outward along -x, intersected with the whole
+    assembled body.  A connector is not fitted from outside so the run only has to be as
+    long as the mating half stands proud, but the bus window is a cable route and gets the
+    full PANEL_REACH."""
+    body = None
+    for nm in BODY_PARTS:
+        if nm not in PARTS:
+            continue
+        body = PARTS[nm][0] if body is None else body.union(PARTS[nm][0])
+    xw = -BODY_L/2
+    pw, ph = PANEL_WIN
+    tgt = [("bus window", 0.0, 0.0, pw, ph)]
+    for cy, cz, (w, h) in PANEL_AT:
+        tgt.append((f"panel y{cy:+.0f} z{cz:+.0f}", cy, cz, w, h))
+    by, bz = PANEL_BAL_AT
+    tgt.append(("balance", by, bz, *PANEL_BAL))
+    out = {}
+    for name, cy, cz, w, h in tgt:
+        probe = bxc(xw-PANEL_REACH, xw-CLR, cy-w/2, cy+w/2, cz-h/2, cz+h/2)
+        try:
+            out[name] = body.val().intersect(probe.val()).Volume()
+        except Exception:
+            out[name] = -1.0
+    return out
+
+def cradle_clear():
+    """Can a driver reach the four screws that hold each cradle on?  Returns
+    {(end, i): blocked_mm3}; 0.0 is the only passing value.
+
+    The heads sit on seats inboard of the end wall and are driven along +x from inside the
+    tray, which is open only with the battery module out - that is what fixes the assembly
+    order, not a preference.  The probe is a DRIVER_D cylinder on the screw's real line
+    running CRADLE_REACH back from the seat, against the tray itself: a seat a socket
+    cannot get to is a screw nobody can turn, which is the failure this repository has now
+    shipped three times."""
+    tray = PARTS["chassis_bottom"][0]
+    x0 = CRADLE_X - WALL - CRADLE_SEAT
+    out = {}
+    for end, sx in (("front", 1.0), ("rear", -1.0)):
+        for i, (y, z) in enumerate(cradle_bolt_axes()):
+            p = cyl(DRIVER_D/2, CRADLE_REACH, (sx*x0, y, z), axis=(-sx, 0.0, 0.0))
+            try:
+                out[(end, i)] = tray.val().intersect(p.val()).Volume()
+            except Exception:
+                out[(end, i)] = -1.0
+    return out
+
+def cradle_head_clear():
+    """mm3 of the cradle screws' heads inside the battery module, plus the air left
+    between the front seat's counterbore floor and the module's front face.  Both are
+    invisible to interference(): a screw head is not a part.
+    """
+    heads = cradle_screws()
+    box = None
+    for nm in ("battery_case", "battery_lid"):
+        b = PARTS[nm][0]
+        box = b if box is None else box.union(b)
+    try:
+        v = heads.val().intersect(box.val()).Volume()
+    except Exception:
+        v = -1.0
+    seat = CRADLE_X - WALL - CRADLE_SEAT + CRADLE_CB          # counterbore floor
+    # read the module's front face off the solid rather than re-deriving it: the case's
+    # walls are not the same thickness front and back, and this is the wall that matters
+    return v, seat - HUB_HEAD_H - PARTS["battery_case"][0].val().BoundingBox().xmax
 
 def gps_clear():
     """mm3 of gps_mount inside the Orange Pi's envelope - the mast's own binding
@@ -1781,20 +2431,6 @@ def foot_bolt_check():
     tip = FOOT_BOLT_L - FOOT_CB_Z                     # above FOOT_Z, from the shoulder
     return blocked, tip - (FOOT_NUT_Z + M3_NUT_H), (FOOT_NUT_Z + M3_NUT_H + 5.0) - tip
 
-def fork_channels_cover(turn=FORK_TURN):
-    """How far, in degrees on the hub circle, the worst-placed screw has to be turned to
-    sit under the nearest channel.  Closed form, like thrust_clear(): the screws are at
-    HUB_N even stations, the channels at FORK_CHANNELS, and the leg turns by hand with its
-    outboard arm still free.  Returns (worst, turn - worst); the margin must not go
-    negative.  Two channels a quarter turn apart give 90 exactly, which is the limit -
-    a third channel would buy slack, and there is nowhere on that corner to put one."""
-    ch = [math.degrees(math.atan2(y, x)) for x, y in FORK_CHANNELS]
-    worst = 0.0
-    for i in range(HUB_N):
-        s = 360.0*i/HUB_N
-        worst = max(worst, min(abs((c - s + 180.0) % 360.0 - 180.0) for c in ch))
-    return worst, turn - worst
-
 def fork_access():
     """Can a key actually reach each fork arm's screws?  Returns {(joint, side):
     blocked_mm3}, and 0.0 is the only passing value (a boolean that fails returns -1, and
@@ -1806,28 +2442,33 @@ def fork_access():
     ACCESS is blocked is invisible to all three, and the robot has now shipped that defect
     twice - the foot bolt that opened inside the dome, and the clamp head inside the spine.
 
-    The probe is a DRIVER_D cylinder on the key's real line, intersected with the part the
-    fork bolts ONTO.  That neighbour is the whole question: the fork is identical at all
-    three joints, and what differs is what happens to be sitting behind it.  Five of the
-    six arms have open air behind them, and there the line is the screw axis, for
-    KEY_REACH.  The roll joint's inboard arm has the chassis, and there the probe follows
-    the two channels - the same FORK_CHANNELS positions, the same KEY_TILT lean - for their
-    whole FORK_ACCESS_L, which ends in open air.  A probe that stops inside the bore passes
-    on a bore that leads nowhere; that was the previous version of this function, and
-    MAC.md of 2026-09-03 is what it cost."""
+    The probe is a DRIVER_D cylinder on the screw's own axis, run KEY_REACH, intersected
+    with the part the fork bolts ONTO.  That neighbour is the whole question: the fork is
+    identical at all three joints, and what differs is what happens to be sitting behind
+    it - and for the roll joint that is now cradle_front alone, because the fork goes on
+    with the cradle in hand.  All six arms take a straight key.
+
+    It has not always been six.  The roll joint's inboard arm faced the chassis, and two
+    versions of a way round that came and went - four coaxial bores that reached one screw
+    of four, then two tilted channels through the tray's corner.  Both are in the history
+    above DRIVER_D.  What made this simple was not a better hole, it was the cradle
+    becoming a separate part.  Keep the probe honest about that: it must end in open air,
+    not inside a bore, which is what the first version got wrong and what MAC.md of
+    2026-09-03 cost."""
     out = {}
-    for joint, loc, near in (("roll",  ROLL_LOC,  PARTS["chassis_bottom"][0]),
+    # The roll joint's neighbour is cradle_front ALONE, and that is the whole point of the
+    # split: the fork goes on with the cradle in hand, before its four screws hold it to
+    # the tray, so the tray is not in the way at that moment.  Probed against the tray as
+    # well it reads 569 mm3 - which is what it read for two years, and what the two @6
+    # channels through the tray's corner existed to get around.
+    for joint, loc, near in (("roll",  ROLL_LOC,  PARTS["cradle_front"][0]),
                              ("pitch", PITCH_LOC, PARTS["hip_bracket_A"][0]),
                              ("knee",  KNEE_LOC,  PARTS["thigh_A"][0])):
         for side, face, sgn in (("driven",  HUB_TOP_Z + ARM_T,   +1.0),
                                 ("passive", ARM_BOT_TOP - ARM_T, -1.0)):
-            if joint == "roll" and side == "passive":
-                lines = [((px, py, face), fork_channel_dir(), FORK_ACCESS_L)
-                         for px, py in FORK_CHANNELS]
-            else:
-                lines = [((HUB_BC/2*math.cos(math.radians(90*i)),
-                           HUB_BC/2*math.sin(math.radians(90*i)), face),
-                          (0.0, 0.0, sgn), KEY_REACH) for i in range(HUB_N)]
+            lines = [((HUB_BC/2*math.cos(math.radians(90*i)),
+                       HUB_BC/2*math.sin(math.radians(90*i)), face),
+                      (0.0, 0.0, sgn), KEY_REACH) for i in range(HUB_N)]
             probe = None
             for p, ax, L in lines:
                 c = cyl(DRIVER_D/2, L, p, axis=ax)
@@ -1861,11 +2502,16 @@ def thrust_clear():
 PARTS, REPORT = {}, {}
 def build():
     hb, th, sh, ft = hip_bracket(), thigh(), shin(), foot()
+    cf, cr = cradles()
     PARTS["chassis_bottom"] = (chassis_bottom(), 1, "PETG/ASA, 4 walls, 30% gyroid")
+    PARTS["cradle_front"]   = (cf, 1, "PETG/ASA, 5 walls, 40% - flange face down")
+    PARTS["cradle_rear"]    = (cr, 1, "PETG/ASA, 5 walls, 40% - flange face down")
     PARTS["chassis_top"]    = (chassis_top(),    1, "PETG/ASA, 4 walls, 25%")
     PARTS["lidar_mount"]    = (lidar_mount(),    1, "PETG/ASA, 4 walls, 30%")
     PARTS["gps_mount"]      = (gps_mount(),      1, "PETG/ASA, 4 walls, 30% - platform down")
     PARTS["camera_mount"]   = (camera_mount(),   1, "PETG/ASA, 4 walls, 40% - skirt down")
+    PARTS["battery_case"]   = (battery_case(),   1, "PETG/ASA, 4 walls, 25% - open side up")
+    PARTS["battery_lid"]    = (battery_lid(),    1, "PETG/ASA, 4 walls, 25% - flat")
     PARTS["hip_bracket_A"]  = (hb,       2, "PETG/ASA/PA-CF, 5 walls, 40% - FL+RR")
     PARTS["hip_bracket_B"]  = (mirY(hb), 2, "PETG/ASA/PA-CF, 5 walls, 40% - FR+RL")
     PARTS["thigh_A"]        = (th,       2, "PETG/ASA/PA-CF, 5 walls, 40% - FL+RR")
@@ -1880,10 +2526,14 @@ def assembly(hb, th, sh, ft):
     a = cq.Assembly(name="mini_dog")
     grey, dark = cq.Color(0.42,0.45,0.50), cq.Color(0.12,0.12,0.14)
     a.add(PARTS["chassis_bottom"][0], name="chassis_bottom", color=grey)
+    a.add(PARTS["cradle_front"][0],   name="cradle_front",   color=grey)
+    a.add(PARTS["cradle_rear"][0],    name="cradle_rear",    color=grey)
     a.add(PARTS["chassis_top"][0],    name="chassis_top",    color=grey)
     a.add(PARTS["lidar_mount"][0],    name="lidar_mount",    color=grey)
     a.add(PARTS["gps_mount"][0],      name="gps_mount",      color=grey)
     a.add(PARTS["camera_mount"][0],   name="camera_mount",   color=grey)
+    a.add(PARTS["battery_case"][0],   name="battery_case",   color=dark)
+    a.add(PARTS["battery_lid"][0],    name="battery_lid",    color=dark)
     a.add(camera_module(),            name="camera",         color=dark)
     srv = [mv(servo_dummy(), L) for _, L in JOINTS]
     hub = [mv(hubs(), L) for _, L in JOINTS]
@@ -1907,6 +2557,12 @@ def assembly(hb, th, sh, ft):
 # `fea.py --all --orient`, which scores the traction on the layer plane - so it is not
 # free to flip them for less support.
 PRINT_ORIENT = {"chassis_bottom": ((1,0,0),0), "chassis_top": ((1,0,0),0),
+                # on the flange: 98 x 30.7 mm of flat, square to the two sleeve bores, and
+                # it puts the layers across the joint's clamp rather than along it.
+                "cradle_front": ((0,1,0),90), "cradle_rear": ((0,1,0),-90),
+                # both flat as modelled: the case's open side is already up and the lid
+                # is a plate.  Neither wants support.
+                "battery_case": ((1,0,0),0), "battery_lid": ((1,0,0),0),
                 "lidar_mount": ((1,0,0),180),
                 "hip_bracket_A": ((0,1,0),90),
                 "hip_bracket_B": ((0,1,0),90), "thigh_A": ((1,0,0),90),
@@ -1930,7 +2586,7 @@ def main():
         # Volume, not just isValid().  A boolean that fails on a degenerate contact - two
         # coincident faces, a tangency - comes back inverted rather than broken: OCC raises
         # nothing and isValid() still says True, and the part is then a sliver with negative
-        # volume.  See chassis_bottom's fork_access_channels() note for the one that shipped.
+        # volume.  See chassis_bottom's ordering note for the one that shipped.
         ok = shp.isValid() and shp.Volume() > 0.0
         cq.exporters.export(wp, os.path.join(OUT, "step", f"{name}.step"))
         ax, ang = PRINT_ORIENT[name]
@@ -1965,12 +2621,27 @@ def main():
         print(f"  !! INTERFERENCE  {na} x {nb}  {v:.1f} mm3")
     if not bad:
         print(f"  body clear: {' / '.join(BODY_PARTS)} + camera + imu share no solid")
-    # ... and the IMU against the battery pack, which interference() cannot see at all.
+    # ... and the two payload gaps interference() cannot see at all: the IMU against the
+    # Orange Pi it now shares a standoff gap with, and the battery module's lid against
+    # the deck.  The module IS a part, so its solids are covered above; what is not is
+    # the air over it, which is what the whole redesign was spent on.
     iv, igap = imu_clear()
     if iv > INTERF_TOL:
-        print(f"  !! INTERFERENCE  imu x battery pack  {iv:.1f} mm3")
+        print(f"  !! INTERFERENCE  imu x Orange Pi  {iv:.1f} mm3")
     else:
-        print(f"  imu clear: {igap:+.2f} mm of air between the board and the pack")
+        print(f"  imu clear: {igap:+.2f} mm of air between the board and the Pi")
+    bgap = batt_clear()
+    if bgap < 0:
+        print(f"  !! BATTERY  the module's lid is {-bgap:.2f} mm into the deck")
+    else:
+        print(f"  batt clear: {bgap:+.2f} mm of air between the module's lid and the deck")
+    kv, mv_ = module_clear()
+    if max(kv, mv_) > INTERF_TOL:
+        print(f"  !! BATTERY MODULE  case/lid into the pack: brick {kv:.1f} mm3,"
+              f" BMS {mv_:.1f} mm3")
+    else:
+        print(f"  module clear: the case and lid touch neither the wrapped brick nor"
+              f" the BMS ({kv:.1f} / {mv_:.1f} mm3)")
     # The LiDAR's own field of view is a geometric invariant like the interference check:
     # the L2 sees nothing below its base plane, so any static bodywork above that plane is
     # a permanent blind wedge in the direction that matters.  isValid() cannot see this and
@@ -2017,14 +2688,31 @@ def main():
     for (joint, side), v in bad.items():
         print(f"  !! FORK ACCESS  {joint}/{side} arm: {v:.0f} mm3 of the key's run to open"
               f" air is solid - those four screws cannot be fitted")
-    worst, spare = fork_channels_cover()
-    if spare < 0:
-        print(f"  !! FORK ACCESS  roll/passive arm: a screw is {worst:.0f} deg from the"
-              f" nearest channel and the leg only turns {FORK_TURN:.0f}")
-    if not bad and spare >= 0:
-        print(f"  fork access: five arms open within {KEY_REACH:.0f} mm; roll/passive"
-              f" through {len(FORK_CHANNELS)} @{FORK_ACCESS_D:.0f} channels leaning"
-              f" {KEY_TILT:.0f} deg, every screw within {worst:.0f} deg of one")
+    if not bad:
+        print(f"  fork access: all six arms open to a straight key within"
+              f" {KEY_REACH:.0f} mm - the roll pair with the cradle in hand, before its"
+              f" {len(CRADLE_BOLT)} screws go into the tray")
+    pc = panel_clear()
+    bad = {k: v for k, v in pc.items() if v > INTERF_TOL or v < 0}
+    for k, v in bad.items():
+        print(f"  !! PANEL  the {k} opening has {v:.0f} mm3 of solid in front of it -"
+              f" nothing can be plugged in or routed out there")
+    if not bad:
+        print(f"  panel clear: bus window {PANEL_WIN[0]:.0f}x{PANEL_WIN[1]:.0f} and all"
+              f" three connectors open to air over {PANEL_REACH:.0f} mm")
+    hv, hgap = cradle_head_clear()
+    if hv > INTERF_TOL or hv < 0:
+        print(f"  !! CRADLE HEAD  {hv:.0f} mm3 of screw head inside the battery module -"
+              f" counterbore CRADLE_CB is too shallow")
+    cc = cradle_clear()
+    bad = {k: v for k, v in cc.items() if v > INTERF_TOL or v < 0}
+    for (end, i), v in bad.items():
+        print(f"  !! CRADLE BOLT  {end} screw {i}: {v:.0f} mm3 of tray in the driver's"
+              f" {CRADLE_REACH:.0f} mm run - that screw cannot be turned")
+    if not bad:
+        print(f"  cradle bolts: {len(CRADLE_BOLT)} x M3 x {CRADLE_BOLT_L:.0f} per end,"
+              f" heads clear over {CRADLE_REACH:.0f} mm from inside the tray"
+              f" (battery module out), {hgap:+.2f} mm of air to the pack")
     v = gps_clear()
     if v > INTERF_TOL:
         print(f"  !! GPS MAST  {v:.1f} mm3 of gps_mount is inside the Orange Pi envelope")
@@ -2054,11 +2742,11 @@ def main():
     a = assembly(hb, th, sh, ft)
     a.save(os.path.join(OUT, "mini_dog_assembly.step"))
     tm = sum(r["est_mass_g"]*r["qty"] for r in rows)
-    carried = (N_SERVO*SERVO_KG + BATTERY_KG + ELECTRONICS_KG + LIDAR_KG + GPS_KG
-               + CAMERA_KG + IMU_KG)*1000.0
+    carried = (N_SERVO*SERVO_KG + BATTERY_KG + BMS_KG + ELECTRONICS_KG + LIDAR_KG
+               + GPS_KG + CAMERA_KG + IMU_KG)*1000.0
     print(f"\n  printed mass  ~{tm:.0f} g   + {N_SERVO} servos {N_SERVO*SERVO_KG*1000:.0f} g"
-          f" + 3S2P pack ~{BATTERY_KG*1000:.0f} g"
-          f" + Orange Pi/BMS/wiring ~{ELECTRONICS_KG*1000:.0f} g"
+          f" + 3S2P cells ~{BATTERY_KG*1000:.0f} g + BMS ~{BMS_KG*1000:.0f} g"
+          f" + Orange Pi/wiring ~{ELECTRONICS_KG*1000:.0f} g"
           f" + LiDAR ~{LIDAR_KG*1000:.0f} g + GPS ~{GPS_KG*1000:.0f} g"
           f" + camera ~{CAMERA_KG*1000:.0f} g + IMU ~{IMU_KG*1000:.0f} g"
           f"  ->  ~{(tm+carried)/1000:.2f} kg")
@@ -2072,7 +2760,9 @@ def main():
     # ... and the hub screw HEADS go on the MOVING side: they belong to the fork, and at
     # the hip the passive arm's four sweep FORK_GAP from the gusset (see head_clear()).
     rom["hip_roll"] = rom_scan(hip_bracket().union(mv(fork_screws(), ROLL_LOC)),
-                               chassis_bottom().union(mirX(gps_mount()))
+                               PARTS["chassis_bottom"][0]
+                                               .union(PARTS["cradle_front"][0])
+                                               .union(mirX(gps_mount()))
                                                .union(camera_mount())
                                                .union(camera_module())
                                                .union(mv(servo_dummy(), ROLL_LOC))

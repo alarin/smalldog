@@ -61,6 +61,7 @@ def rho(part):                    # g/cm^3 -> g/mm^3 (tri_inertia wants g/mm^3),
 M_SERVO   = md.SERVO_KG           # kg
 M_BATTERY = md.BATTERY_KG
 M_ELECTR  = md.ELECTRONICS_KG
+M_BMS     = md.BMS_KG
 M_LIDAR   = md.LIDAR_KG
 M_GPS     = md.GPS_KG
 M_CAMERA  = md.CAMERA_KG
@@ -154,11 +155,13 @@ def export_stl(wp, offset_mm, name):
 # ---------------------------------------------------------------- build links
 print("building CAD parts ...")
 hb, th, sh, ft = md.build()
-chassis = (md.PARTS["chassis_bottom"][0]
-           .union(md.PARTS["chassis_top"][0])
-           .union(md.PARTS["lidar_mount"][0])
-           .union(md.PARTS["gps_mount"][0])
-           .union(md.PARTS["camera_mount"][0]))
+# md.BASE_MESHES, not a list spelled out here: the same tuple drives 3d/export_sim.py and
+# md.interference(), and it grew two entries when the hip-roll cradles became bolted parts.
+# A part missing from one copy of this list is a robot that weighs different amounts in
+# different simulators, which is the drift the mass block in mini_dog.py exists to stop.
+chassis = md.PARTS[md.BASE_MESHES[0]][0]
+for _p in md.BASE_MESHES[1:]:
+    chassis = chassis.union(md.PARTS[_p][0])
 
 links = {}          # name -> dict(mesh, body, extras)
 SERVO_VIS = {}      # link name -> [servo mesh names]  (visual only, mass already
@@ -169,13 +172,19 @@ print("base_link ...")
 base = Body()
 # the body parts share one mesh but not one fill factor - they print at
 # different wall/infill settings, so each carries its own density
-for _p in ("chassis_bottom", "chassis_top", "lidar_mount", "gps_mount", "camera_mount"):
+for _p in md.BODY_PARTS:                          # = BASE_MESHES + the battery module
     base.add_solid(md.PARTS[_p][0], rho(_p))
 for leg in LEGS:                                   # the four hip-roll servos
     o = origin(leg, "hip")
     base.add_box(M_SERVO, o + np.array([0, SY[leg] * (R.S_L / 2 - R.S_AX), 0]),
                  (R.S_H, R.S_L, R.S_W))
-base.add_box(M_BATTERY, (0, 0, R.BODY_Z0 + 3 + R.BATT_H / 2), (R.BATT_L, R.BATT_W, R.BATT_H))
+# the battery module, in three pieces because it IS three: the printed case and lid are
+# parts (added with the other body parts above), the six wrapped cells hang at
+# brick_com() and the BMS at bms_com().  This used to be one box built from a
+# (0, 0, BODY_Z0+3+BATT_H/2) literal that both exporters carried separately - the old
+# cradle's centre, which is now nothing's.
+base.add_box(M_BATTERY, md.brick_com(), (R.BRICK_L, R.BRICK_W, R.BRICK_H))
+base.add_box(M_BMS,     md.bms_com(),   (R.BMS_H, R.BMS_L, R.BMS_W))
 # the Orange Pi stack, on the envelope mini_dog holds for it (md.OPI_BOX, md.opi_com()).
 # It used to be a local 100 x 62 x 18 here against a 92 x 62 x 20 in 3d/export_sim.py -
 # the same drift the mass block exists to stop, on the box gps_mount is now shaped around.

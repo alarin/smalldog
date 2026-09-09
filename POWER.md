@@ -20,8 +20,8 @@ this file is stale.
 ```
   3S2P pack, 6 x 21700, 12.6 -> 9.9 V, 0.42 kg          BATTERY_KG, mini_dog.py:638
     |
-    +-- XT60   master disconnect / bench supply, on the pack's fused P+
-    +-- XT30   charge only, deliberately the smaller shell
+    +-- XT60   master disconnect / bench supply, on the pack's fused P+   30 A MIDI
+    +-- XT30   charge only, deliberately the smaller shell, own branch fuse  7.5 A ATO
     +-- JST-XH 3S balance lead, passed through outside the tray
     |
     +--> raw pack ------> 12 x ST3215 on one bus          UNREGULATED, and deliberately so
@@ -34,9 +34,79 @@ this file is stale.
     +--> 12 V, regulated -> Unitree L2                    see *The LiDAR wants its own rail*
 ```
 
-The three ways out of the tray are the ones the CAD already cut: `PANEL_AT` puts the XT60
-under the bus window and the XT30 beside it, and the two shells differ so a charger
+The three ways out of the tray are the ones the CAD already cut, and they moved on
+2026-09-09 because none of them opened into air: the two rear hip-roll cradles formed a
+continuous plate 1.2 mm behind the wall and every one of these was blocked (`3d/README.md`,
+*Payload bays*). `PANEL_AT` now puts the **XT60 above the cradle** at z = +20 on the
+centreline, the XT30 at y = +32 and the balance lead at y = −32, around a 22 x 16 bus
+window; the two shells differ so a charger
 physically cannot be plugged into the bus (`mini_dog.py:250`).
+
+## The BMS is same-port, and there are two fuses
+
+Settled 2026-09-09, when the board arrived. It is a YH2204A-class 3S with a mode switch:
+**same-port** bridges C- and P- into one node and is rated 50 A each way, **split-port**
+keeps them separate for 60 A. Both are the vendor's own wiring diagrams - bridging those
+two terminals is a documented mode, not a bodge.
+
+**It is wired same-port, and the reason is the XT60's second job.** The rating is noise:
+peak draw is ~35 A and the fuse below opens at 30, so neither 50 nor 60 is reachable. What
+decides it is that the XT60 is a *bench supply input* as well as the load output (the tree
+above, and `3d/README.md:263`). A supply sitting above pack voltage there pushes current
+into P-. In split-port the charge FETs are not in that path and the discharge FET's body
+diode conducts in exactly that direction - so it charges the pack with the overcharge
+cutoff completely out of the loop. Same-port puts both FET banks in series, so that same
+current is protected. It costs ~2.5 W more dissipation in the board at 35 A, in a closed
+tray beside the BMS bay (`mini_dog.py:1085`) - **verify** it against a real thermal soak.
+
+For the record, per use case: split-port is marginally better for running on battery (half
+the FET loss) and for charging while running (independent limits); same-port is decisively
+better for the bench supply. Only the last of those can destroy a pack.
+
+**Two fuses, because the charge branch is a sixth of the main lead.** Same-port is about the
+BMS's *negative* terminals, not about the robot having one connector - the XT60 and XT30
+stay separate leads whose negatives merely meet at the shared node, so a fuse in the XT30's
+*positive* branch carries charge current only.
+
+```
+pack B+ --[30 A MIDI]--+----------------- XT60 +   load / bench supply
+                       +--[7.5 A ATO]---- XT30 +   charger
+
+pack B- -- BMS B- =[chg FETs]=[dis FETs]= C-/P- bridged --+-- XT60 -
+                                                          +-- XT30 -
+```
+
+Without the second fuse the XT30's 5 A lead (`3d/README.md:270`) sits behind 30 A of
+protection: a resistive fault holds 25 A in it indefinitely and nothing upstream ever
+opens, because a 30 A fuse *carries* 30 A - it needs roughly 2x for seconds. The BMS is no
+help either, its OCP is 50 A. And never put a fuse in the shared part - the common
+negative, or the trunk before the branch point - that is the 30 A fuse's job and it is the
+only one that sees both currents.
+
+### Ordered 2026-09-09
+
+| part | for | RUB |
+|---|---|---|
+| Derzhatel Midival 30-80 A, OEM 0300360 | main fuse holder | 337 |
+| ELF Midi 30 A 32 V, 2 sht | the 30 A main fuse, + spare | 240 |
+| REXANT vlagozashchitnyy na provode | charge-branch holder | 139 |
+| TESLA ATO 5-40 A, 12 sht + shchiptsy | supplies the 7.5 A, + spares | 243 |
+| Provod 12 AWG silicone, 3 m red + 3 m black | main lead, 3.4 mm2 | 1455 |
+| NKI 6.0-6 ring terminals, M6, 10 sht | onto the Midival studs | 126 |
+
+2540 RUB total. **MIDI, not mini-ANL**, and that is the one non-obvious choice: mini-ANL is
+a car-audio format whose stocked range starts around 80 A, so a 30 A one is hard to buy at
+all. MIDI at 30 A is a commodity, and a 30 A fuse in a 30-80 A holder runs nothing at its
+limit - unlike a 30 A blade in a 30 A-max holder, which is exactly at its own.
+
+**Three things to check when it arrives**, none of them settled:
+
+| | why it is open |
+|---|---|
+| the Midival's stud size | M6 rings were bought on a guess. They drop onto an M5 or M4 stud with a washer, so only an M8 defeats them |
+| NKI 6.0 crimped onto 12 AWG | the barrel is 4-6 mm2, the conductor is 3.3. Fold the stripped end back to fill it - do not crimp it loose, this is the joint the whole pack's fault current crosses |
+| the mass of holder + fuse + leads | it lands in `ELECTRONICS_KG`, and `3d/CLAUDE.md` has 11 g moving the flat trot 778 -> 597 mm. Weigh it, do not estimate it |
+
 
 ## The servos are not regulated, and that is a decision
 
@@ -176,3 +246,6 @@ has it), and a buck under load is a heat source, so not against the cells.
 | camera and GPS draw on the 5 V rail | meter, once the Pi is up |
 | `PROTECTION_CURRENT` LSB | the Feetech register table, against a clamp meter on a stalled servo |
 | pack sag at the terminals during a trot, at 2.499 kg | the one measurement that sizes everything above |
+| the Midival holder's stud size, against the M6 rings | a caliper, when it arrives |
+| BMS dissipation at 35 A in same-port, in a closed tray | a thermal soak on the bench, not the 4 mOhm datasheet line |
+| mass of the fuse holders, fuses and leads | a scale, into `ELECTRONICS_KG` |

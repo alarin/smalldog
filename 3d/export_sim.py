@@ -187,9 +187,13 @@ def joint_rom(step):
                 return {k: tuple(v) for k, v in rom.items()}
         step = 10
     print(f"  scanning joint limits at {step} deg - this is the slow part")
+    if not md.PARTS:
+        md.build()
     return {
         "hip_roll":  md.rom_scan(md.hip_bracket(),
-                                 md.chassis_bottom().union(md.mv(md.servo_dummy(), md.ROLL_LOC)),
+                                 md.PARTS["chassis_bottom"][0]
+                                   .union(md.PARTS["cradle_front"][0])
+                                   .union(md.mv(md.servo_dummy(), md.ROLL_LOC)),
                                  (md.ROLL_X, md.ROLL_Y, md.ROLL_Z), axis=(1, 0, 0),
                                  lo=-SCAN_WINDOW["hip_roll"], hi=SCAN_WINDOW["hip_roll"],
                                  step=step),
@@ -221,15 +225,15 @@ def write_meshes(solids):
 
 def sim_solids():
     """{mesh_name: (solid in its own link frame's translation, link origin)} + per-leg mass props"""
+    if not md.PARTS:
+        md.build()          # the base link is md.BASE_MESHES now, and those live in PARTS
     hb, th, sh, ft = md.hip_bracket(), md.thigh(), md.shin(), md.foot()
     fl = leg_frames(LEGS["FL"])
     fr = leg_frames(LEGS["FR"])
     solids = {
-        "chassis_bottom": (md.chassis_bottom(), (0, 0, 0)),
-        "chassis_top":    (md.chassis_top(),    (0, 0, 0)),
-        "lidar_mount":    (md.lidar_mount(),    (0, 0, 0)),
-        "gps_mount":      (md.gps_mount(),      (0, 0, 0)),
-        "camera_mount":   (md.camera_mount(),   (0, 0, 0)),
+        # every base mesh at the body origin - md.BASE_MESHES is the one list, and the
+        # cradles are in it: they are bolted to the tray, so they are base_link.
+        **{m: (md.PARTS[m][0], (0, 0, 0)) for m in md.BASE_MESHES},
         "hip_bracket_A":  (hb,            fl["roll"]),
         "thigh_A":        (th,            fl["pitch"]),
         "shin_A":         (sh.union(ft),  fl["knee"]),
@@ -252,13 +256,20 @@ def link_masses(parts):
         legs[tag] = dict(hip=hip.moved_to(f["roll"]),
                          thigh=thi.moved_to(f["pitch"]),
                          shin=shn.moved_to(f["knee"]))
-    base = (MP.of(md.chassis_bottom(), rho("chassis_bottom"))
-            + MP.of(md.chassis_top(), rho("chassis_top"))
-            + MP.of(md.lidar_mount(), rho("lidar_mount"))
-            + MP.of(md.gps_mount(), rho("gps_mount"))
-            + MP.of(md.camera_mount(), rho("camera_mount"))
-            + box_mp(md.BATTERY_KG, (md.BATT_L, md.BATT_W, md.BATT_H),
-                     (0.0, 0.0, md.BODY_Z0 + 3.0 + md.BATT_H / 2.0))
+    base = MP.of(md.PARTS[md.BASE_MESHES[0]][0], rho(md.BASE_MESHES[0]))
+    for _m in md.BASE_MESHES[1:]:
+        base = base + MP.of(md.PARTS[_m][0], rho(_m))
+    base = (base
+            # the battery module, in three pieces because it IS three: the printed case
+            # and lid are parts and carry their own solids, the six wrapped cells hang at
+            # brick_com() and the BMS at bms_com().  This used to be one box built from a
+            # (0, 0, BODY_Z0+3+BATT_H/2) literal that both exporters carried separately -
+            # the cradle's centre, which is now nothing's: the BMS sits at the module's
+            # rear, so the cells are 2.75 mm forward of the case.
+            + MP.of(md.battery_case(), rho("battery_case"))
+            + MP.of(md.battery_lid(), rho("battery_lid"))
+            + box_mp(md.BATTERY_KG, (md.BRICK_L, md.BRICK_W, md.BRICK_H), md.brick_com())
+            + box_mp(md.BMS_KG, (md.BMS_H, md.BMS_L, md.BMS_W), md.bms_com())
             # the Orange Pi stack, on the envelope mini_dog now holds for it - this used
             # to be a local 92 x 62 x 20 that had already drifted from the ROS 2 side's
             # 100 x 62 x 18.  gps_mount's arms are shaped around the same box.
@@ -313,8 +324,7 @@ def urdf(base_mp, legmp, rom, meshes, mesh_uri):
          '  <material name="rubber"><color rgba="0.12 0.12 0.14 1"/></material>',
          '  <link name="base_link">',
          '    <inertial>', urdf_inertial(base_mp).rstrip('\n'), '    </inertial>']
-    for m in ("chassis_bottom", "chassis_top", "lidar_mount", "gps_mount",
-              "camera_mount"):
+    for m in md.BASE_MESHES:
         x.append(mesh(m).rstrip('\n'))
     x += [f'    <collision>\n'
           f'      <origin xyz="0 0 {(md.BODY_Z0 + md.BODY_Z1) / 2000.0:.6g}"/>\n'
@@ -472,8 +482,7 @@ def mjcf(base_mp, legmp, rom, meshes, hf=None):
           f' rgba="0.15 0.15 0.17 1"/>']
     x += ld.site_xml("      ")          # the L2: its frame, and the sensor drawn on it
     x += cam.camera_xml("      ")       # ... and the camera, which MuJoCo can render from
-    for m in ("chassis_bottom", "chassis_top", "lidar_mount", "gps_mount",
-              "camera_mount"):
+    for m in md.BASE_MESHES:
         x.append(f'      {vis(m, 0.0)}')
     x.append(f'      <geom class="col" type="box" pos="0 0'
              f' {(md.BODY_Z0 + md.BODY_Z1) / 2000.0:.6g}"'

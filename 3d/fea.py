@@ -31,6 +31,9 @@ SERVO_STALL_NM = md.SERVO_STALL_NM
 N_SERVO        = md.N_SERVO
 SERVO_KG       = md.SERVO_KG
 BATTERY_KG     = md.BATTERY_KG
+BMS_KG         = md.BMS_KG        # split out of ELECTRONICS_KG when the BMS moved inside
+                                  # the battery module - it is still 55 g of robot, and
+                                  # the ground load cases below scale with the total
 ELECTRONICS_KG = md.ELECTRONICS_KG
 LIDAR_KG       = md.LIDAR_KG
 
@@ -42,13 +45,31 @@ def robot_mass():
         md.build()
     printed = sum(wp.val().Volume() / 1000.0 * md.part_rho(n) * qty
                   for n, (wp, qty, _) in md.PARTS.items()) / 1000.0
-    return printed + N_SERVO * SERVO_KG + BATTERY_KG + ELECTRONICS_KG + LIDAR_KG
+    return (printed + N_SERVO * SERVO_KG + BATTERY_KG + BMS_KG + ELECTRONICS_KG
+            + LIDAR_KG)
 
 # E [MPa], nu, sigma in-plane [MPa], sigma inter-layer [MPa].  Print-realistic values for
 # ~5 walls / 40 % infill, i.e. already below the datasheet numbers for moulded material.
 # s_z  = interlayer tensile strength (pulling layers apart)
 # s_zs = interlayer shear strength (sliding layers over each other), typically a bit
 #        higher than s_z; kept equal here, which is the conservative reading.
+#
+# THE INTERLAYER COLUMN IS UNVERIFIED, AND IT IS NOT FOUR MEASUREMENTS.  Look at the
+# ratios: PETG 20/40 = 0.50, ASA 0.47, PLA 0.49, PAHTCF 35/80 = 0.44.  It is the in-plane
+# column halved, one rule for every material - and that rule is roughly right for PETG and
+# WRONG for a chopped-fibre composite.  The fibres align with the extrusion: they raise
+# s_xy a great deal and contribute nothing across the layer interface, so PA-CF's real
+# s_z/s_xy is typically 0.25...0.35, and worse again on an open printer or damp filament
+# (nylon is hygroscopic and bonds badly wet).  Published figures for PA-CF Z-strength range
+# from ~35 MPa with a hot chamber and dry filament down to below PETG's 20.
+#
+# This is not academic.  `--orient` is built ENTIRELY from s_z and s_zs, the stress field
+# is force-driven and so material-independent, and the worst element in cradle_front is
+# 88 % tension across the layers - so its SF scales exactly linearly with s_z, 1.35 in
+# PETG against 2.36 in PAHTCF, and the whole difference IS this unmeasured number.  Break
+# even is s_z = 20: PA-CF has to match PETG's layer adhesion just to draw.  Do not
+# recommend PA-CF for an interlayer-critical part off this table.  Print a coupon and pull
+# it, the way CLAUDE.md already requires for M3_TAP.  Flagged 2026-09-09.
 MATERIALS = {
     "PETG":   dict(E=1700.0, nu=0.40, s_xy=40.0, s_z=20.0, s_zs=20.0),
     "ASA":    dict(E=1900.0, nu=0.36, s_xy=36.0, s_z=17.0, s_zs=17.0),
@@ -176,6 +197,34 @@ def part_specs():
             load=all_of(zone("z", hi=md.PITCH_Z + 15.0),
                         zone("y", lo=md.LEG_Y - md.SLEEVE_LEN / 2 - 4.0)),
             note="roll fork bolted to the hubs, hip-pitch servo reaction into the sleeve",
+        ),
+        # The cradle is in this set because it stopped being part of chassis_bottom, which
+        # is not in it: a part that carries a whole leg through a BOLTED flange is exactly
+        # what this script is for.  Two things about the spec are not the pattern above.
+        #
+        # `fix` is the mating face and the four register spigots - everything at or inboard
+        # of CRADLE_X.  That is the same idealisation as hub_clamp(): a rigidly fixed
+        # footprint, stiffer than four real M3 through a printed tray, so read the numbers
+        # as the part's own strength and not as the joint's stiffness.
+        #
+        # `load` is ONE sleeve, the front-left.  The part carries two, but a load case is
+        # one leg's reaction and splitting the traction over both bores would halve it.
+        # The second sleeve unloaded is the conservative reading and the honest one.
+        "cradle_front": dict(
+            joint="roll",
+            pose=0.0,
+            fix=zone("x", hi=md.CRADLE_X + 0.5),
+            load=all_of(zone("x", lo=md.ROLL_X - md.SLEEVE_LEN / 2), zone("y", lo=10.0)),
+            # The STALL case only: the two halves of the same bore, which is what makes it
+            # a couple instead of a force at a lever of zero.  See solve()'s load2.  The
+            # ground cases keep the whole bore - putting a ground reaction on half of it
+            # is a different, more local load than the servo actually applies, and it read
+            # 3 MPa hotter when the two were conflated.
+            couple=(all_of(zone("x", lo=md.ROLL_X - md.SLEEVE_LEN / 2),
+                           zone("y", lo=10.0), zone("z", lo=0.0)),
+                    all_of(zone("x", lo=md.ROLL_X - md.SLEEVE_LEN / 2),
+                           zone("y", lo=10.0), zone("z", hi=0.0))),
+            note="flange bolted to the tray, roll servo reaction into the front-left bore",
         ),
     }
 
@@ -322,8 +371,16 @@ def spd_solver():
 # ---------------------------------------------------------------------------------
 # solve
 # ---------------------------------------------------------------------------------
-def solve(mesh_path, coors, tets, mat, fix_pred, load_pred, force, order=2, save=None):
-    """force: total force vector [N], applied as a uniform traction over the load patch"""
+def solve(mesh_path, coors, tets, mat, fix_pred, load_pred, force, order=2, save=None,
+          load2_pred=None, force2=None):
+    """force: total force vector [N], applied as a uniform traction over the load patch
+
+    load2_pred/force2 add a SECOND patch with its own traction.  That exists for one
+    reason: a part whose load patch is concentric with the joint axis cannot be given a
+    stall torque as "a force at a lever" - the lever is zero and the force goes to
+    infinity.  cradle_front is exactly that (the roll servo sits in its sleeve, on the
+    axis), so its stall case is a genuine couple: equal and opposite tractions on the two
+    halves of the bore.  Every other part still passes one patch and one force."""
     from sfepy.base.base import IndexedStruct, Struct, output
     from sfepy.discrete.fem import Mesh, FEDomain, Field
     from sfepy.discrete import (FieldVariable, Material, Integral, Function, Functions,
@@ -369,7 +426,21 @@ def solve(mesh_path, coors, tets, mat, fix_pred, load_pred, force, order=2, save
     integ = Integral("i", order=2 * order)
     t1 = Term.new("dw_lin_elastic(solid.D, v, u)", integ, omega, solid=solid, v=v, u=u)
     t2 = Term.new("dw_surface_ltr(trac.val, v)", integ, load, trac=trac, v=v)
-    pb = Problem("elast", equations=Equations([Equation("balance", t1 + t2)]))
+    eq = t1 + t2
+    if load2_pred is not None:
+        area2, _, nfac2 = boundary_patch(coors, tets, load2_pred)
+        if area2 <= 0:
+            raise RuntimeError("the second load predicate selects no outer surface")
+        fns2 = Functions([Function("lsel2",
+                                   lambda c, domain=None: np.where(load2_pred(c))[0])])
+        domain.create_region("Sel2", "vertices by lsel2", "facet", functions=fns2)
+        load2 = domain.create_region("Load2", "r.Sel2 *f r.Surf", "facet", functions=fns2)
+        if abs(len(load2.facets) - nfac2) > 0.02 * nfac2 + 2:
+            raise RuntimeError(f"load2 region has {len(load2.facets)} facets,"
+                               f" {nfac2} expected")
+        trac2 = Material("trac2", val=(np.asarray(force2, float) / area2).reshape(3, 1))
+        eq = eq + Term.new("dw_surface_ltr(trac2.val, v)", integ, load2, trac2=trac2, v=v)
+    pb = Problem("elast", equations=Equations([Equation("balance", eq)]))
     pb.set_bcs(ebcs=Conditions([EssentialBC("fixed", fix, {"u.all": 0.0})]))
     pb.set_solver(Newton({}, lin_solver=spd_solver(), status=IndexedStruct()))
     st = pb.solve()
@@ -445,15 +516,31 @@ def run_part(name, case, cs, matname, size, order, save=True):
     ap, ad = axis_of(spec["joint"])
 
     c = cs[case]
+    load, load2, force2 = spec["load"], None, None
     if c["kind"] == "ground":
         force, lever = rot_y([0.0, 0.0, c["n"]], -spec["pose"]), None
+    elif spec.get("couple"):
+        load, load2 = spec["couple"]
+        cen = boundary_patch(coors, tets, load)[1]
+        # COUPLE.  The two patches straddle the joint axis, so the torque is +-F at half
+        # their separation each - no lever to divide by, which is the whole point: this
+        # part's bore is concentric with the axis and the single-patch form would divide
+        # by zero.  The force direction is tangential, the same sense on each side of the
+        # axis about `ad`, and equal and opposite because the patches are opposite.
+        cen2 = boundary_patch(coors, tets, load2)[1]
+        d1 = (cen - ap) - np.dot(cen - ap, ad) * ad
+        d2 = (cen2 - ap) - np.dot(cen2 - ap, ad) * ad
+        lever = float(np.linalg.norm(d1 - d2))
+        n1 = np.cross(ad, (d1 - d2) / lever)
+        force = n1 * (c["m"] / lever)
+        force2 = -force
     else:
         d = (cen - ap) - np.dot(cen - ap, ad) * ad      # axis -> patch, perpendicular part
         lever = float(np.linalg.norm(d))
         force = np.cross(ad, d / lever) * (c["m"] / lever)
     out = os.path.join(OUT, f"{name}_{case}_{matname}.vtk") if save else None
-    r = solve(mesh_path, coors, tets, mat, spec["fix"], spec["load"], force,
-              order=order, save=out)
+    r = solve(mesh_path, coors, tets, mat, spec["fix"], load, force,
+              order=order, save=out, load2_pred=load2, force2=force2)
 
     print(f"  {name:14s} {case:7s} F={np.linalg.norm(force):6.1f} N "
           f"{'lever %5.1f mm' % lever if lever else '             '} "
