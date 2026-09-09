@@ -32,6 +32,7 @@ their own location (`out/…`).
 | `lidar.py` | the Unitree L2 as a *sensor*: the MJCF site and `<custom>` numerics both sim exporters emit, and the `mj_multiRay` scanner that turns them into a point cloud. No CAD in it either. |
 | `render.py` | offscreen VTK renders of `out/stl/*.stl`. |
 | `bench_rig.py` | the printed fixture `robot/bench` runs on: a stand that holds **one** ST3215 with its axis horizontal, and two arms for its driven hub. Imports `mini_dog` one way only - the sleeve, the thrust clamp, the hub pattern, the densities - and writes `out/bench/`. **Not part of the robot**: no `PARTS` entry, no mass in the budget, no `fea.py` or sim consumer, so a change here needs none of steps 4-6 below. |
+| `torque_rig.py` | the printed fixture that measures the servo's torque in **newton-metres** — a self-reacting C-frame with a kitchen scale in its throat. Imports `mini_dog` the same one way `bench_rig.py` does and writes `out/torque/`. **Not part of the robot**, so steps 4-6 below do not apply to it either. It exists because every torque measured so far is a torque per *register count*, and the two register channels agree with each other and disagree with the datasheet by 2.2x (`PLAN.md` step 2c); a scale is not a register. |
 | `tools/` | one-off measurement/diagnostic scripts, not part of the build (see `tools/README.md`). |
 | `ref/` | vendor downloads: ST3215 STEP/PDF/wiki, Waveshare ROBOTIC DOG STEP, and `camera/` - the IMX415 module's dimensions, transcribed, with the two uncertain readings flagged. Read-only inputs. |
 | `out/` | **generated — never edit by hand, never treat as source.** |
@@ -565,7 +566,7 @@ name → (workplane, qty, note) and drives both the export loop and the BOM;
 
 - FEA meshes in `out/fea/` are cached on the STEP content hash; stale entries accumulate
   and are safe to delete (they just re-mesh).
-- **`bench_rig.py` is the one file here that is allowed to be outside the ritual**, and
+- **`bench_rig.py` and `torque_rig.py` are the files here allowed to be outside the ritual**, and
   the reason is that the arrow only points one way: it reads `mini_dog`'s servo interface
   so the bench holds the servo exactly the way the robot does, and `mini_dog` has never
   heard of it. Keep it that way - the moment a bench part acquires a mass in the robot's
