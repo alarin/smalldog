@@ -159,7 +159,31 @@ probably MuJoCo's own `frictionloss` — which `rl/model.py` currently sets to z
 on the grounds that `actuator.py` supplies friction. Decide that before writing
 code, and keep the two consumers on one law.
 
-### 2c. The torque constant is 2.2× the datasheet, and it is NOT friction
+### 2c. CLOSED 2026-09-10 — the stall is 4.50 N·m, and both old answers were wrong
+
+**A scale settled it.** `3d/torque_rig.py`, three duty rungs at 12 V read on a
+2 kg coffee scale at a 170 mm arm: k_u = **0.400 N·m/V**, friction intercept
+−0.30 N·m, **stall 4.50 N·m at 12 V** (4.38 read warm). `mini_dog.py`'s
+`SERVO_STALL_NM` now carries it in place of the vendor's 2.94.
+
+The answer is *between* the two candidates below, which means the framing of this
+section was wrong: there was never one mis-scaling to find. The register routes
+are high by **1.64×**, not 2.2×, and the datasheet is low by **1.53×** on top of
+that. The `tau_c`/`mu_load` immunity argument still holds, and the measured
+intercept is now a third independent read on `tau_c` (−0.30 against the ladder's
+0.43). No shunt was needed, though one would still pin `R` and `k_t` — those stay
+unresolved, because `PRESENT_CURRENT` is unusable below ~0.2 A (fitting
+(current, torque) gives a +0.60 N·m intercept, i.e. torque at zero current).
+
+Method and the traps that cost most of a session — burst-versus-hold, the thermal
+decay, and three fixture faults that each produced a convincing wrong answer — are
+in `robot/README.md`, "The stall torque, in newton-metres". The short version:
+**do not read a scale off `sweep.py --traj stall`**; use `bench/torque_hold.py`.
+
+The original framing of this section is kept below, because the reasoning is what
+justified building the rig.
+
+#### (superseded) The torque constant is 2.2× the datasheet, and it is NOT friction
 
 This plan assumed the inflated `k_u` (fitted stall 4.23 N·m against a spec 2.94)
 was missing friction being absorbed. **It is not.** Cancelling friction properly
@@ -188,7 +212,7 @@ to settle it is an **external shunt or an INA226 on the supply**, which costs a
 part and an evening and would pin `R`, `k_u` and the efficiency at once. Until
 then, do not read the fitted stall as a torque the robot has.
 
-### 2c-i. QUEUED: the rig is designed and sliced, waiting on the printer
+### 2c-i. DONE 2026-09-10 — printed, assembled and run; see 2c above
 
 **Picked up 2026-09-09, parked on print time. Everything needed to resume cold is
 here — nothing about this depends on remembering the conversation it came from.**
@@ -396,11 +420,15 @@ rather than new work:
    ROS 2 model now has 0.184. At ~0.3–0.5 N·m of knee torque in stance that is a third
    to a half of the load. Step 3 made this gap *wider* rather than narrower: both sims
    were wrong together at 0.02 before, and now `ros2/` is right and `rl/` is at zero.
-2. **The two sims disagree about servo strength by 44 %.** `rl/`'s emergent stall is
-   `k_u × 12` = 4.23 N·m; `ros2/` clamps the same joint at the datasheet's 2.94. Not a
-   bug in `model.py` — its ±5 N·m ceiling is a documented NaN guard — but a consequence
-   of 2c that nobody had costed: it decides how strong the servo is *in training*.
-   **2c-i is the measurement that settles it**, and it is queued on the printer.
+2. **RESOLVED 2026-09-10, in `rl/`'s favour.** The two sims disagreed about servo
+   strength by 44 % — `rl/`'s emergent `k_u × 12` = 4.23 N·m against `ros2/` clamping
+   the same joint at the datasheet's 2.94 — and it decided how strong the servo was
+   *in training*. 2c-i measured it on a scale: **4.50 N·m**, within 6 % of `rl/`'s
+   fitted figure and 53 % above the datasheet. So `rl/` had the right servo and
+   `ros2/` had the wrong one; `SERVO_STALL_NM` is now 4.50 and both sims agree.
+   `model.py`'s ±5 N·m NaN guard was never the problem, but note it now sits only
+   11 % above the real stall rather than 70 % above — still a guard, no longer
+   comfortably out of range, so it is worth a look if a policy ever rails against it.
 3. **Step 4 is not done.** No randomisation over pack voltage, and `mu_load` is not
    randomised at all — confirmed live on the WSL2 box, `_params().mu_load` is shape `()`
    while `_params().tau_c` beside it is `(8, 12)` with a 0.33 spread.

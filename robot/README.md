@@ -782,10 +782,87 @@ Two routes agreeing to 0.3 % and disagreeing with the vendor by 2.2× is a scale
 error, not noise, and both candidates are already on this project's "not measured"
 list: `PRESENT_CURRENT`'s 6.5 mA LSB, confirmed only against vendor numbers, and
 `PRESENT_LOAD`'s per-mille scaling if 1000 is not 100 % duty. An external shunt or
-an INA226 settles it. **`tau_c` and `mu_load` are immune** — both are ratios of
+an INA226 would settle it, and so would a scale — **and a scale did: 4.50 N·m,
+see the next section. Neither row above is right.** **`tau_c` and `mu_load` are immune** — both are ratios of
 quantities in the same register units converted through `m·g·r`, so a constant
 scale error cancels — but no stall figure from this fit should be read as a torque
 the robot has.
+
+### The stall torque, in newton-metres
+
+**4.50 N·m at 12 V**, measured 2026-09-10 on `3d/torque_rig.py` — a printed C-frame
+with a 170 mm arm pressing an M6 anvil onto a 2 kg coffee scale. This is the
+measurement `PLAN.md` step 2c was waiting for, and it closes it. `mini_dog.py`'s
+`SERVO_STALL_NM` is this number now; it was the vendor's 2.94.
+
+| limit | d·U | scale, cold | τ |
+|---|---|---|---|
+| 200 | 2.41 V | 0.408 kg | 0.680 N·m |
+| 350 | 4.13 V | 0.780 kg | 1.300 N·m |
+| 450 | 5.27 V | 1.100 kg | 1.834 N·m |
+
+k_u = **0.400 N·m/V**, friction intercept **−0.30 N·m**, residuals ±0.05 N·m.
+Reading the settled rather than the cold value gives 4.38 instead of 4.50.
+
+**Both of the previous answers were wrong, in opposite directions.** The register
+routes above implied 7.40 and the datasheet said 2.94; the truth is between them.
+So the register channel is high by 1.64×, *not* the 2.2× the previous section
+assumed, and the datasheet is optimistic by 1.53× on top of that. There was never
+a single scale error to find. The **−0.30 N·m intercept is a third, independent
+read on `tau_c`**, against the 0.43 N·m the hysteresis ladder inferred.
+
+**The trap, and it cost most of the session: do not read a scale off
+`sweep.py --traj stall`.** Its 0.8 s bursts are correct for identifying the
+electrical side — they keep a locked rotor cool and rest at zero position error —
+but a scale under an 0.8 s impulse reads the arm's inertia and its own filter
+ringing on top of the static force. Measured directly: the same rung read **920 g
+in bursts and 780 g held**, and at a lower rung 530 g against 408 g. That is a
+roughly **constant ~130 g offset**, so it corrupts the slope as well as the level.
+`bench/torque_hold.py` exists for this: one steady push, 8 s, with a per-second
+current profile.
+
+**The torque decays while you hold it, by 4–7 % in 8 s.** At fixed duty the servo
+sets voltage, not current, so as the winding warms R rises and I falls with it —
+0.361 → 0.337 A at limit 350, about 17 °C of winding rise, while the case moved
+1 °C. At limit 200 the decay vanishes, because the motor is dissipating 0.28 W
+instead of 1.5. So "stall torque" is not one number: the cold value is the one a
+leg actually uses in a transient, and it is the one recorded above. `rl/actuator.py`
+has no thermal term, so a policy leaning on stall for a sustained push is modelling
+a servo ~5 % stronger than the real one after a few seconds.
+
+**Three fixture faults, all of which produced convincing wrong answers first.**
+The rig is self-reacting by design — the C-frame closes the load loop through its
+own jaw — but a kitchen scale is 120–190 mm across and the jaw is only 33 mm
+(`2 × FRAME_Z`), so the scale bridges a beam under its middle with its feet in
+air: it rocks, and a distorted load-cell mounting reads several percent off.
+Moving the scale to the table fixed that and broke the other half, because the
+reaction then goes out through a bench clamp: with one clamp the stand rotated and
+**leaned part of its own weight onto the scale**, inflating readings by 70 g at
+every rung. A second clamp cured it. **The encoder cannot see any of this** — it
+measures the output shaft relative to the servo's own case, so a case turning in
+the sleeve, or a whole frame rotating, is invisible. "Zero encoder creep" is not
+evidence the fixture is solid.
+
+If this is run again: put the scale back **in the throat** where the design
+intended, on a rigid plate spanning the jaw wide enough to carry its feet. That
+restores self-reaction *and* supports the load cell, which is the combination
+neither configuration achieved. There is room — the platform sits 32 mm below the
+axis and the anvil boss reaches to 15, so a plate up to ~13 mm still leaves the
+4 mm minimum reach.
+
+**Still open.** All three rungs are 20–45 % duty, so 4.50 is a 2.2× extrapolation
+and the pairwise slopes (0.360 then 0.470 N·m/V) are not perfectly straight. One
+voltage only — step 4 of the rig's protocol wants 8/10/12 V, and each supply change
+power-cycles the servo, which reloads `TORQUE_LIMIT` from `MAX_TORQUE`. And
+`PRESENT_CURRENT` is still unusable below ~0.2 A: fitting (current, torque) gives a
++0.60 N·m intercept, which would be torque at zero current, so k_t and R remain
+unresolved.
+
+**`TORQUE_LIMIT` is volatile.** Register 48 is SRAM; the servo reloads it from
+`MAX_TORQUE` on every power-up. `bench/torque_limit.py` writes it and reads it
+back, and refuses to write while torque is enabled. Cap before every session and
+after every supply change — nothing else stands between a 2 kg scale and a servo
+that might be stronger than you think.
 
 ### Two things the fit cannot find, and the ladders that measure them instead
 

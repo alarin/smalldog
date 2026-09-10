@@ -140,8 +140,10 @@ name → (workplane, qty, note) and drives both the export loop and the BOM;
   that ran the straps full width and cut only the arm's disc read `hip_roll +0 .. +0`;
   `STRAP_Y` is a hard ROM limit, not a guess. Added 2026-09-09.
 - **`cradle_front` is in `fea.py`'s set and it is the weakest printed part on the robot.**
-  Interlayer SF **1.35** at `land3g` on `--orient`'s build-direction index, against 3.08
-  for `thigh_A`, 8.52 for `hip_bracket_A`, 19.36 for `shin_A`. Read `--orient`, not the
+  Interlayer SF **1.35** at `land3g` on `--orient`'s build-direction index, against 2.01
+  for `thigh_A`, 5.57 for `hip_bracket_A`, 12.65 for `shin_A` (those three were 3.08 / 8.52 /
+  19.36 until `SERVO_STALL_NM` became a measured 4.50 on 2026-09-10 - this part did not move,
+  because it is governed by `land3g` and not by `stall`). Read `--orient`, not the
   `SF xy / z` column, for this part: the crude column assumes the worst stress orientation
   and says 0.7. **It is not a regression** - this geometry was inside `chassis_bottom`,
   which `fea.py` has never covered, so nobody had ever looked, and the first run found two
@@ -428,9 +430,21 @@ name → (workplane, qty, note) and drives both the export loop and the BOM;
    part's `PRINT_ORIENT` entry. **For `cradle_front`, read `--orient` and not the SF
    column** — see the invariant above; the numbers are 1.35 there against 0.7 here, and
    the difference is that the SF column assumes the worst stress orientation.
-   Baseline, 2026-09-10, at 2.46 kg, inter-layer: `hip_bracket_A` 46.8 / 23.4 / 7.8 / 2.4,
-   `thigh_A` 18.8 / 9.4 / 3.1 / 1.2, `shin_A` 60.0 / 30.0 / 10.0 / 4.9,
-   `cradle_front` 4.0 / 2.0 / 0.7 / 3.0. Three of those moved by 0.1 against the
+   **Re-baselined 2026-09-10 by the measured stall torque** (`SERVO_STALL_NM` 2.94 -> 4.50,
+   a scale on `torque_rig.py`). `stall` is the FOURTH column and scales directly with that
+   constant, so every stall number moved by exactly 1.53x and no other column moved at all.
+   At 2.46 kg, inter-layer: `hip_bracket_A` 46.8 / 23.4 / 7.8 / **1.6**,
+   `thigh_A` 18.8 / 9.4 / 3.1 / **0.8**, `shin_A` 60.0 / 30.0 / 10.0 / **3.2**,
+   `cradle_front` 4.0 / 2.0 / 0.7 / **1.9**.
+   **`thigh_A`'s 0.8 is not a part that fails.** That is the crude column, which assumes the
+   worst stress orientation; read `--orient` here for exactly the reason the `cradle_front`
+   invariant above already gives. On its real build direction `thigh_A` is **2.01**, down
+   from 3.08 - still the second-weakest printed part, and it has lost a third of its margin.
+   The `--orient` set is now `shin_A` 12.65, `hip_bracket_A` 5.57, `thigh_A` 2.01,
+   `cradle_front` **1.35 unchanged** - unchanged because that part is governed by `land3g`
+   and not by `stall`, which is also why it is still the weakest printed part on the robot.
+   The superseded 2.94 set: `.. / 2.4`, `.. / 1.2`, `.. / 4.9`, `.. / 3.0`, and `--orient`
+   19.36 / 8.52 / 3.08 / 1.35. Three of those moved by 0.1 against the
    2026-09-09 set (46.9 / 18.9 / 60.1) and it is the cell holder's +7 g of robot mass
    arriving in the ground load cases, at safety factors of 19 to 47 - a 0.2 % move, and
    the same 0.2 % appears in `stand2` and nowhere structural. Reported rather than
@@ -504,6 +518,34 @@ name → (workplane, qty, note) and drives both the export loop and the BOM;
    The gait is due a re-tune regardless - see the fitted-actuator paragraph below, which
    says the walker is still asking for swing speeds the servo does not have - so do not
    spend mass buying these numbers back until that is done.
+
+   **Re-baselined 2026-09-10 by the MEASURED stall torque**, `SERVO_STALL_NM` 2.94 -> 4.50
+   (`robot/README.md`, "The stall torque, in newton-metres"). No mass, geometry or limit
+   moved - `export_sim.py --check` reads the same 2.493 kg, 187 mm stand height and camera
+   axis - so this is a pure servo-strength change and the control below differs from the
+   changed arm in that one constant and nothing else. Same seeds, same session:
+
+   | | control, 2.94 | after, 4.50 |
+   |---|---|---|
+   | flat trot | 482.8 mm | **506.3 mm** |
+   | terrain, default seed | 350.8 mm | **364.3 mm** |
+   | course, default seed | 1/7, corridor 1634 mm | **3/7 (log ramp_up deck), corridor 2174 mm** |
+
+   The control reproduces the recorded 2026-09-10 flat baseline to the millimetre (482.8),
+   which is what says the rest of the tree did not move under this change.
+
+   **Every arm goes UP, and that is the model getting stronger, not the robot getting
+   better** - the mirror image of the 2026-09-09 actuator re-baseline below, which is worth
+   reading for the reason. A joint can turn no faster than
+   `(forcerange - frictionloss)/damping`: that ceiling goes **2.01 -> 3.15 rad/s** here,
+   past the ~1.8 rad/s the bench measured under the 1 kg arm and toward the vendor's no-load
+   4.71. So the walker has headroom it did not have, and some of these 24 mm and 540 mm are
+   it spending headroom rather than the leg doing more work. The torque number is measured
+   and the ceiling arithmetic is not a reason to doubt it; it IS a reason not to read the
+   course going 1/7 -> 3/7 as the gait improving.
+   Note also that `SERVO_NOLOAD_RADS` is still the vendor 4.71 and is now the least
+   defensible constant in that block - the torque rig measures a blocked output and says
+   nothing about speed.
 
    **Re-baselined 2026-09-09 by the fitted actuator** (`MJ_DAMPING`/`MJ_ARMATURE`/
    `MJ_FRICTIONLOSS`/`MJ_KP`, PLAN.md step 3). No geometry, no mass and no limit moved —

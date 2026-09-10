@@ -150,9 +150,13 @@ ANVIL_BOSS = 15.0       # local pad round the anvil hole, so the screw bears on 
 
 #: The torques worth telling apart, N*m.  Not decoration: they are what the rig is
 #: sized around, and the report prints what each reads on the scale.
+# MEASURED 2026-09-10: 4.50 N*m.  The rig did its job, so these three are history
+# now - kept because duty_ladder() sizes the safe cap against the WORST of them, and
+# a re-run on a servo that has not been measured wants that same conservatism.
 CANDIDATES = {
     "vendor spec": 2.94,
     "fit_bam k_u": 4.23,
+    "MEASURED, this rig": 4.50,
     "friction-cancelled ladder": 7.40,
 }
 DESIGN_NM  = 9.0        # what the frame and arm are checked against - past the highest
@@ -402,11 +406,18 @@ def protocol():
      the anvil screw down until it just touches and jam the second nut.  TARE, then
      read: that is the arm's own weight through the contact, and it comes off every
      later reading.
-  2. `sweep.py --traj stall` against this contact - a blocked output in exactly the
-     sense that trajectory means, now with the duty capped.  Bursts, not a
-     sustained push: locked rotor is ~2.7 A at 12 V, about 32 W into a case that is
-     its own heatsink, and traj_stall already pushes 0.8 s and rests 1.7 s at the
-     blocked position for that reason.
+  2. `robot/bench/torque_hold.py` against this contact - NOT
+     `sweep.py --traj stall`.  This was learned the expensive way on 2026-09-10.
+     traj_stall's 0.8 s bursts are right for the ELECTRICAL fit and wrong for a
+     scale: the arm's inertia and the scale's own filter ringing add a roughly
+     CONSTANT offset - measured at ~130 g, which is 920 g against a held 780 at
+     the same rung - so it corrupts the slope as well as the level.  Hold for 8 s
+     and read it settled.  The thermal argument that justified bursts does not
+     apply at a capped duty: at TORQUE_LIMIT 350 the motor sees 1.5 W, not the
+     ~32 W of an uncapped locked rotor.
+     Note the torque DECAYS 4-7 % over an 8 s hold - the winding warms, R rises,
+     and at fixed duty the current falls with it.  Record the COLD value: that is
+     what a leg gets in a transient.
   3. Walk TORQUE_LIMIT up in steps, reading the scale at the peak of each burst and
      noting which burst it was.  STOP at the planned ceiling even if the scale has
      more printed on it.  Duty and current come off the bus in the same csv, so
@@ -431,9 +442,18 @@ def protocol():
     perpendicular; q = +90 off the servo's own encoder is what makes it square,
     which is why the anvil is a screw and not a printed boss - the screw takes up
     the height, the encoder sets the angle.
-  * a soft scale.  Cheap platforms deflect a millimetre under load; the arm then
-    rotates and the contact walks inboard, reading LOW.  A few percent of droop
-    between the first burst and the fifth is that, not the servo.
+  * a soft scale, or one that is not FLAT ON ITS FEET.  A kitchen scale weighs the
+    load between its platform and its feet, and the jaw here is 33 mm wide against
+    a scale 120-190 mm across - so it bridges a beam under its middle with its feet
+    in air, rocks, and reads several percent off.  Put a rigid plate across the jaw,
+    wide enough to carry the feet.  Do NOT solve it by moving the scale to the bench
+    and clamping the frame: that hands the reaction to the clamp, the stand rotates,
+    and it leans its own weight onto the scale - +70 g at every rung, measured.
+    The C-frame is self-reacting precisely so that no clamp is in the load path.
+  * trusting the encoder to tell you the fixture is solid.  IT CANNOT.  It reads the
+    output shaft relative to the servo's own CASE, so a case turning in the sleeve or
+    a whole frame rotating is invisible to it.  Zero encoder creep is necessary and
+    nowhere near sufficient.
   * the servo's own protection.  PROTECTION_CURRENT 310 and OVERLOAD_TORQUE 80 sit
     under this test as well as the TORQUE_LIMIT you set.  If protection trips first
     you have measured the protection - check the duty in the csv actually reaches
