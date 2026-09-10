@@ -47,7 +47,35 @@ CW_DEAD 1   CCW_DEAD 1  STARTUP_FORCE 16   TORQUE_LIMIT 1000   MAX_TORQUE 1000
 PROTECTION_CURRENT 310  OVERLOAD_TORQUE 80  PROTECTIVE_TORQUE 20  OFFSET 85
 ```
 
-> ### ⚠ The torque constant does not reconcile with the datasheet, by 2.2×
+> ### ⚠ SETTLED 2026-09-10 by a scale: the stall is **4.50 N·m**, and both of the
+> figures below are wrong — in opposite directions
+>
+> A blocked output pressing an M6 anvil onto a 2 kg scale at a 170 mm arm, three
+> duty rungs at 12 V: **k_u = 0.400 N·m/V, stall 4.50 N·m at 12 V** (4.38 read
+> warm), friction intercept **−0.30 N·m**, residuals ±0.05 N·m. The answer is
+> *between* the register routes' 7.4 and the datasheet's 2.94, which means the
+> framing below was wrong: there was never one mis-scaling to find. The register
+> channel is high by **1.64×**, not 2.2×, and the datasheet is optimistic by
+> **1.53×** on top of that. The −0.30 N·m intercept is a third independent read on
+> `τ_c`, against the ladder's 0.43.
+>
+> `k_t` and `R` are still **not** resolved: fitting (current, torque) gives a
+> +0.60 N·m intercept — torque at zero current — so `PRESENT_CURRENT` remains
+> unusable below ~0.2 A and the shunt is still worth doing.
+>
+> **Two traps if you repeat this.** A scale under a short burst reads the arm's
+> inertia and its own filter ringing on top of the static force — a roughly
+> *constant* offset, measured at ~130 g (920 g in 0.8 s bursts against 780 g held
+> at the same duty), so it corrupts the slope as well as the level. Hold for
+> several seconds and read it settled. And the torque **decays 4–7 % over an 8 s
+> hold**: at fixed duty the driver sets voltage, so as the winding warms `R` rises
+> and the current falls with it (~17 °C of winding rise while the case moves 1 °C).
+> "Stall torque" is not one number — the cold value is what a leg gets in a
+> transient, and it is the 4.50 above.
+>
+> The original analysis is kept below because it is what justified building the rig.
+>
+> #### (superseded) The torque constant does not reconcile with the datasheet, by 2.2×
 >
 > Measuring it properly made it worse, which is why it is flagged rather than
 > quietly averaged. Cancelling friction with the bidirectional hold ladder — the
@@ -61,14 +89,15 @@ PROTECTION_CURRENT 310  OVERLOAD_TORQUE 80  PROTECTIVE_TORQUE 20  OFFSET 85
 > NOT measured here": `PRESENT_CURRENT`'s 6.5 mA LSB, which has only ever been
 > confirmed against vendor numbers, and `PRESENT_LOAD`'s per-mille scaling, if
 > 1000 is not 100 % duty. An external shunt or an INA226 settles it and would pin
-> `R`, `k_t` and the efficiency at once.
+> `R`, `k_t` and the efficiency at once. *(A scale settled the stall without one;
+> the shunt is still what would pin `k_t` and `R`.)*
 >
 > **What this does and does not contaminate.** Every friction number in this
 > document is a RATIO between two quantities in the same register units,
 > converted to N·m through `m·g·r`, which is known exactly — so a constant scale
 > error cancels out of `τ_c`, `μ_load` and the speed-proportional total, and they
 > stand. `k_t`, `R`, `k_e`, the efficiency and any stall figure derived from them
-> do not. Do not size a joint off the 7.4.
+> do not. Do not size a joint off the 7.4 — or off the vendor's 2.94. Use 4.50.
 
 ---
 
