@@ -183,6 +183,10 @@ for leg in LEGS:                                   # the four hip-roll servos
 # brick_com() and the BMS at bms_com().  This used to be one box built from a
 # (0, 0, BODY_Z0+3+BATT_H/2) literal that both exporters carried separately - the old
 # cradle's centre, which is now nothing's.
+# ... and the two cell-holder caps, inside the heatshrink with the cells.  Not in
+# BODY_PARTS on purpose - they are invisible inside the case and want no mesh - so their
+# mass is added here and in 3d/export_sim.py, both off md.cell_holders().
+base.add_solid(md.cell_holders(), rho("cell_holder"))
 base.add_box(M_BATTERY, md.brick_com(), (R.BRICK_L, R.BRICK_W, R.BRICK_H))
 base.add_box(M_BMS,     md.bms_com(),   (R.BMS_H, R.BMS_L, R.BMS_W))
 # the Orange Pi stack, on the envelope mini_dog holds for it (md.OPI_BOX, md.opi_com()).

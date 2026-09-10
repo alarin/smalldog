@@ -248,12 +248,45 @@ SHIN_TIE_U = (45.0, 51.0)                     # one tie anchor: in one slot, out
 # comes out for charging or storage is still enclosed when it is out.
 #
 # CELL_D and CELL_L are the datasheet MAXIMA of a Molicel INR21700-P42A over its wrap; a
-# cell that measures bigger is a cell to re-measure, not a number to shave here.  Inside
-# the brick the cells TOUCH - that is what welding and shrinking them does - so the old
-# CELL_FIT and BATT_FIN are gone with the cradle they belonged to.
+# cell that measures bigger is a cell to re-measure, not a number to shave here.
 CELL_D, CELL_L = 21.3, 70.2           # 21700, at its maximum over the wrap
 BATT_TAB       = 4.0                  # welded nickel + insulation, at each cell end
-BATT_WRAP      = 0.30                 # heatshrink over the finished brick, per side
+BATT_WRAP      = 0.30                 # heatshrink, per side.  It goes over the finished
+                                      # assembly - cells AND holder - so the holder is
+                                      # INSIDE the wrap, not around it.
+#
+# THE CELLS NO LONGER TOUCH: TWO PRINTED END CAPS HOLD THEM ON A PITCH.
+#
+# They used to.  Welding six loose cells into a 3 x 2 brick with nothing holding them is
+# the assembly step this design had no answer for - you are aligning six cylinders by hand
+# while a spot welder is in the other one - so `cell_holder` is two combs, one at each end
+# of the cells, that turn the six into one riggable object before any nickel goes on.
+#
+# WHAT IT COSTS IS THE PITCH AND NOTHING ELSE, and that is a geometric decision, not a
+# happy accident.  The obvious holder is a frame round the outside of the array, and it
+# does not fit: the module is already 1.4 mm under the deck and 0.5 mm off the deck
+# screws' nut bosses, whose inner faces stand at |y| = 35.2 over the module's whole
+# height.  So the caps are CLIPPED FLUSH with the outermost cells' own tangent planes in
+# both y and z - there is no material outboard of a cell anywhere - and the module grows
+# by exactly the two gaps the separator webs open up, one in z and two in y.  The cells
+# are still captured: clipping a CH_WALL-thick annulus at the cell's tangent leaves a
+# ~7.9 mm flat, and a 21.3 mm cell does not come out through 7.9 mm.  The heatshrink then
+# lands on the CELLS at those flats and on the holder everywhere else, which is why
+# BRICK_W/BRICK_H below add BATT_WRAP to a cell envelope and not to a holder envelope.
+#
+# CELL_GAP is the one number that costs height, so it is the knob to turn if batt_clear()
+# ever has to come back: at 0.8 the deck gap is 0.60 mm, at 0.6 it is 0.80.  Do not read
+# it as a print wall - the printed web between two bores is CELL_GAP - CH_FIT = 0.6 mm.
+CELL_GAP       = 0.8                  # air between neighbouring cells, and so the pitch
+CH_WALL        = 0.8                  # the comb's wall around a cell.  It lives BETWEEN
+                                      # cells and inside the array's envelope; outboard
+                                      # of the outer cells it is clipped away entirely.
+CH_LEN         = 10.0                 # how far each cap grips down the cell from its
+                                      # terminal.  The cap's outer face is FLUSH with the
+                                      # terminal - not proud - so a nickel strip lies flat
+                                      # across the cells instead of bridging plastic.
+CH_FIT         = 0.2                  # bore over the cell, on diameter: a push fit
+CELL_P         = CELL_D + CELL_GAP    # 22.1, the pitch, the same in y and in z
 BATT_FIT       = 0.4                  # slip fit of the wrapped brick into the case, total
 BATT_CASE_T    = 1.6                  # case floor and side walls - 4 perimeters at 0.4
 BATT_LID_T     = 1.2                  # the lid: a cover, and the deck is above it
@@ -286,8 +319,10 @@ BMS_GAP        = 2.0                  # air between the BMS and the brick's -x n
 # The brick, wrapped.  This is what the case has to swallow and what the exporters hang
 # BATTERY_KG on - see batt_com().
 BRICK_L = CELL_L + 2*BATT_TAB         # 78.2, along x
-BRICK_W = 3*CELL_D + 2*BATT_WRAP      # 64.5, three cells across y
-BRICK_H = 2*CELL_D + 2*BATT_WRAP      # 43.2, two layers
+BRICK_W = 2*CELL_P + CELL_D + 2*BATT_WRAP     # 66.1, three cells across y on the pitch
+BRICK_H = 1*CELL_P + CELL_D + 2*BATT_WRAP     # 44.0, two layers on the pitch.  Both are
+                                      # a CELL envelope plus the wrap, not a holder
+                                      # envelope: see the clipping note above.
 # The case interior.  Width is the BRICK or the BMS standing on edge, whichever is wider.
 # Before the board was measured those two were 64.0 and 64.5, half a millimetre apart and
 # the max() decided nothing; the real board is 60.13, so the brick wins by 4.4 mm and the
@@ -973,8 +1008,15 @@ GPS_KG            = 0.025         # GY-NEO6MV2 + its 25x25 active patch + the le
                                   # like every other number on this module: it is a bazaar
                                   # part, not a documented one.
 TPU_PARTS         = ("foot",)     # printed in TPU_RHO, everything else in PRINT_RHO
-SERVO_STALL_NM    = 2.94          # 30 kg*cm at 12 V
-SERVO_NOLOAD_RADS = 4.71          # 0.222 s / 60 deg at 12 V
+SERVO_STALL_NM    = 4.50          # MEASURED 2026-09-10 on torque_rig, NOT the vendor's
+                                  # 2.94 (30 kg*cm).  A scale in newtons at a 170 mm arm,
+                                  # three duty rungs at 12 V: k_u = 0.400 N*m/V, friction
+                                  # intercept -0.30 N*m, extrapolated to full duty.  See
+                                  # the block below - this is what settled PLAN.md 2c.
+SERVO_NOLOAD_RADS = 4.71          # 0.222 s / 60 deg at 12 V.  STILL the vendor figure:
+                                  # the torque rig measures a blocked output and says
+                                  # nothing about no-load speed.  MJ_DAMPING's ceiling
+                                  # (2.01 rad/s) is the number that has been measured.
 
 # MuJoCo joint feel.  MEASURED, 2026-09-09, on the bench rig - this block used to
 # say "NOT measured ... plausible values" and every number in it has now been
@@ -1028,14 +1070,25 @@ SERVO_NOLOAD_RADS = 4.71          # 0.222 s / 60 deg at 12 V
 # robot/bench/data/, three voltages, 1.066 kg on a 90 mm arm.  The public
 # write-up is ST3215_STS3215_measured_parameters.md.
 #
-# ONE NUMBER HERE IS STILL NOT SAFE TO DERIVE A TORQUE FROM.  The same ladder puts
-# the torque constant at 2.39 N*m/A against a vendor 1.09 - two channels agreeing
-# to 0.3 % and implying a 7.4 N*m stall the servo cannot produce - so something
-# between the registers and N*m is mis-scaled by ~2.2x (PLAN.md step 2c).  The
-# four above are immune: each is either a ratio in the same register units
-# converted through the known m*g*r, or an inertia off a timed fall.
-# SERVO_STALL_NM above is the vendor figure and stays that way until a shunt
-# settles it.
+# THE REGISTER-SCALING QUESTION IS SETTLED, AND BOTH SIDES OF IT WERE WRONG.
+# The hysteresis ladder put the torque constant at 2.39 N*m/A against a vendor
+# 1.09 - two register channels agreeing to 0.3 % and implying a 7.4 N*m stall -
+# while the datasheet said 2.94.  A scale settles it at 4.50, BETWEEN the two:
+# the register channel is high by 1.64x, not the 2.2x this note used to assume,
+# and the vendor figure is low by 1.53x.  So there was never one mis-scaling to
+# find; the registers are off AND the datasheet is optimistic in the other
+# direction.  The four constants above are unaffected either way - each is a
+# ratio in the same register units converted through the known m*g*r, or an
+# inertia off a timed fall - which is why they did not have to be re-measured
+# when SERVO_STALL_NM moved.
+#
+# Method, because it is the part that was hard: robot/bench/torque_hold.py holds
+# a blocked push for 8 s while robot/bench/torque_limit.py caps TORQUE_LIMIT.
+# Do NOT read a scale off sweep.py --traj stall: its 0.8 s bursts are right for
+# the electrical fit and wrong for a scale, inflating the reading by a roughly
+# CONSTANT ~130 g of arm inertia and filter ringing, which distorts the slope as
+# well as the level.  Full write-up in robot/README.md, "The stall torque, in
+# newton-metres".
 MJ_DAMPING        = 1.37          # N*m*s/rad at the joint (b_v + back-EMF)
 MJ_ARMATURE       = 0.0165        # kg*m2, reflected rotor+gearbox inertia
 MJ_FRICTIONLOSS   = 0.184         # N*m, Coulomb
@@ -1720,6 +1773,98 @@ def battery_lid():
         s = s.cut(cyl(M25_CLR, BATT_LID_T+2,
                       (BATT_XI1+BATT_FRONT_T/2, sy*BATT_SCREW_Y, BATT_ZI1-1.0)))
     return s
+
+def cell_axes():
+    """The six cell axes: (x0, x1, [(y, z), ...]) in robot coordinates.
+
+    One place, because `cell_holder`, `cells_solid` and the wrapped brick's envelope all
+    have to agree on where a cell actually is.  x0/x1 are the cell BODY - the terminals -
+    not the brick: BATT_TAB of nickel and insulation stands off each end."""
+    z0 = BATT_ZI0 + BATT_FIT/2 + BATT_WRAP + CELL_D/2
+    return (BRICK_X0 + BATT_TAB, BRICK_X1 - BATT_TAB,
+            [(sy*CELL_P, z0 + sz*CELL_P) for sz in (0, 1) for sy in (-1, 0, 1)])
+
+def cell_holder(end=-1):
+    """One of the two printed combs that hold the six cells while they are welded, and
+    then stay in the pack inside the heatshrink.  `end` is -1 for the rear cap, +1 for the
+    front; the two are identical and print as one part, qty 2.
+
+    It is a union of six CH_WALL-thick collars on the cell pitch, CLIPPED to the array's
+    own envelope and then bored.  The clip is the whole design: a frame around the outside
+    of the array does not fit this robot - the module has 1.4 mm to the deck and its side
+    walls are 0.5 mm off the deck screws' nut bosses at |y| = 35.2 - so there is no
+    material outboard of any cell in either y or z, and the module grows by the separator
+    gaps alone.  What is left at each outer face is a 7.9 mm flat where the collar has
+    been cut back to the cell's tangent, and a 21.3 mm cell cannot leave through it.
+
+    Assembly, which is the point of the part: stand one cap on the bench, drop the six
+    cells into it vertically one at a time - each finds its own bore, so there is no
+    six-at-once alignment - then push the second cap down onto the far ends.  Both
+    terminal planes are then flush and open, and the nickel lies flat across them.
+
+    Not structure, and not in fea.py: nothing on the robot loads it and it carries only
+    the cells' own weight in shear against the case."""
+    x0, x1, axes = cell_axes()
+    xa = x0 if end < 0 else x1 - CH_LEN
+    s = None
+    for y, z in axes:
+        c = cyl(CELL_D/2 + CH_WALL, CH_LEN, (xa, y, z), axis=(1, 0, 0))
+        s = c if s is None else s.union(c)
+    # clip flush with the outermost cells' tangent planes - this is what keeps the part
+    # from costing the module anything but the pitch
+    yc = CELL_P + CELL_D/2
+    zs = [z for _, z in axes]
+    s = s.intersect(bxc(xa, xa + CH_LEN, -yc, yc,
+                        min(zs) - CELL_D/2, max(zs) + CELL_D/2))
+    # ... and only now the bores.  Cut last, after every union that adds material near
+    # them - the ordering rule chassis_bottom paid for.
+    for y, z in axes:
+        s = s.cut(cyl(CELL_D/2 + CH_FIT/2, CH_LEN + 2, (xa - 1, y, z), axis=(1, 0, 0)))
+    # THE FOUR CORNER CELLS EACH ORPHAN AN ARC, AND NO CHECK IN THIS FILE SAW IT.
+    # A corner cell is clipped on two sides at once, and the bore (CH_FIT/2 wider than the
+    # clip radius) breaks the collar at BOTH flats - so the quadrant between them comes
+    # away as a loose crescent.  The part was five solids, and `isValid()` and `Volume()
+    # > 0` were both perfectly happy with it: this is the OCC-silence note again, in the
+    # one form build() could not read.  Keep the body, drop the crescents, and check the
+    # amount dropped is crescent-sized rather than something structural.
+    solids = sorted(s.val().Solids(), key=lambda so: so.Volume(), reverse=True)
+    orphan = sum(so.Volume() for so in solids[1:])
+    # four crescents, ~79 mm3 each: CH_LEN long, CH_WALL thick, and as wide as the flat
+    # the clip leaves.  Anything more than that, or a fifth piece, is a different defect.
+    if len(solids) > 5 or orphan > 400.0:
+        raise RuntimeError(f"cell_holder: {orphan:.0f} mm3 came away in "
+                           f"{len(solids)-1} pieces - that is not the corner crescents")
+    return W(solids[0])
+
+def cell_holders():
+    """Both caps as one solid - what the mass budget and both sim exporters carry, and
+    what holder_clear() probes.  PARTS holds ONE cap at qty 2; this is the pair in place."""
+    return cell_holder(-1).union(cell_holder(+1))
+
+def cells_solid():
+    """The six bare cells as one solid - a payload, like the brick and the BMS.  The
+    holder has to clear these or it does not go on."""
+    x0, x1, axes = cell_axes()
+    s = None
+    for y, z in axes:
+        c = cyl(CELL_D/2, x1-x0, (x0, y, z), axis=(1, 0, 0))
+        s = c if s is None else s.union(c)
+    return s
+
+def holder_clear():
+    """mm3 the cell holder shares with (the case + lid) and with the six cells.
+
+    Both are payload-class blindnesses, exactly like module_clear(): the cells are not
+    parts, and the holder is a part that lives entirely inside another part's cavity, so
+    a cap drawn 0.5 mm too wide would print, assemble in CAD and crush the pack without
+    isValid() or interference() saying a word.  Returns (case_mm3, cells_mm3); both zero."""
+    h = cell_holders().val()
+    box = battery_case().val().fuse(battery_lid().val())
+    out = []
+    for w in (box, cells_solid().val()):
+        try:    out.append(h.intersect(w).Volume())
+        except Exception: out.append(-1.0)
+    return tuple(out)
 
 def brick_com():
     """Centroid of the six wrapped cells - what BATTERY_KG hangs on in both sim exporters.
@@ -2577,6 +2722,15 @@ def thrust_clear():
     return r, SPINE_R0 - r
 
 PARTS, REPORT = {}, {}
+# How many separate bodies a part is ALLOWED to come back as.  Default 1, and the default
+# is the point: a boolean that orphans a piece leaves a part that `isValid()` and
+# `Volume() > 0` both pass and a slicer happily prints the debris of - cell_holder came
+# back as five before its corner crescents were dealt with, and nothing here could see it.
+# The three below are deliberate: parts that are several bodies on one plate.
+#   chassis_top   3 - the deck, plus two loose 9.6 mm blocks off its rear edge
+#   camera_mount  3 - the channel plus its two rails
+#   servo_gauge   2 - two test coupons
+PART_SOLIDS = {"chassis_top": 3, "camera_mount": 3, "servo_gauge": 2}
 def build():
     hb, th, sh, ft = hip_bracket(), thigh(), shin(), foot()
     cf, cr = cradles()
@@ -2589,6 +2743,7 @@ def build():
     PARTS["camera_mount"]   = (camera_mount(),   1, "PETG/ASA, 4 walls, 40% - skirt down")
     PARTS["battery_case"]   = (battery_case(),   1, "PETG/ASA, 4 walls, 25% - open side up")
     PARTS["battery_lid"]    = (battery_lid(),    1, "PETG/ASA, 4 walls, 25% - flat")
+    PARTS["cell_holder"]    = (cell_holder(),    2, "PETG/ASA, 3 walls, 30% - bores vertical, no support")
     PARTS["hip_bracket_A"]  = (hb,       2, "PETG/ASA/PA-CF, 5 walls, 40% - FL+RR")
     PARTS["hip_bracket_B"]  = (mirY(hb), 2, "PETG/ASA/PA-CF, 5 walls, 40% - FR+RL")
     PARTS["thigh_A"]        = (th,       2, "PETG/ASA/PA-CF, 5 walls, 40% - FL+RR")
@@ -2611,6 +2766,7 @@ def assembly(hb, th, sh, ft):
     a.add(PARTS["camera_mount"][0],   name="camera_mount",   color=grey)
     a.add(PARTS["battery_case"][0],   name="battery_case",   color=dark)
     a.add(PARTS["battery_lid"][0],    name="battery_lid",    color=dark)
+    a.add(cell_holders(),             name="cell_holder",    color=grey)
     a.add(camera_module(),            name="camera",         color=dark)
     srv = [mv(servo_dummy(), L) for _, L in JOINTS]
     hub = [mv(hubs(), L) for _, L in JOINTS]
@@ -2640,6 +2796,9 @@ PRINT_ORIENT = {"chassis_bottom": ((1,0,0),0), "chassis_top": ((1,0,0),0),
                 # both flat as modelled: the case's open side is already up and the lid
                 # is a plate.  Neither wants support.
                 "battery_case": ((1,0,0),0), "battery_lid": ((1,0,0),0),
+                # the cell holder on its face, bores vertical: a 10 mm plate with
+                # six through holes, no overhang anywhere and nothing to support.
+                "cell_holder": ((0,1,0),90),
                 "lidar_mount": ((1,0,0),180),
                 "hip_bracket_A": ((0,1,0),90),
                 "hip_bracket_B": ((0,1,0),90), "thigh_A": ((1,0,0),90),
@@ -2664,7 +2823,11 @@ def main():
         # coincident faces, a tangency - comes back inverted rather than broken: OCC raises
         # nothing and isValid() still says True, and the part is then a sliver with negative
         # volume.  See chassis_bottom's ordering note for the one that shipped.
-        ok = shp.isValid() and shp.Volume() > 0.0
+        # ... and ONE solid.  A part that comes back in pieces passes both of the checks
+        # above - cell_holder did, as five - and a slicer will happily print the debris
+        # next to the part.  See cell_holder()'s corner-crescent note.
+        ok = (shp.isValid() and shp.Volume() > 0.0
+              and len(shp.Solids()) == PART_SOLIDS.get(name, 1))
         cq.exporters.export(wp, os.path.join(OUT, "step", f"{name}.step"))
         ax, ang = PRINT_ORIENT[name]
         pw = wp.rotate((0,0,0), ax, ang) if ang else wp
@@ -2719,6 +2882,12 @@ def main():
     else:
         print(f"  module clear: the case and lid touch neither the wrapped brick nor"
               f" the BMS ({kv:.1f} / {mv_:.1f} mm3)")
+    hc, hcell = holder_clear()
+    if max(hc, hcell) > INTERF_TOL:
+        print(f"  !! CELL HOLDER  into the case {hc:.1f} mm3, into the cells {hcell:.1f} mm3")
+    else:
+        print(f"  holder clear: both caps clear the case and all six cells"
+              f" ({hc:.1f} / {hcell:.1f} mm3), {CELL_GAP:.1f} mm of air between cells")
     # The LiDAR's own field of view is a geometric invariant like the interference check:
     # the L2 sees nothing below its base plane, so any static bodywork above that plane is
     # a permanent blind wedge in the direction that matters.  isValid() cannot see this and

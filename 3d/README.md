@@ -295,13 +295,41 @@ drawn from; the list of parameters that invalidate it is in the file's own heade
 in the deck window, and both are gone. Redraw it before relying on it.
 
 - **Battery module** — 3S2P 6 × 21700 (Molicel P42A class), and it is a *module*, not six
-  cells in the chassis. The cells are welded into a 3 × 2 brick, the brick is heatshrunk,
-  and the brick and its BMS live in a printed case (`battery_case` + `battery_lid`) that
-  drops into the tray as one payload. It fills the tray: 95.2 × 68.1 × 46.4 mm, from
-  z = −22.8 to 23.6, with 1.4 mm of air to the deck. `CELL_D`/`CELL_L` are the P42A's
-  datasheet maxima over the wrap and everything else derives from them — inside the brick
-  the cells *touch*, which is what welding and shrinking them does, so the old per-cell fin
-  and slip fit are gone with the cradle they belonged to.
+  cells in the chassis. The cells sit in two printed combs (`cell_holder`, ×2), are welded
+  into a 3 × 2 brick, the whole assembly is heatshrunk, and it and its BMS live in a
+  printed case (`battery_case` + `battery_lid`) that drops into the tray as one payload.
+  It fills the tray: 95.2 × 69.7 × 47.2 mm, from z = −22.8 to 24.4, with 0.60 mm of air to
+  the deck. `CELL_D`/`CELL_L` are the P42A's datasheet maxima over the wrap and everything
+  else derives from them.
+
+  **The cells no longer touch, and the holder is why.** Welding six loose cylinders into a
+  brick by hand, aligned, while a spot welder is in the other hand, was the assembly step
+  this design had no answer for. `cell_holder` is two combs, one at each end, that turn the
+  six cells into one riggable object before any nickel goes on: stand a cap on the bench,
+  drop the cells in vertically one at a time — each finds its own bore, so nothing has to
+  be aligned six-at-once — and push the second cap onto the far ends. Both terminal planes
+  come out flush and open, and the caps are flush with them rather than proud, so a nickel
+  strip lies flat on the cans instead of bridging plastic.
+
+  **What it costs is the pitch and nothing else**, and that is the whole design. The
+  obvious holder is a frame around the outside of the array and it does not fit this
+  robot: the module already had 1.4 mm to the deck, and its side walls are 0.5 mm off the
+  deck screws' nut bosses, whose inner faces stand at |y| = 35.2 over the module's whole
+  height. So the combs are **clipped flush with the outermost cells' own tangent planes**
+  in both y and z — there is no material outboard of any cell anywhere — and the module
+  grows by exactly the separator gaps: one in z (+0.8 mm) and two in y (+1.6 mm). The
+  cells are still captured: clipping a 0.8 mm collar at the cell's tangent leaves an
+  8.4 mm flat, and a 21.3 mm cell does not come out through 8.4 mm. The heatshrink then
+  lands on the *cells* at those flats and on the holder everywhere else, which is why
+  `BRICK_W`/`BRICK_H` add the wrap to a cell envelope and not to a holder envelope.
+  `CELL_GAP` = 0.8 mm is the one number that costs height and so the knob to turn if the
+  deck gap ever has to come back — at 0.6 it is 0.80 mm instead of 0.60. Do not read it as
+  a print wall: the printed web between two bores is `CELL_GAP − CH_FIT` = 0.6 mm.
+  `holder_clear()` probes both caps against the case and against all six cells on every
+  build, the way `module_clear()` does for the brick and the BMS. And the caps were **five
+  loose pieces** the first time they were built — the two clip planes meet at each corner
+  cell and orphan a crescent of collar — which `isValid()` and `Volume() > 0` were both
+  happy with, so `build()` now checks the solid *count* of every part against `PART_SOLIDS`.
 
   Two zones along x. The **BMS** stands on edge against the rear wall, so its leads and
   the pack's leave by one grommet slot and reach the connector panel without crossing the
@@ -589,6 +617,7 @@ OV5693 module for the sensor, not the megapixels: 1/2.8" is ~3× the area of the
 | `camera_mount` | 1 | PETG/ASA, 4 walls, 40 % — back skirt down |
 | `battery_case` | 1 | PETG/ASA, 4 walls, 25 % — open side up, no support |
 | `battery_lid` | 1 | PETG/ASA, 4 walls, 25 % — flat |
+| `cell_holder` | 2 | PETG/ASA, 3 walls, 30 % — bores vertical, no support |
 | `hip_bracket_A` / `_B` | 2 + 2 | PETG/ASA/PA-CF, 5 walls, 40 % |
 | `thigh_A` / `_B` | 2 + 2 | PETG/ASA/PA-CF, 5 walls, 40 % |
 | `shin_A` / `_B` | 2 + 2 | PETG/ASA/PA-CF, 5 walls, 40 % |
@@ -693,7 +722,7 @@ one `sleeve()` + one `fork()`, four `DECK_SCREWS` × 2, `CAM_FOOT_Y`, `LIDAR_N`,
 | M2.5 × 8 + M2.5 nut (Orange Pi → deck standoffs) | 4 |
 | M2.5 × 8 **thread-forming**, no nut (BMI088 → the deck's top, through its standoff) | 2 |
 | M2.5 × 8 **thread-forming**, no nut (battery lid → the module's front wall) | 2 |
-| foam strip, ~1.4 × 20 × 90 mm (over the battery module's lid, under the deck) | 1 |
+| foam strip, ~1.4 × 20 × 90 mm (over the battery module's lid, under the deck — the gap is 0.60 mm, so it goes in well compressed) | 1 |
 | M3 × 20 + M3 nut (camera mount → the chassis gusset) | 2 |
 | M3 × 16 + M3 nut (LiDAR pedestal → deck, from underneath) | 4 |
 | M3 × 12 (Unitree L2 → pedestal, into the L2's own M3 threads) | 4 |
@@ -797,8 +826,10 @@ FAQ says stalls and burns the servo.
    17.7 mm above `FOOT_Z`, so nothing shorter is fully engaged. It was specified as
    M3 × 16 until 2026-08-31, which no position of the head can reach — see the foot-bolt
    invariant in `CLAUDE.md`. The head ends up ~2 mm inside the sole, clear of the ground.
-5. Battery module, off the robot and before anything else goes in the tray: weld the six
-   cells into a 3 × 2 brick and heatshrink it → BMS down its rib slot in the case's rear
+5. Battery module, off the robot and before anything else goes in the tray: stand one
+   `cell_holder` on the bench, drop the six cells into it one at a time, push the second
+   holder onto the far ends → weld the nickel across the two flush terminal planes into a
+   3S2P brick → heatshrink over cells and holder together → BMS down its rib slot in the case's rear
    zone, sitting on the ledge and between the two y ribs, leads through the grommet slot →
    brick in → lid's rear edge
    under the rear wall's tongue, front edge down, 2 M2.5 into the front wall. Those two

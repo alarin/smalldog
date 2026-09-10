@@ -268,6 +268,11 @@ def link_masses(parts):
             # rear, so the cells are 2.75 mm forward of the case.
             + MP.of(md.battery_case(), rho("battery_case"))
             + MP.of(md.battery_lid(), rho("battery_lid"))
+            # the two cell-holder caps, inside the heatshrink with the cells.  They
+            # are a PARTS entry at qty 2 and BODY_PARTS deliberately does not carry them
+            # (they are invisible inside the case and want no mesh), so their mass has to
+            # be added here and in the ROS 2 generator, both off md.cell_holders().
+            + MP.of(md.cell_holders(), rho("cell_holder"))
             + box_mp(md.BATTERY_KG, (md.BRICK_L, md.BRICK_W, md.BRICK_H), md.brick_com())
             + box_mp(md.BMS_KG, (md.BMS_H, md.BMS_L, md.BMS_W), md.bms_com())
             # the Orange Pi stack, on the envelope mini_dog now holds for it - this used

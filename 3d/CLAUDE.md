@@ -246,8 +246,30 @@ name → (workplane, qty, note) and drives both the export loop and the BOM;
   different servo strength** — and which sim you loaded decided how strong the servo
   was. Fixed 2026-08-31 with the re-baseline in the same commit; `rl/` loads the ROS 2
   model, so that was the one that mattered.
-- **The battery is a MODULE, and the tray is now its.** Six cells welded into a 3 x 2
-  brick, heatshrunk, its BMS beside them, all of it in `battery_case` + `battery_lid`,
+- **The cells are held on a pitch by two printed combs, and the combs cost the module
+  nothing but that pitch.** `cell_holder`, x2, one at each end of the cells: they exist
+  because welding six loose cylinders into a brick by hand is the assembly step this
+  design had no answer for. The obvious holder - a frame round the outside of the array -
+  does not fit, and that is measured, not felt: the module had 1.4 mm to the deck and its
+  side walls are 0.5 mm off the deck screws' nut bosses, whose inner faces stand at
+  |y| = 35.2 over the module's whole height. So the combs are **clipped flush with the
+  outermost cells' own tangent planes in both y and z** - no material outboard of any cell
+  anywhere - and the module grows by the separator gaps alone, +0.8 in z and +1.6 in y.
+  The cells stay captured: an 0.8 mm collar clipped at the cell's tangent leaves an 8.4 mm
+  flat and a 21.3 mm cell does not leave through 8.4 mm. `CELL_GAP` is the only number
+  that costs height (0.8 -> deck gap 0.60; 0.6 -> 0.80) and it is NOT a print wall - the
+  printed web between two bores is `CELL_GAP - CH_FIT` = 0.6. `holder_clear()` probes both
+  caps against the case and against all six cells, because the cells are a payload and the
+  holder lives inside another part's cavity, so neither `interference()` nor `isValid()`
+  can see a cap drawn half a millimetre too wide. **And the part came back as five loose
+  pieces the first time** - the two clip planes meet at each corner cell and orphan a
+  crescent of collar - with `isValid()` and `Volume() > 0` both passing, which is why
+  `build()` now checks each part's SOLID COUNT against `PART_SOLIDS` (default 1; three
+  existing parts are legitimately several bodies on one plate and are declared there).
+  Added 2026-09-10.
+- **The battery is a MODULE, and the tray is now its.** Six cells in two `cell_holder`
+  combs, welded into a 3 x 2 brick, heatshrunk over cells AND holder, its BMS beside them,
+  all of it in `battery_case` + `battery_lid`,
   which drop into a seat recess in the tray floor as one payload. The old cradle - four
   printed fins and two end stops with six loose cells between them - is gone, and so is
   every check's blindness to it: cells were a payload, so `interference()` could not see
@@ -332,8 +354,11 @@ name → (workplane, qty, note) and drives both the export loop and the BOM;
   not positive, which is the check that names it in one line instead of five confusing ones.
   Read `!! INVALID` on a part you have just given a new hole as "a boolean inverted", not
   "the geometry is subtly wrong". Fixed 2026-09-03.
-- `build()` checks `shape.isValid()` **and `Volume() > 0`** per part; an `!! INVALID` line
-  in the output is a failure, not a warning.
+- `build()` checks `shape.isValid()`, **`Volume() > 0`** and **the solid COUNT** per part
+  (`PART_SOLIDS`, default 1); an `!! INVALID` line in the output is a failure, not a
+  warning. The count is the newest of the three and it exists because `cell_holder` came
+  back as five bodies with the other two checks green - a boolean can orphan a piece
+  instead of inverting, and a slicer will happily print the debris beside the part.
 - **Every model change is re-checked for strength.** Any edit to `mini_dog.py` — a constant
   in the parameter block just as much as a part function — is unfinished until
   `.venv/bin/python fea.py --all` has been run and its safety factors compared against the
@@ -385,7 +410,8 @@ name → (workplane, qty, note) and drives both the export loop and the BOM;
    share more than 1 mm³ of solid, and with `gps clear:` — the GPS mast against the Orange
    Pi's `OPI_BOX` envelope, which `interference()` cannot see because the Pi is a payload
    and not a part — `imu clear:` (the board against the Pi above it), `batt clear:`
-   (the battery module's lid against the deck), `panel clear:` (every rear-wall opening
+   (the battery module's lid against the deck), `holder clear:` (both `cell_holder` caps
+   against the case and against all six cells), `panel clear:` (every rear-wall opening
    against the assembled body) and `cradle bolts:` (a driver's run to each of the eight
    cradle screws, and the heads against the pack).
    That is a failure, not a warning — `isValid()` never sees it, and `rom_scan` only covers
@@ -402,9 +428,14 @@ name → (workplane, qty, note) and drives both the export loop and the BOM;
    part's `PRINT_ORIENT` entry. **For `cradle_front`, read `--orient` and not the SF
    column** — see the invariant above; the numbers are 1.35 there against 0.7 here, and
    the difference is that the SF column assumes the worst stress orientation.
-   Baseline, 2026-09-09, at 2.46 kg, inter-layer: `hip_bracket_A` 46.9 / 23.4 / 7.8 / 2.4,
-   `thigh_A` 18.9 / 9.4 / 3.1 / 1.2, `shin_A` 60.1 / 30.1 / 10.0 / 4.9,
-   `cradle_front` 4.0 / 2.0 / 0.7 / 3.0.
+   Baseline, 2026-09-10, at 2.46 kg, inter-layer: `hip_bracket_A` 46.8 / 23.4 / 7.8 / 2.4,
+   `thigh_A` 18.8 / 9.4 / 3.1 / 1.2, `shin_A` 60.0 / 30.0 / 10.0 / 4.9,
+   `cradle_front` 4.0 / 2.0 / 0.7 / 3.0. Three of those moved by 0.1 against the
+   2026-09-09 set (46.9 / 18.9 / 60.1) and it is the cell holder's +7 g of robot mass
+   arriving in the ground load cases, at safety factors of 19 to 47 - a 0.2 % move, and
+   the same 0.2 % appears in `stand2` and nowhere structural. Reported rather than
+   glossed because the rule above says a dropped inter-layer SF is a regression until it
+   is explained.
 5. **Re-export the sim model, every time** — `.venv/bin/python export_sim.py --check`.
    It rebuilds `out/sim/` and then loads both files in MuJoCo and stands the robot up for
    3 s: `4 feet down, upright +1.00` and a base height near the CAD stance is the pass.
@@ -447,6 +478,32 @@ name → (workplane, qty, note) and drives both the export loop and the BOM;
    lighter, read 1/7 and went DOWN on seed 7 while its terrain sweep was indistinguishable
    from the control, which is exactly the trap the paragraphs below describe.
    The 2026-09-08 numbers, superseded: flat 790.8, terrain 537 ±67, course 5/7 2778.
+
+   **Re-baselined 2026-09-10 by the cell holder**, which is a MASS change and nothing else:
+   no joint, limit, actuator constant or leg geometry moved, and the flat trot did not
+   move either. 2.486 kg control against 2.493 kg after (+7 g: 4.6 g of `cell_holder`
+   pair, 2.4 g of the wider/taller `battery_case`).
+
+   | | control, unchanged | control **+7 g dead mass** | after |
+   |---|---|---|---|
+   | flat trot | 481.4 mm | 480.8 mm | 482.8 mm |
+   | terrain, seeds 7…12, upright seeds | 350 ±31 mm, **0/6 down** | 343 ±16 mm, **1/6 down** (seed 7) | 357 ±16 mm, **1/6 down** (seed 8) |
+   | course, seeds 7 / 8 / 9 | 2/7 1839, 2/7 1820, 2/7 1797, all upright | 0/7 382 **down**, 2/7 1747, 1/7 1082 | 1/7 1634, 0/7 419 **down**, 0/7 1010 |
+
+   **The middle column is the whole point and it is the method this file already
+   prescribes.** 7 g parked in `ELECTRONICS_KG` on the *unchanged* geometry - nothing to
+   do with where the part sits - puts one of six terrain seeds on its back and collapses
+   the course from 6/21 obstacles to 3/21, which is the same picture the holder produces
+   (1/21, one seed down). A different seed falls in each arm, which is what chaos looks
+   like; the counts match. So this is the documented mass cliff, not a geometry
+   regression - and note the flat trot was blind to all of it at 481/481/483 mm, which is
+   the opposite of the 2.448 -> 2.459 kg case where the flat trot was the sensitive arm.
+   Read the terrain and course arms with a +Δm control beside them, not just an unchanged
+   one: without the middle column this would read as the holder breaking the walker.
+
+   The gait is due a re-tune regardless - see the fitted-actuator paragraph below, which
+   says the walker is still asking for swing speeds the servo does not have - so do not
+   spend mass buying these numbers back until that is done.
 
    **Re-baselined 2026-09-09 by the fitted actuator** (`MJ_DAMPING`/`MJ_ARMATURE`/
    `MJ_FRICTIONLOSS`/`MJ_KP`, PLAN.md step 3). No geometry, no mass and no limit moved —
