@@ -303,6 +303,29 @@ unrelated reason, and the two compound.
 
 ## 4. Randomise over the pack
 
+**The `mu_load` half is DONE, 2026-09-11.** It is drawn per joint per episode now,
+over the same `[0.40, 2.20]` as `tau_c` — `params/domain_rand.json`,
+`model.sample_actuator_params`, and `env/walk.py`'s per-episode draw (which needed a
+thirteenth rng key). `checks/check_model.py` grew `check_randomisation()` so it cannot
+silently come back: it asserts every per-unit servo parameter returns BATCHED, which is
+the only symptom this defect ever had — the field existed in the fit, in
+`actuator.Params` and in the jax pytree, and the sole tell was a shape, `()` where its
+neighbour was `(n, 12)`.
+
+**What is NOT done, and it needs the bench and not an editor.** The ranges are
+*manufacturing spreads* — `domain_rand.json` says so at the top: "sampled once per
+environment at reset ... these are manufacturing and assembly spreads, not noise". Every
+number in this repository came from ONE servo, so no fit can narrow them: fitting one unit
+precisely says nothing about how twelve differ. That file's own instruction, "Narrow them
+when there is a fit, and not before", is loose for exactly this reason — it is right for
+terms whose width was ignorance of the nominal (`J_m`, `kp`, `deadband`, near-identical
+between units of one model) and wrong for the friction terms, whose width is real
+unit-to-unit spread. To put evidence behind `tau_c`, `mu_load` and `b_v` you need three or
+four servos through `sweep.py --traj holdbi`, and the spread across them IS the range.
+There are twelve in the robot. Until then they stay `guessed` and stay wide, which costs
+sample efficiency and not correctness — the reverse of a narrow wrong range.
+
+
 `rl/params/domain_rand.json`, with the voltage range now measured rather than guessed.
 
 **Randomise `mu_load` too, and this is now a measured gap rather than a suggestion.**

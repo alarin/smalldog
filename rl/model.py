@@ -349,7 +349,7 @@ def sample_actuator_params(rng, n: int, ranges: dict | None = None,
         # per servo
         k_u=mul("k_u", (n, 12)), k_e=mul("k_e", (n, 12)), R=mul("R", (n, 12)),
         J_m=mul("J_m", (n, 12)), tau_c=mul("tau_c", (n, 12)), b_v=mul("b_v", (n, 12)),
-        kp=mul("kp", (n, 12)),
+        mu_load=mul("mu_load", (n, 12)), kp=mul("kp", (n, 12)),
         deadband=absolute(A, "deadband_abs", (n, 12)),
         punch=absolute(A, "punch_abs", (n, 12)),
         # per robot

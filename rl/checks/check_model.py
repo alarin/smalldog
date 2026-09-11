@@ -189,10 +189,11 @@ def check_actuators(m, d, R, P):
     worst = max(ratios.values())
     R.say(WARN if worst > 3 else INFO,
           f"reflected rotor inertia is {worst:.0f}x the link inertia at the knee. "
-          f"With a 1:345 gearbox that is expected — but it means the leg's dynamics "
-          f"is set by `armature`, which 3d/mini_dog.py marks as not measured. "
-          f"The bench's free-swing test (torque off, let it pendulum) measures "
-          f"exactly this: the period gives J_link + armature, and J_link is known.")
+          f"With a 1:345 gearbox that is expected, and it means the leg's dynamics "
+          f"is set by `armature` — which IS measured now (3d/mini_dog.py "
+          f"MJ_ARMATURE, the bench free swing at the corrected friction, "
+          f"2026-09-09). Kept as a warn because the RATIO is what makes every "
+          f"other actuator constant matter, not because the number is unknown.")
     R.say(INFO, "kv = 2*sqrt(kp * M_ii) from dampratio=1, so refitting armature "
                 "moves the damping with it. Do not also hand-tune kv.")
 
@@ -304,6 +305,63 @@ def check_sensors(m, R):
                         "this site follow it BEFORE freezing the observation.")
 
 
+# ---------------------------------------------- 6b. is the servo randomised
+#: Fields of actuator.Params that describe a PHYSICAL servo and therefore vary
+#: from one unit to the next, so every one of them has to be randomised or the
+#: policy trains against twelve identical motors.  The rest of Params is
+#: deliberately NOT here: J_l, theta_bl, k_bl, c_bl are load/backlash structure,
+#: duty_max / loop_hz / v_eps / kd are configuration or solver constants, and
+#: none of them is a manufacturing spread.
+PER_UNIT_FIELDS = ["k_u", "k_e", "R", "J_m", "tau_c", "b_v", "mu_load", "kp",
+                   "deadband", "punch"]
+
+
+def check_randomisation(R):
+    """Every per-unit servo parameter must come back BATCHED, not shared.
+
+    This exists because `mu_load` shipped unrandomised.  It was in the fit, in
+    actuator.Params and in the jax pytree, and every environment still trained
+    against one shared value while `tau_c` beside it - the SMALLER of the two
+    friction terms - got a per-joint draw.  Nothing caught it: the field exists
+    everywhere it is looked for, so the only symptom was a shape, `()` where its
+    neighbour was `(n, 12)`, and it took reading `_params()` live on the training
+    box to see it.  A missing entry is not a crash and never will be, which is
+    exactly why it needs a probe rather than a test of something else.
+    """
+    R.head("domain randomisation — is every per-unit servo parameter batched")
+    try:
+        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        import actuator
+        import model as model_mod
+    except Exception as e:                                    # pragma: no cover
+        R.say(WARN, f"could not import the rl tree: {e}")
+        return
+
+    ranges = model_mod.domain_ranges()["actuator"]
+    draw = model_mod.sample_actuator_params(np.random.default_rng(0), 4)
+    for f in PER_UNIT_FIELDS:
+        key = f if f in ranges else f + "_abs"
+        if key not in ranges:
+            R.say(FAIL, f"{f:<9} has no range in params/domain_rand.json — every "
+                        f"environment will share one value")
+            continue
+        a = draw.get(f)
+        if a is None:
+            R.say(FAIL, f"{f:<9} has a range but sample_actuator_params does not "
+                        f"draw it — the range is dead and the value is shared")
+        elif np.ndim(a) == 0 or np.size(a) == 1:
+            R.say(FAIL, f"{f:<9} came back shape {np.shape(a)} — shared, not sampled")
+        else:
+            lo, hi = ranges[key]["range"]
+            R.say(INFO, f"{f:<9} {str(np.shape(a)):<9} "
+                        f"x{lo:.2f}..{hi:.2f}  {ranges[key]['evidence']}")
+    extra = [k for k in ranges if k not in PER_UNIT_FIELDS
+             and k.removesuffix("_abs") not in PER_UNIT_FIELDS]
+    for k in extra:
+        R.say(WARN, f"{k} is in domain_rand.json but not in PER_UNIT_FIELDS — "
+                    f"decide whether it is a per-unit spread and list it, or drop it")
+
+
 # ------------------------------------------------------------- 7. ledger
 def ledger(R):
     R.head("measured vs guessed — what step 3 has to replace")
@@ -311,11 +369,11 @@ def ledger(R):
         ("link mass, com, inertia", "real solids in 3d/mini_dog.py", "measured"),
         ("joint limits", "swept-boolean ROM scan", "measured"),
         ("link geometry", "CAD", "measured"),
-        ("armature", "3d/mini_dog.py MJ_ARMATURE", "GUESSED — dominates the leg"),
-        ("damping", "3d/mini_dog.py MJ_DAMPING", "GUESSED"),
-        ("frictionloss", "3d/mini_dog.py MJ_FRICTIONLOSS", "GUESSED"),
-        ("actuator kp", "3d/mini_dog.py MJ_KP", "GUESSED — and not a servo model"),
-        ("stall torque", "vendor spec @ 12 V", "spec, no voltage law"),
+        ("armature", "3d/mini_dog.py MJ_ARMATURE", "MEASURED 2026-09-09 — dominates the leg"),
+        ("damping", "3d/mini_dog.py MJ_DAMPING", "MEASURED 2026-09-09, 3 voltages"),
+        ("frictionloss", "3d/mini_dog.py MJ_FRICTIONLOSS", "MEASURED 2026-09-09, 2 routes"),
+        ("actuator kp", "3d/mini_dog.py MJ_KP", "MEASURED 2026-09-09 — still not a servo model"),
+        ("stall torque", "3d/mini_dog.py SERVO_STALL_NM", "MEASURED 2026-09-10, 4.50 N*m"),
         ("foot friction", "3d/export_sim.py", "GUESSED"),
         ("foot solref/solimp", "3d/export_sim.py", "GUESSED, and diluted (above)"),
         ("backlash", "not in the model at all", "ABSENT"),
@@ -429,6 +487,7 @@ def main():
     check_contact(m, d, R, P, a.settle)
     check_stand(m, d, R, P, a.settle)
     check_sensors(m, R)
+    check_randomisation(R)
     ledger(R)
 
     print(f"\n== result " + "=" * 68)

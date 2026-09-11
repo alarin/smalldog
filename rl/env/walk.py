@@ -375,7 +375,8 @@ class Walk(PipelineEnv):
         return dataclasses.replace(
             self._p0,
             k_u=info["k_u"], k_e=info["k_e"], R=info["R"], J_m=info["J_m"],
-            tau_c=info["tau_c"], b_v=info["b_v"], kp=info["kp"],
+            tau_c=info["tau_c"], b_v=info["b_v"], mu_load=info["mu_load"],
+            kp=info["kp"],
             deadband=info["deadband"], punch=info["punch"])
 
     def _torque(self, p, target, q, w, u_bat, sag):
@@ -447,7 +448,7 @@ class Walk(PipelineEnv):
         """
         R = self._ranges
         A, S, B = R["actuator"], R["supply"], R["bus"]
-        keys = jax.random.split(rng, 12)
+        keys = jax.random.split(rng, 13)
 
         def per_joint(key, name, nominal):
             lo, hi = A[name]["range"]
@@ -468,6 +469,7 @@ class Walk(PipelineEnv):
             "J_m": per_joint(keys[3], "J_m", self._p0.J_m),
             "tau_c": per_joint(keys[4], "tau_c", self._p0.tau_c),
             "b_v": per_joint(keys[5], "b_v", self._p0.b_v),
+            "mu_load": per_joint(keys[12], "mu_load", self._p0.mu_load),
             "kp": per_joint(keys[6], "kp", self._p0.kp),
             "deadband": per_joint_abs(keys[7], "deadband_abs"),
             "punch": per_joint_abs(keys[8], "punch_abs"),
