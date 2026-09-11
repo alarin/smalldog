@@ -56,7 +56,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
 import mini_dog as md                                                # noqa: E402
-from mini_dog import (ARM_R, ARM_T, HUB_BC, HUB_N, HUB_TOP_Z, M3_CLR, S_AX, S_L, S_W,
+from mini_dog import (ARM_R, ARM_T, HUB_BC, HUB_N, HUB_TOP_Z, M3_CLR, S_AX, S_W,
                       SLEEVE_LEN, SLEEVE_W, THRUST_L, bxc, cyl)      # noqa: E402
 from export_sim import MP                                            # noqa: E402
 
@@ -102,7 +102,10 @@ ARM_S_R    = 45.0       # light arm: the direct J_m measurement.  Small on purpo
                         # all, and tau_c is itself a guess (0.05 N*m), so this is sized
                         # for ~2x that and no more.
 ARM_L_R    = 90.0       # heavy arm: the holds, where a big torque is exactly what is
-                        # wanted.  0.35 kg here is 0.31 N*m, ~11 % of the 2.94 stall.
+                        # wanted.  ARM_MASS 1.053 kg here is 0.93 N*m, ~21 % of the
+                        # MEASURED 4.50 N*m stall (it read "0.35 kg, 0.31 N*m, 11 % of
+                        # 2.94" when the disc was lighter and the stall was a vendor
+                        # number; both have since been weighed).
 ARM_S_BOLT = 6.40       # M6 clearance, both tips.  It was M5 light / M8 heavy; the
 ARM_L_BOLT = 6.40       # bench runs one bolt through both, and an M6 rattling in an
                         # 8.4 mm hole let the weight sit 1.2 mm off the design radius.
@@ -357,9 +360,9 @@ def bench_stand():
                    (COL_Y1, min(COL_Y1+34.0, BASE_Y1))):
         s = s.union(wedge([(AXIS_H, y0), (AXIS_H, y1), (AXIS_H-40.0, y0)], -BASE_Z, BASE_Z))
 
-    # clamp slots.  It DOES need clamping: the heavy arm out at +y is 0.25 N*m about the
-    # base's front edge against ~0.2 N*m of the stand's own weight, so the margin is a
-    # G-clamp and not the footprint.  Obround, through the base, either side of the column.
+    # clamp slots.  It DOES need clamping: the heavy arm out at +y is 0.33 N*m about the
+    # base's front edge against 0.16 N*m of the stand's own weight (report() prints the
+    # pair; the ratio is 0.49x), so the margin is a G-clamp and not the footprint.  Obround, through the base, either side of the column.
     for y in (COL_Y0-18.0, COL_Y1+22.0):
         for e in (0, 1):
             s = s.cut(cyl(CLAMP_D/2, BASE_T+2, (AXIS_H-1, y, -CLAMP_RUN/2+e*CLAMP_RUN),
@@ -529,7 +532,7 @@ def checks():
 
 
 def report():
-    print(f"\n  part            mass    J about axis   print bbox (mm)")
+    print("\n  part            mass    J about axis   print bbox (mm)")
     for name, (wp, qty, note) in PARTS.items():
         sh = wp.val()
         m, J = axis_inertia(sh, rho(name))
@@ -563,7 +566,7 @@ def report():
           f" front edge\n  against {over*G/1000:.3f} N*m of stand + servo holding it down"
           f"  ->  {ratio:.2f}x.\n  {verdict}: two slots in the base, M6 or a G-clamp.")
 
-    print(f"\n  what to hang on each arm, and what sweep.py is then told")
+    print("\n  what to hang on each arm, and what sweep.py is then told")
     print(f"  {'arm':<14}{'tip':>7}{'radius':>8}{'m*g*r':>8}{'/tau_c':>8}"
           f"{'J_arm share':>13}{'period':>9}")
     lines = []
@@ -604,9 +607,9 @@ def report():
           f"\n   touches the long one.  The share is a property of this SERVO's friction,"
           f"\n   not of the weight, and it is why the disc's I_cm has to be measured"
           f"\n   rather than improved away.)")
-    print(f"\n  from robot/, once the weights are on.  WEIGH them, and weigh the printed"
-          f"\n  arm too - --arm-inertia below is a slicer fill factor away from the truth,"
-          f"\n  and it is the one number here the fit subtracts rather than fits:")
+    print("\n  from robot/, once the weights are on.  WEIGH them, and weigh the printed"
+          "\n  arm too - --arm-inertia below is a slicer fill factor away from the truth,"
+          "\n  and it is the one number here the fit subtracts rather than fits:")
     for l in lines:
         print(l)
 

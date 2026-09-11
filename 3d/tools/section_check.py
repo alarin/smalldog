@@ -16,7 +16,6 @@ the leg plane.  Lateral is reported too because it is what the blade section tra
 and what no load case in fea.py covers.
 """
 import argparse, importlib.util, os, sys
-import numpy as np
 
 SLAB = 0.5   # mm; thin enough that the out-of-plane term is noise
 

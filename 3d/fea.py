@@ -36,17 +36,30 @@ BMS_KG         = md.BMS_KG        # split out of ELECTRONICS_KG when the BMS mov
                                   # the ground load cases below scale with the total
 ELECTRONICS_KG = md.ELECTRONICS_KG
 LIDAR_KG       = md.LIDAR_KG
+GPS_KG         = md.GPS_KG
+CAMERA_KG      = md.CAMERA_KG
+IMU_KG         = md.IMU_KG
+
+# Printed parts that are NOT on the robot.  servo_gauge is the ST3215 fit coupon - it is
+# in PARTS because it has to be exported and printed, and it has never been carried.
+NOT_CARRIED = ("servo_gauge",)
 
 def robot_mass():
     """mini_dog's own printed-mass estimate plus everything the robot carries.  The
     ground load cases scale with this, so anything bolted on belongs here - the LiDAR is
-    230 g on a 2 kg robot and leaving it out made every ground case optimistic."""
+    230 g on a 2 kg robot and leaving it out made every ground case optimistic.
+
+    The carried list is the same one mini_dog.main() prints, and it is written out term by
+    term rather than summed elsewhere for the reason CLAUDE.md's "masses live once" note
+    gives: this used to stop at LIDAR_KG, so the GPS mast, the camera and the IMU (40 g
+    between them) were absent and every ground case ran 1.3 % light."""
     if not md.PARTS:
         md.build()
     printed = sum(wp.val().Volume() / 1000.0 * md.part_rho(n) * qty
-                  for n, (wp, qty, _) in md.PARTS.items()) / 1000.0
+                  for n, (wp, qty, _) in md.PARTS.items()
+                  if n not in NOT_CARRIED) / 1000.0
     return (printed + N_SERVO * SERVO_KG + BATTERY_KG + BMS_KG + ELECTRONICS_KG
-            + LIDAR_KG)
+            + LIDAR_KG + GPS_KG + CAMERA_KG + IMU_KG)
 
 # E [MPa], nu, sigma in-plane [MPa], sigma inter-layer [MPa].  Print-realistic values for
 # ~5 walls / 40 % infill, i.e. already below the datasheet numbers for moulded material.
@@ -556,7 +569,6 @@ def orient_report(parts, case_names, cs, matname, size, order):
           f" {', '.join(case_names)}\n  (the index folds tension across the layers and shear"
           f" along them; build direction only)")
     for name in parts:
-        spec = part_specs()[name]
         mesh_path, coors, tets = part_mesh(name, size)
         free, stresses = None, []
         for case in case_names:
@@ -565,12 +577,7 @@ def orient_report(parts, case_names, cs, matname, size, order):
             stresses.append(r["s_el"])
         worst = lambda n: max(layer_index(se, n, mat)[free].max() for se in stresses)
         cur = build_dir(md.PRINT_ORIENT[name])
-
-        def height(n):
-            p = coors @ (np.asarray(n, float) / np.linalg.norm(n))
-            return float(p.max() - p.min())
         rows = [(nm, np.asarray(v, float), worst(v)) for nm, v in axes]
-        best_free = min(sphere_dirs(300), key=worst)
         print(f"\n  {name}   (mini_dog PRINT_ORIENT = {md.PRINT_ORIENT[name]})")
         print(f"     {'build dir':14s} {'SF':>5s}  {'height':>7s} {'overhang':>9s} {'bed':>7s}")
         for nm, v, w in sorted(rows, key=lambda t: t[2], reverse=True):
@@ -625,7 +632,7 @@ def main():
      nor isotropic; the material table is already de-rated for ~5 walls / 40 %.
    * 'stall' bounds what the servo itself can do to the part; an impact is not bounded by
      the servo, and land3g is a 3 g estimate, not a measurement.
-   * the clamp is idealised as a rigidly fixed hub footprint - real M2.5 bolts through
+   * the clamp is idealised as a rigidly fixed hub footprint - real M3 bolts through
      {md.ARM_T:.0f} mm fork arms are softer and put the load into the bolt holes.
    * open {OUT}/*.vtk in ParaView to see where the stress actually sits.""")
 

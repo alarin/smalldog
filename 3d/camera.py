@@ -106,9 +106,9 @@ def urdf_links(parent="base_link", name="camera"):
             f'  <joint name="{name}_joint" type="fixed">',
             f'    <parent link="{parent}"/><child link="{name}_link"/>',
             f'    <origin xyz="{_f(p)}" rpy="0 {-t:.6g} 0"/>',
-            f'  </joint>',
+            '  </joint>',
             f'  <link name="{name}_optical_frame"/>',
             f'  <joint name="{name}_optical_joint" type="fixed">',
             f'    <parent link="{name}_link"/><child link="{name}_optical_frame"/>',
             f'    <origin xyz="0 0 0" rpy="{-math.pi/2:.6g} 0 {-math.pi/2:.6g}"/>',
-            f'  </joint>']
+            '  </joint>']

@@ -1,7 +1,4 @@
-import sys, math, os
-import cadquery as cq
 import vtk
-from vtk.util.colors import *
 
 def render(shapes_colors, out, cam, size=(1400,1000), up=(0,0,1)):
     ren = vtk.vtkRenderer(); ren.SetBackground(1,1,1)
@@ -35,11 +32,13 @@ if __name__ == "__main__":
     sc = []
     grey=(0.62,0.65,0.70); org=(0.90,0.58,0.16); wht=(0.85,0.86,0.88); blk=(0.16,0.16,0.18)
     alu=(0.72,0.76,0.82)
-    sc.append((md.PARTS["chassis_bottom"][0].val(), grey))
-    sc.append((md.PARTS["chassis_top"][0].val(), grey))
-    sc.append((md.PARTS["lidar_mount"][0].val(), grey))
-    sc.append((md.PARTS["gps_mount"][0].val(), grey))
-    sc.append((md.PARTS["camera_mount"][0].val(), grey))
+    # The body is md.BODY_PARTS, not a hand-written list.  It WAS a hand-written list and
+    # it went stale the moment the tray was split: the two hip-roll cradles and the whole
+    # battery module were missing from all three renders, which is exactly the "look at
+    # the PNGs" step failing to show the parts that had just changed.  cell_holder is the
+    # one printed part deliberately left out - it lives sealed inside battery_case.
+    for nm in md.BODY_PARTS:
+        sc.append((md.PARTS[nm][0].val(), grey))
     sc.append((md.camera_module().val(), blk))
     srv = [md.mv(md.servo_dummy(), L) for _, L in md.JOINTS]
     hub = [md.mv(md.hubs(), L) for _, L in md.JOINTS]

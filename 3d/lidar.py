@@ -83,8 +83,10 @@ SPIN_B   = -SPIN_A / PHI              # ... second, counter-rotating: -75.2 Hz
 # as visual-only meshes in group 2 and put the physics in primitives (group 3, and the
 # floor in group 0), so the mask below is "see what the physics collides with".  Casting
 # against the visual meshes instead would be more faithful and roughly two orders of
-# magnitude slower - a lightened bracket is thousands of triangles, and there are 2160
-# rays in a frame.  It travels with the other parameters, in the model.
+# magnitude slower - a lightened bracket is thousands of triangles, and there are ~5200
+# rays in a frame (LIDAR_PPS / LIDAR_FRAME_HZ, the measured 62340 /s at 12 Hz; it read
+# 2160 back when the catalogue's 21600 /s at 10 Hz was believed).  It travels with the
+# other parameters, in the model.
 RAY_GROUPS = (1, 1, 0, 1, 1, 1)
 
 # NO INTENSITY, deliberately.  mj_multiRay returns a distance and a geom id and nothing
@@ -178,7 +180,7 @@ def urdf_link(parent="base_link", name="lidar_link"):
             f'  <joint name="{name}_joint" type="fixed">',
             f'    <parent link="{parent}"/><child link="{name}"/>',
             f'    <origin xyz="{_f(p)}" rpy="{_f(rpy)}"/>',
-            f'  </joint>']
+            '  </joint>']
 
 
 # =======================================================================================

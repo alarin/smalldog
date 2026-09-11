@@ -38,9 +38,11 @@ HUB_TOP_Z     = +20.30                # driven-hub outer face  (case top  +17.50
 HUB_BOT_Z     = -16.95                # passive-hub outer face (case base -17.50, recessed)
 HUB_REC_D     = 25.00                 # recess in the case base around the passive hub
 # hub plates as they actually are in ref/ST3215-3D/ST3215.step (axis = STEP +Y at
-# x=-25.5, z=0; STEP y + 10.70 = local z).  Both plates carry 4x @2.5 THROUGH holes on
-# the @14 circle at 0/90/180/270 - the screw passes through the hub, it does not thread
-# into it.  Driven plate: y 7.10..9.60 -> z 17.80..20.30, central @6.2 pocket stepping to
+# x=-25.5, z=0; STEP y + 10.70 = local z).  Both plates carry 4 holes on the @14 circle at
+# 0/90/180/270.  The STEP draws them @2.5 and through; the hubs that ARRIVED are TAPPED M3
+# (HUB_BOLT_D, and see fork()) - a vendor number a real part contradicts loses, so the
+# screw threads INTO the aluminium here and this is the one place in a torque path with no
+# nut behind it.  Driven plate: y 7.10..9.60 -> z 17.80..20.30, central @6.2 pocket stepping to
 # @3.2 at the face (the M3 output-shaft screw - a driver must reach it).  Passive plate:
 # y -27.65..-25.45 -> z -16.95..-14.75, central @6.0 bore over the case's @2.6 hole.
 HUB_T_TOP     = 2.50                  # driven plate thickness
@@ -264,7 +266,7 @@ BATT_WRAP      = 0.30                 # heatshrink, per side.  It goes over the 
 #
 # WHAT IT COSTS IS THE PITCH AND NOTHING ELSE, and that is a geometric decision, not a
 # happy accident.  The obvious holder is a frame round the outside of the array, and it
-# does not fit: the module is already 1.4 mm under the deck and 0.5 mm off the deck
+# does not fit: the module is already 0.60 mm under the deck and 0.5 mm off the deck
 # screws' nut bosses, whose inner faces stand at |y| = 35.2 over the module's whole
 # height.  So the caps are CLIPPED FLUSH with the outermost cells' own tangent planes in
 # both y and z - there is no material outboard of a cell anywhere - and the module grows
@@ -345,7 +347,9 @@ BATT_X  = 5.0                         # module centre in x.  Not the body origin
                                       # direction the module owed the robot in the first
                                       # place (the pack sits ahead of its own BMS).
 BATT_Z0 = BODY_Z0 + 3.0 - BATT_SEAT   # the case's underside, sitting in its seat recess
-BATT_Z1 = BATT_Z0 + BATT_H            # ... and its top: 23.6, with 1.4 mm to the deck
+BATT_Z1 = BATT_Z0 + BATT_H            # ... and its top: 24.4, with 0.60 mm to the deck
+                                      # (batt_clear(); it was 1.4 before the cell holder
+                                      # added its two separator gaps)
 # The interior, and the three zones along it.  Derived once here because battery_case(),
 # battery_lid(), the payload envelopes and both sim exporters all have to agree on them.
 BATT_XI0 = BATT_X - BATT_L/2 + BATT_CASE_T    # -41.00, the rear wall's inner face
@@ -411,7 +415,7 @@ BATT_WIRE = (14.0, 8.0)               # grommet slot in the rear wall: pack lead
 # 43.4 mm for 42.6 mm of cell, i.e. 0.8 mm for a floor, a lid and a fit.  What was above
 # the pack was the IMU, in a 3.6 mm slot.  The IMU moved out - onto the deck's TOP face,
 # inside the Orange Pi's standoff gap, see the IMU_* block - and the module now runs from
-# -22.8 to 23.6 with 1.4 mm of air under the deck.  Nothing was thinned and no cell format
+# -22.8 to 24.4 with 0.60 mm of air under the deck.  Nothing was thinned and no cell format
 # changed; the slot was simply the wrong home for the board.
 DECK_BOSS_R  = 5.8                    # tray boss: fat enough to swallow an M3 nut slot
 DECK_NUT_DZ  = 6.0                    # ... its floor, below the boss top
@@ -436,7 +440,7 @@ DECK_NUT_DZ  = 6.0                    # ... its floor, below the boss top
 # corner pair must not open along x at all: at x = +-52 a DECK_BOSS_R+6 channel runs out
 # through the tray's own inner face at +-60.2.
 # The mid pair still blocks the side cable channel at x = +-18; cables go around the
-# module's ends or out through the side ports, not over it - there is 1.4 mm over it.
+# module's ends or out through the side ports, not over it - there is 0.60 mm over it.
 DECK_SCREWS  = ((-52.0, 41.0, (0.0, -1.0, 0.0)),
                 (-18.0, 41.0, (1.0,  0.0, 0.0)),
                 ( 18.0, 41.0, (1.0,  0.0, 0.0)),
@@ -505,9 +509,10 @@ CRADLE_SEAT   = 2.8                   # tray boss inboard of the wall: it is wha
 CRADLE_CB_D   = 6.5                   # the head is COUNTERBORED into the tray's seat, and
 CRADLE_CB     = 2.0                   # that is not tidiness: the front seat's face is at
                                       # x = 57.4 and the battery module's front face is at
-                                      # 56.15, so a 1.65 mm ISO 7380 head standing on that
-                                      # face reaches 55.75 and eats 0.4 mm of the pack.
-                                      # Counterbored it sits at 57.75, +1.60 mm clear.
+                                      # BATT_X + BATT_L/2 = 52.6, so the head has 4.8 mm
+                                      # and the counterbore buys it 2.0 more.  It is kept
+                                      # because cradle_head_clear() reads the real solid
+                                      # and the pack has moved twice already.
                                       # Same class of defect
                                       # as the thrust clamp's cap head and the hub screws'
                                       # - the part in the way is HARDWARE, so isValid(),
@@ -968,7 +973,8 @@ PRINT_FILL        = {"chassis_bottom": 0.93, "chassis_top": 0.80, "lidar_mount":
                      "thigh_A":        0.97, "thigh_B":       0.97,
                      "shin_A":         0.92, "shin_B":        0.92,
                      "servo_gauge":    0.94, "foot":          0.65}
-# gps_mount, cradle_front and cradle_rear are deliberately absent: none has been sliced
+# gps_mount, cradle_front, cradle_rear, battery_case, battery_lid, camera_mount and
+# cell_holder are deliberately absent: none has been sliced
 # yet, so part_rho() gives them PRINT_FILL_MEAN.  Slice them and put the measured factor
 # in the table.  chassis_bottom's own 0.93 was measured on the part WITH the four cradles
 # in it and is now the tray's alone - it is a thin-walled box either way, so the number is
@@ -1232,6 +1238,21 @@ def mv(wp,loc): return W(wp.val().moved(loc))
 def mirX(wp): return wp.mirror("YZ")
 def mirY(wp): return wp.mirror("XZ")
 
+def overlap(a, b):
+    """mm3 shared by two solids, and inf if the boolean FAILED.
+
+    Every clearance probe in this file asks the same question and they used to answer a
+    failed intersect three different ways: 0.0 (a pass), -1.0 (a sentinel nobody tested
+    for) and, in rom_scan, a value that counted the angle as FREE.  OCC drops an
+    intersection on a degenerate contact without raising anything downstream notices - the
+    same silent failure the chassis_bottom -257 mm3 note is about - so the only safe
+    reading is the PESSIMISTIC one: a boolean that did not run has not cleared anything.
+    Callers compare against INTERF_TOL, and inf fails every one of those comparisons."""
+    try:
+        return a.intersect(b).Volume()
+    except Exception:
+        return float("inf")
+
 # =====================================================================================
 # servo primitives (servo frame: axis +Z, driven hub +Z, case body toward +X,
 #                   link direction -X, axis at S_AX from the -X end face)
@@ -1243,12 +1264,12 @@ def hub_plate(top=True):
     """one stock aluminium hub, in servo-local coords - the face a fork arm bolts to.
     Visualisation/interface reference only: no printed part is cut against it."""
     if top:
-        z0, z1 = HUB_TOP_Z-HUB_T_TOP, HUB_TOP_Z
+        z0 = HUB_TOP_Z-HUB_T_TOP
         h = cyl(HUB_D/2, HUB_T_TOP, (0,0,z0))
         h = h.cut(cyl(HUB_CTR_D/2, HUB_T_TOP-HUB_SCR_T, (0,0,z0)))
         h = h.cut(cyl(HUB_SCR_D/2, HUB_T_TOP+2, (0,0,z0-1)))
     else:
-        z0, z1 = HUB_BOT_Z, HUB_BOT_Z+HUB_T_BOT
+        z0 = HUB_BOT_Z
         h = cyl(HUB_D/2, HUB_T_BOT, (0,0,z0))
         h = h.cut(cyl(HUB_CTR_D/2, HUB_T_BOT+2, (0,0,z0-1)))
     for i in range(HUB_N):
@@ -1605,7 +1626,7 @@ def chassis_bottom():
     # Battery module seat.  There is no cradle any more - no fins, no end stops, no strap:
     # the pack is a cased module (see the battery block, and battery_case()) and what the
     # tray owes it is a register, not a nest.  A BATT_SEAT-deep recess in the floor,
-    # CLR proud of the module all round, locates it in x and y; the deck closes the 1.4 mm
+    # CLR proud of the module all round, locates it in x and y; the deck closes the 0.60 mm
     # above it in z, over a strip of foam that is a BOM line and not a printed feature.
     #
     # The recess is a POCKET in the floor, not a hole through it: the floor is the box's
@@ -1670,7 +1691,7 @@ def chassis_bottom():
     s = s.cut(bxc(CAM_FOOT_X-3.0-CLR, CAM_FOOT_X+3.0+CLR, ky-kl/2-CLR, ky+kl/2+CLR,
                   CAM_LEDGE-kd-CLR, CAM_LEDGE+1.0))
     #
-    # There are no fork-access channels here any anything more.  They used to cut a @6 hole
+    # There are no fork-access channels here any more.  They used to cut a @6 hole
     # through this part's front corner post and through the lower half of each corner deck
     # boss, out into the side vent, so a key could reach the roll joint's inboard fork
     # screws - which were blind because the fork could only go on with the cradle already
@@ -1798,7 +1819,7 @@ def cell_holder(end=-1):
 
     It is a union of six CH_WALL-thick collars on the cell pitch, CLIPPED to the array's
     own envelope and then bored.  The clip is the whole design: a frame around the outside
-    of the array does not fit this robot - the module has 1.4 mm to the deck and its side
+    of the array does not fit this robot - the module has 0.60 mm to the deck and its side
     walls are 0.5 mm off the deck screws' nut bosses at |y| = 35.2 - so there is no
     material outboard of any cell in either y or z, and the module grows by the separator
     gaps alone.  What is left at each outer face is a 7.9 mm flat where the collar has
@@ -1864,14 +1885,11 @@ def holder_clear():
     Both are payload-class blindnesses, exactly like module_clear(): the cells are not
     parts, and the holder is a part that lives entirely inside another part's cavity, so
     a cap drawn 0.5 mm too wide would print, assemble in CAD and crush the pack without
-    isValid() or interference() saying a word.  Returns (case_mm3, cells_mm3); both zero."""
+    isValid() or interference() saying a word.  Returns (case_mm3, cells_mm3); both zero,
+    and inf if a boolean failed - see overlap()."""
     h = cell_holders().val()
     box = battery_case().val().fuse(battery_lid().val())
-    out = []
-    for w in (box, cells_solid().val()):
-        try:    out.append(h.intersect(w).Volume())
-        except Exception: out.append(-1.0)
-    return tuple(out)
+    return tuple(overlap(h, w) for w in (box, cells_solid().val()))
 
 def brick_com():
     """Centroid of the six wrapped cells - what BATTERY_KG hangs on in both sim exporters.
@@ -1904,13 +1922,9 @@ def module_clear():
     already caught one - the lid was first drawn with a locating lip round the whole
     opening, 2 mm deep, into an interior the wrapped brick fills to 0.2 mm a side.
 
-    Returns (brick_mm3, bms_mm3); both must be zero."""
+    Returns (brick_mm3, bms_mm3); both must be zero, and inf if a boolean failed."""
     box = battery_case().val().fuse(battery_lid().val())
-    out = []
-    for w in (brick_solid(), bms_solid()):
-        try:    out.append(box.intersect(w.val()).Volume())
-        except Exception: out.append(-1.0)
-    return tuple(out)
+    return tuple(overlap(box, w.val()) for w in (brick_solid(), bms_solid()))
 
 def batt_clear():
     """Air between the battery module's lid and the deck's underside.
@@ -2136,9 +2150,7 @@ def imu_clear():
     z = BODY_Z1 + DECK_T + OPI_STAND_H
     pi = bxc(OPI_X-OPI_BOX[0]/2, OPI_X+OPI_BOX[0]/2,
              -OPI_BOX[1]/2, OPI_BOX[1]/2, z, z+OPI_BOX[2])
-    try:    v = imu_module().val().intersect(pi.val()).Volume()
-    except Exception: v = 0.0
-    return v, z - IMU_Z0
+    return overlap(imu_module().val(), pi.val()), z - IMU_Z0
 
 def gps_pose():
     """The patch antenna's phase centre in robot coordinates.
@@ -2284,13 +2296,21 @@ def camera_mount():
     camera.  The board goes in from the +y end and the same two screws that hold the mount
     down close that end.
 
+    ** THE FRONT WALL IS NOT ATTACHED. **  The board-pocket cut below runs the full
+    length of the part, so it severs that wall from the skirt and camera_mount comes back
+    as three bodies: the channel, and the wall in two loose pieces of 529 and 105 mm3
+    (x 66.37..68, z 25.5..32).  PART_SOLIDS allows 3 for this part, which is what let it
+    ship - the count check sees a number it was told to expect, not a wall that fell off.
+    So the retention described above does not exist on the printed part.  Open, recorded
+    in ../MAC.md, "Open CAD defects found 2026-09-11"; the fix moves printed geometry and
+    was deliberately not made in the pass that found it.
+
     IT PRINTS ON ITS BACK, on the skirt: that face is the part's one big flat, and stood
     up the right way the whole 90 mm channel is a 20 mm wall on a 4 mm foot."""
     L, Wd, T = CAM_BOARD
     o, n, _ = camera_frame()
     y0, y1 = cam_span()
     e0, e1 = min(CAM_END), max(CAM_END)
-    slot = T + 2*CLR
     top  = CAM_Z + Wd/2*math.cos(math.radians(CAM_TILT))          # the board's upper edge
     bot  = CAM_Z - Wd/2*math.cos(math.radians(CAM_TILT))          # ... and its lower one
     deck = BODY_Z1 + DECK_T
@@ -2505,11 +2525,10 @@ def rom_scan(moving, static, loc_pt, axis=(0,1,0), lo=-150, hi=150, step=10):
     free = []
     for a in range(lo, hi+1, step):
         m = moving.rotate(loc_pt, tuple(p+d for p, d in zip(loc_pt, axis)), a)
-        try:
-            v = m.val().intersect(static.val()).Volume()
-        except Exception:
-            v = -1.0
-        if v < 1.0: free.append(a)
+        # overlap() returns inf when the boolean fails, so a failed angle falls out of
+        # `free` and the joint reads SMALLER.  It used to read -1.0 and land in `free`,
+        # i.e. a boolean that never ran was exported as travel the leg does not have.
+        if overlap(m.val(), static.val()) < 1.0: free.append(a)
     if not free: return (0, 0)
     best = cur = [free[0], free[0]]
     for a in free[1:]:
@@ -2519,6 +2538,58 @@ def rom_scan(moving, static, loc_pt, axis=(0,1,0), lo=-150, hi=150, step=10):
             cur = [a, a]
     if cur[1]-cur[0] > best[1]-best[0]: best = cur
     return tuple(best)
+
+# The window each joint is swept over.  A free range that REACHES its window is not a
+# mechanical limit, it is the end of the scan, and export_sim.py says so rather than
+# exporting it as if the geometry had stopped the joint.
+SCAN_WINDOW = {"hip_roll": 90, "hip_pitch": 150, "knee": 150}
+ROM_STEP    = 10                 # degrees; the default sweep, see CLAUDE.md step 7
+
+def rom_scan_all(step=ROM_STEP):
+    """{joint: (lo_deg, hi_deg)} for the front-left leg, over real solids.
+
+    THE ONE PLACE THE THREE SCANS ARE SPELLED OUT.  It was written twice - here and in
+    export_sim.joint_rom() - and the two copies drifted: the exporter's hip_roll swung a
+    bare hip_bracket() against chassis_bottom + cradle_front + servo_dummy alone, with no
+    gps_mount, no camera_mount, no camera module, no thrust bolts and no fork screws, so
+    --rom-step exported a wider roll joint than mini_dog.py printed.  Same class as the
+    servo mass and the MJ_* constants: a number that exists twice is a number that will
+    disagree with itself, so both callers come through here.
+
+    gps_mount goes in MIRRORED: it stands over the rear pair of deck bosses and this scan
+    swings the FRONT-left leg, so mirroring it forward is exactly the rear-leg scan
+    against the real one - the legs are mirror images and the roll axis is x.
+    The clamp screws go in on the STATIC side of every scan: they belong to the sleeve,
+    which belongs to the proximal part, and it is the distal fork that sweeps over them.
+    ... and the hub screw HEADS go on the MOVING side: they belong to the fork, and at
+    the hip the passive arm's four sweep FORK_GAP from the gusset (see head_clear())."""
+    if not PARTS:
+        build()
+    w = SCAN_WINDOW
+    return {
+        "hip_roll": rom_scan(hip_bracket().union(mv(fork_screws(), ROLL_LOC)),
+                             PARTS["chassis_bottom"][0]
+                                             .union(PARTS["cradle_front"][0])
+                                             .union(mirX(gps_mount()))
+                                             .union(camera_mount())
+                                             .union(camera_module())
+                                             .union(mv(servo_dummy(), ROLL_LOC))
+                                             .union(mv(thrust_bolts(), ROLL_LOC)),
+                             (ROLL_X, ROLL_Y, ROLL_Z), axis=(1,0,0),
+                             lo=-w["hip_roll"], hi=w["hip_roll"], step=step),
+        "hip_pitch": rom_scan(thigh().union(mv(fork_screws(), PITCH_LOC)),
+                              hip_bracket().union(mv(servo_dummy(), PITCH_LOC))
+                                           .union(mv(thrust_bolts(), PITCH_LOC))
+                                           .union(mv(fork_screws(), ROLL_LOC)),
+                              (PITCH_X, LEG_Y, PITCH_Z),
+                              lo=-w["hip_pitch"], hi=w["hip_pitch"], step=step),
+        "knee": rom_scan(shin().union(mv(fork_screws(), KNEE_LOC)),
+                         thigh().union(mv(servo_dummy(), KNEE_LOC))
+                                .union(mv(thrust_bolts(), KNEE_LOC))
+                                .union(mv(fork_screws(), PITCH_LOC)),
+                         (PITCH_X, LEG_Y, KNEE_Z),
+                         lo=-w["knee"], hi=w["knee"], step=step),
+    }
 
 # The base link's printed parts, in one place because THREE files need the same list:
 # interference() here, export_sim.py's URDF/MJCF, and ../ros2/.../generate_model.py.  It
@@ -2539,10 +2610,7 @@ def interference(names=BODY_PARTS):
     bad = []
     for i, a in enumerate(names):
         for b in names[i+1:]:
-            try:
-                v = PARTS[a][0].val().intersect(PARTS[b][0].val()).Volume()
-            except Exception:
-                v = 0.0
+            v = overlap(PARTS[a][0].val(), PARTS[b][0].val())
             if v > INTERF_TOL:
                 bad.append((a, b, v))
     return bad
@@ -2578,10 +2646,7 @@ def panel_clear():
     out = {}
     for name, cy, cz, w, h in tgt:
         probe = bxc(xw-PANEL_REACH, xw-CLR, cy-w/2, cy+w/2, cz-h/2, cz+h/2)
-        try:
-            out[name] = body.val().intersect(probe.val()).Volume()
-        except Exception:
-            out[name] = -1.0
+        out[name] = overlap(body.val(), probe.val())
     return out
 
 def cradle_clear():
@@ -2600,10 +2665,7 @@ def cradle_clear():
     for end, sx in (("front", 1.0), ("rear", -1.0)):
         for i, (y, z) in enumerate(cradle_bolt_axes()):
             p = cyl(DRIVER_D/2, CRADLE_REACH, (sx*x0, y, z), axis=(-sx, 0.0, 0.0))
-            try:
-                out[(end, i)] = tray.val().intersect(p.val()).Volume()
-            except Exception:
-                out[(end, i)] = -1.0
+            out[(end, i)] = overlap(tray.val(), p.val())
     return out
 
 def cradle_head_clear():
@@ -2616,10 +2678,7 @@ def cradle_head_clear():
     for nm in ("battery_case", "battery_lid"):
         b = PARTS[nm][0]
         box = b if box is None else box.union(b)
-    try:
-        v = heads.val().intersect(box.val()).Volume()
-    except Exception:
-        v = -1.0
+    v = overlap(heads.val(), box.val())
     seat = CRADLE_X - WALL - CRADLE_SEAT + CRADLE_CB          # counterbore floor
     # read the module's front face off the solid rather than re-deriving it: the case's
     # walls are not the same thickness front and back, and this is the wall that matters
@@ -2632,10 +2691,7 @@ def gps_clear():
     cx, _, cz = opi_com()
     L, W, H = OPI_BOX
     box = bxc(cx-L/2, cx+L/2, -W/2, W/2, cz-H/2, cz+H/2)
-    try:
-        return PARTS["gps_mount"][0].val().intersect(box.val()).Volume()
-    except Exception:
-        return 0.0
+    return overlap(PARTS["gps_mount"][0].val(), box.val())
 
 def foot_bolt_check():
     """The foot bolt's path, checked against the real solid instead of against the numbers
@@ -2702,11 +2758,7 @@ def fork_access():
             for p, ax, L in lines:
                 c = cyl(DRIVER_D/2, L, p, axis=ax)
                 probe = c if probe is None else probe.union(c)
-            try:
-                v = mv(probe, loc).val().intersect(near.val()).Volume()
-            except Exception:
-                v = -1.0
-            out[(joint, side)] = v
+            out[(joint, side)] = overlap(mv(probe, loc).val(), near.val())
     return out
 
 def thrust_clear():
@@ -2733,10 +2785,15 @@ PARTS, REPORT = {}, {}
 # is the point: a boolean that orphans a piece leaves a part that `isValid()` and
 # `Volume() > 0` both pass and a slicer happily prints the debris of - cell_holder came
 # back as five before its corner crescents were dealt with, and nothing here could see it.
-# The three below are deliberate: parts that are several bodies on one plate.
-#   chassis_top   3 - the deck, plus two loose 9.6 mm blocks off its rear edge
-#   camera_mount  3 - the channel plus its two rails
-#   servo_gauge   2 - two test coupons
+# Of the three below only servo_gauge is deliberate.  The other two are DEFECTS this entry
+# currently permits, recorded in ../MAC.md, "Open CAD defects found 2026-09-11", because
+# fixing either moves printed geometry:
+#   chassis_top   3 - the deck, plus the Orange Pi's REAR standoff pair as two 384 mm3
+#                     blocks floating 0.2 mm off the deck's own edge (they reach x -63.2,
+#                     the deck ends at -63).  OPI_HOLES is the number that is wrong.
+#   camera_mount  3 - the channel, plus the front retaining WALL in two loose pieces
+#                     (529 and 105 mm3).  See camera_mount()'s docstring.
+#   servo_gauge   2 - two test coupons, and this one is on purpose
 PART_SOLIDS = {"chassis_top": 3, "camera_mount": 3, "servo_gauge": 2}
 def build():
     hb, th, sh, ft = hip_bracket(), thigh(), shin(), foot()
@@ -2806,7 +2863,11 @@ PRINT_ORIENT = {"chassis_bottom": ((1,0,0),0), "chassis_top": ((1,0,0),0),
                 # the cell holder on its face, bores vertical: a 10 mm plate with
                 # six through holes, no overhang anywhere and nothing to support.
                 "cell_holder": ((0,1,0),90),
-                "lidar_mount": ((1,0,0),180),
+                # base disc DOWN, which is what the part was drawn for and what
+                # lidar_mount()'s docstring says.  It was 180 - upside down on the seat,
+                # which has no flat at all: tools/orient_scan.py reads 4310 mm2 of
+                # overhang and ZERO bed area that way against 2392 and 1656 mm2 this way.
+                "lidar_mount": ((1,0,0),0),
                 "hip_bracket_A": ((0,1,0),90),
                 "hip_bracket_B": ((0,1,0),90), "thigh_A": ((1,0,0),90),
                 "thigh_B": ((1,0,0),90), "shin_A": ((0,1,0),90), "shin_B": ((0,1,0),90),
@@ -2816,7 +2877,7 @@ PRINT_ORIENT = {"chassis_bottom": ((1,0,0),0), "chassis_top": ((1,0,0),0),
                 # unsupported ceiling into the bed itself.  See gps_mount's docstring.
                 "gps_mount": ((1,0,0),180),
                 # on its back skirt: the one big flat.  Stood up the right way this is a
-                # 90 x 20 mm wall on a 4 mm foot.  90 - CAM_TILT lays that face on the bed.
+                # 90 x 20 mm wall on a 4 mm foot.  90 + CAM_TILT lays that face on the bed.
                 "camera_mount": ((0,1,0), 90.0+CAM_TILT)}
 
 def main():
@@ -2860,8 +2921,7 @@ def main():
     # clearance rather than the bracket that holds it - they have to be in this check.
     for pname, psolid in (("camera", camera_module().val()), ("imu", imu_module().val())):
         for nm in BODY_PARTS:
-            try:    v = psolid.intersect(PARTS[nm][0].val()).Volume()
-            except Exception: v = 0.0
+            v = overlap(psolid, PARTS[nm][0].val())
             if v > INTERF_TOL:
                 bad.append((pname, nm, v))
     for na, nb, v in bad:
@@ -2873,7 +2933,7 @@ def main():
     # the deck.  The module IS a part, so its solids are covered above; what is not is
     # the air over it, which is what the whole redesign was spent on.
     iv, igap = imu_clear()
-    if iv > INTERF_TOL:
+    if iv > INTERF_TOL or iv < 0:
         print(f"  !! INTERFERENCE  imu x Orange Pi  {iv:.1f} mm3")
     else:
         print(f"  imu clear: {igap:+.2f} mm of air between the board and the Pi")
@@ -2883,14 +2943,14 @@ def main():
     else:
         print(f"  batt clear: {bgap:+.2f} mm of air between the module's lid and the deck")
     kv, mv_ = module_clear()
-    if max(kv, mv_) > INTERF_TOL:
+    if max(kv, mv_) > INTERF_TOL or min(kv, mv_) < 0:
         print(f"  !! BATTERY MODULE  case/lid into the pack: brick {kv:.1f} mm3,"
               f" BMS {mv_:.1f} mm3")
     else:
         print(f"  module clear: the case and lid touch neither the wrapped brick nor"
               f" the BMS ({kv:.1f} / {mv_:.1f} mm3)")
     hc, hcell = holder_clear()
-    if max(hc, hcell) > INTERF_TOL:
+    if max(hc, hcell) > INTERF_TOL or min(hc, hcell) < 0:
         print(f"  !! CELL HOLDER  into the case {hc:.1f} mm3, into the cells {hcell:.1f} mm3")
     else:
         print(f"  holder clear: both caps clear the case and all six cells"
@@ -2967,7 +3027,7 @@ def main():
               f" heads clear over {CRADLE_REACH:.0f} mm from inside the tray"
               f" (battery module out), {hgap:+.2f} mm of air to the pack")
     v = gps_clear()
-    if v > INTERF_TOL:
+    if v > INTERF_TOL or v < 0:
         print(f"  !! GPS MAST  {v:.1f} mm3 of gps_mount is inside the Orange Pi envelope")
     else:
         print(f"  gps clear:   mast over the {OPI_BOX[0]:.0f}x{OPI_BOX[1]:.0f}x{OPI_BOX[2]:.0f}"
@@ -3003,34 +3063,8 @@ def main():
           f" + LiDAR ~{LIDAR_KG*1000:.0f} g + GPS ~{GPS_KG*1000:.0f} g"
           f" + camera ~{CAMERA_KG*1000:.0f} g + IMU ~{IMU_KG*1000:.0f} g"
           f"  ->  ~{(tm+carried)/1000:.2f} kg")
-    print("  ROM scan (coarse, 10 deg steps, real solids):")
-    rom = {}
-    # gps_mount goes in MIRRORED: it stands over the rear pair of deck bosses and this
-    # scan swings the FRONT-left leg, so mirroring it forward is exactly the rear-leg
-    # scan against the real one - the legs are mirror images and the roll axis is x.
-    # The clamp screws go in on the STATIC side of every scan: they belong to the sleeve,
-    # which belongs to the proximal part, and it is the distal fork that sweeps over them.
-    # ... and the hub screw HEADS go on the MOVING side: they belong to the fork, and at
-    # the hip the passive arm's four sweep FORK_GAP from the gusset (see head_clear()).
-    rom["hip_roll"] = rom_scan(hip_bracket().union(mv(fork_screws(), ROLL_LOC)),
-                               PARTS["chassis_bottom"][0]
-                                               .union(PARTS["cradle_front"][0])
-                                               .union(mirX(gps_mount()))
-                                               .union(camera_mount())
-                                               .union(camera_module())
-                                               .union(mv(servo_dummy(), ROLL_LOC))
-                                               .union(mv(thrust_bolts(), ROLL_LOC)),
-                               (ROLL_X, ROLL_Y, ROLL_Z), axis=(1,0,0), lo=-90, hi=90)
-    rom["hip_pitch"] = rom_scan(thigh().union(mv(fork_screws(), PITCH_LOC)),
-                                hip_bracket().union(mv(servo_dummy(), PITCH_LOC))
-                                             .union(mv(thrust_bolts(), PITCH_LOC))
-                                             .union(mv(fork_screws(), ROLL_LOC)),
-                                (PITCH_X, LEG_Y, PITCH_Z))
-    rom["knee"] = rom_scan(shin().union(mv(fork_screws(), KNEE_LOC)),
-                           thigh().union(mv(servo_dummy(), KNEE_LOC))
-                                  .union(mv(thrust_bolts(), KNEE_LOC))
-                                  .union(mv(fork_screws(), PITCH_LOC)),
-                           (PITCH_X, LEG_Y, KNEE_Z))
+    print(f"  ROM scan (coarse, {ROM_STEP} deg steps, real solids):")
+    rom = rom_scan_all()
     for k, v in rom.items():
         print(f"    {k:10s} free {v[0]:+4d} .. {v[1]:+4d} deg  (0 = leg straight down)")
     with open(os.path.join(OUT, "bom.json"), "w") as f:

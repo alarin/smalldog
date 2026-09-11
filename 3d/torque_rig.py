@@ -10,11 +10,19 @@ per amp of PRESENT_CURRENT, or per unit of PRESENT_LOAD - and those two channels
 now agree with each other to 0.3 % and disagree with the datasheet by 2.2x
 (PLAN.md step 2c).  Friction survived that, because `tau_c` and `mu_load` are
 RATIOS measured in the same register units and converted through a gravity anchor
-that is known exactly.  `k_u` did not: the fit's implied stall is 4.23 N*m, the
-friction-cancelled ladder says 7.4, the vendor says 2.94, and nothing on the
-bench can tell which.  Right now `rl/` trains against a servo that peaks near
-4.4 N*m while `ros2/` clamps the same joint at 2.94 - a 44 % disagreement about
-how strong the robot is, decided by which sim you load.
+that is known exactly.  `k_u` did not: the fit's implied stall was 4.23 N*m, the
+friction-cancelled ladder said 7.4, the vendor said 2.94, and nothing on the
+bench could tell which - `rl/` trained against a servo that peaked near 4.4 N*m
+while `ros2/` clamped the same joint at 2.94, a 44 % disagreement about how
+strong the robot is, decided by which sim you loaded.
+
+**THAT QUESTION IS SETTLED.**  This rig answered it on 2026-09-10: the stall is
+**4.50 N*m**, and `SERVO_STALL_NM` in `mini_dog.py` has been that number since,
+which re-baselined `fea.py`'s stall column and all three sim arms (3d/CLAUDE.md
+steps 4 and 6).  What follows is kept in the present tense because the rig still
+has to be printed and run the same way for every following measurement - the
+duty ladder still caps the push, the frame is still checked against DESIGN_NM -
+but read the candidate list as history with one entry now confirmed.
 
 A force reading breaks the tie, because a scale is not a register.  Torque is
 then F x r, from a mass and a length, with no electrical parameter anywhere in
@@ -73,7 +81,6 @@ what stops it: at 170 mm the frame is 249 mm across a 256 mm bed, and 2 kg buys
 """
 from __future__ import annotations
 
-import math
 import os
 import sys
 
@@ -82,7 +89,7 @@ sys.path.insert(0, HERE)
 
 import cadquery as cq                                                # noqa: E402
 import mini_dog as md                                                # noqa: E402
-from mini_dog import (ARM_T, HUB_TOP_Z, S_AX, S_W, SLEEVE_LEN,       # noqa: E402
+from mini_dog import (HUB_TOP_Z, S_AX, S_W, SLEEVE_LEN,              # noqa: E402
                       SLEEVE_W, THRUST_L, bxc, cyl)
 import bench_rig as br                                               # noqa: E402
 from bench_rig import hub_bolts, hub_face, wedge                     # noqa: E402
@@ -293,21 +300,31 @@ def throat_clear():
     mini_dog.py - so nothing else here can see a throat that cannot be loaded.
 
     The screw length is the part that was wrong the first time.  The gap from the
-    platform up to the AXIS is not what the screw spans: the arm is in the way, and
-    it is ARM_TIP_W thick about the axis, so the screw only bridges from the arm's
-    underside down.  Reporting the axis gap flattered a 45 mm scale with 15 mm of
-    adjustment where the real figure was 3.
+    platform up to the AXIS is not what the screw spans: the arm is in the way, so
+    the screw only bridges from the arm's underside down.  Reporting the axis gap
+    flattered a 45 mm scale with 15 mm of adjustment where the real figure was 3.
+
+    And it was wrong a SECOND time, the same way: the underside was taken as
+    ARM_TIP_W/2 = 12, which is the beam, but the widest thing at the anvil is the
+    ANVIL_BOSS pad at 15 - and after the q=+90 rotation that direction is "down".
+    So read the underside off the ROTATED SOLID inside a slab at the anvil, the way
+    cradle_head_clear() reads the battery module's front face, rather than off
+    whichever constant looks like the right one.  It costs 3 mm, i.e. M6 x 35.
     """
     arm = PARTS["torque_arm"][0].rotate((0, 0, 0), (0, 0, 1), 90.0).val()
     frame = PARTS["torque_frame"][0].val()
     shared = arm.intersect(frame).Volume()
     platform = THROAT - SCALE_H            # x of the scale's top face, +x being down
-    reach = platform - ARM_TIP_W/2.0       # arm's underside to the platform
+    # the arm's lowest material AT THE ANVIL, measured: local +X points along +Y after
+    # the rotation, so slab the solid about the anvil's own line and take its xmax.
+    slab = bxc(-THROAT, THROAT, ARM_R-ANVIL_BOSS, ARM_R+ANVIL_BOSS, -FRAME_Z-50, FRAME_Z+50)
+    under = arm.intersect(slab.val()).BoundingBox().xmax
+    reach = platform - under               # arm's underside to the platform
     screw = int(round((reach + 18) / 5.0)) * 5
     print(f"  throat:     {THROAT:.0f} mm axis to jaw, {SCALE_H:.0f} mm of scale "
           f"-> platform sits {platform:.0f} mm below the axis")
-    print(f"  anvil:      {reach:.0f} mm from the arm's underside to the platform "
-          f"-> M6 x {screw:d}, two nuts")
+    print(f"  anvil:      {reach:.0f} mm from the arm's underside ({under:.0f} mm below "
+          f"the axis) to the platform -> M6 x {screw:d}, two nuts")
     print(f"  arm at q=90:{shared:9.1f} mm3 shared with the frame "
           f"({'clear' if shared < 1.0 else '!! FOULS'})")
     if reach < 4.0:
@@ -365,11 +382,11 @@ def strength():
 def duty_ladder():
     """What the scale reads, and the duty each candidate reaches its ceiling at.
 
-    This is the interlock.  The scale is 2 kg and two of the three candidates put
-    more than that through it at full duty, so the run has to be capped BEFORE the
-    first push and the cap has to be set for the WORST case - if the servo turns
-    out to be the 7.4 N*m one, a duty chosen for the 2.94 N*m one breaks the
-    instrument on push one.
+    This is the interlock.  The scale is 2 kg and three of the four candidates put
+    more than that through it at full duty - including the 4.50 N*m this rig went
+    on to measure - so the run has to be capped BEFORE the first push and the cap
+    has to be set for the WORST case: a duty chosen for the 2.94 N*m candidate
+    would have broken the instrument on push one.
     """
     r = ARM_R / 1000.0
     cap_kg = SCALE_MAX_KG * SCALE_HEADROOM

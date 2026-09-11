@@ -140,10 +140,15 @@ name → (workplane, qty, note) and drives both the export loop and the BOM;
   that ran the straps full width and cut only the arm's disc read `hip_roll +0 .. +0`;
   `STRAP_Y` is a hard ROM limit, not a guess. Added 2026-09-09.
 - **`cradle_front` is in `fea.py`'s set and it is the weakest printed part on the robot.**
-  Interlayer SF **1.35** at `land3g` on `--orient`'s build-direction index, against 2.01
+  Interlayer SF **1.33** at `land3g` on `--orient`'s build-direction index, against 2.01
   for `thigh_A`, 5.57 for `hip_bracket_A`, 12.65 for `shin_A` (those three were 3.08 / 8.52 /
   19.36 until `SERVO_STALL_NM` became a measured 4.50 on 2026-09-10 - this part did not move,
-  because it is governed by `land3g` and not by `stall`). Read `--orient`, not the
+  because it is governed by `land3g` and not by `stall`). **It went 1.35 -> 1.33 on
+  2026-09-11** and the other three did not move at all: `fea.robot_mass()` was missing the
+  GPS mast, the camera and the IMU (40 g), so every GROUND case had been running at
+  2.462 kg against the real 2.493 - 1.3 % light. Every ground force is 1.3 % higher now and
+  every `stall` number is bit-identical, which is exactly the signature of that fix. The
+  0.02 is the part getting an honest load, not the part getting weaker. Read `--orient`, not the
   `SF xy / z` column, for this part: the crude column assumes the worst stress orientation
   and says 0.7. **It is not a regression** - this geometry was inside `chassis_bottom`,
   which `fea.py` has never covered, so nobody had ever looked, and the first run found two
@@ -217,11 +222,16 @@ name → (workplane, qty, note) and drives both the export loop and the BOM;
 - **The MuJoCo joint feel lives there too** — `MJ_DAMPING`, `MJ_ARMATURE`,
   `MJ_FRICTIONLOSS`, `MJ_KP`, `MJ_DAMPRATIO`, in the same section 4 block, read by
   both sim exporters. They were duplicated once and diverged, exactly like the servo
-  mass above; `rl/checks/check_model.py` is what caught it. Three of the five are
-  estimates and say so, but `MJ_ARMATURE` = 0.008 is not: it is the ST3215's
-  reflected rotor inertia, the same number as `rl/actuator.py`'s `Params.J_m`. When
-  the bench fits the real actuator, these become its initial guess — never a second
-  opinion sitting beside it.
+  mass above; `rl/checks/check_model.py` is what caught it. **Four of the five are now
+  MEASURED, on one real ST3215 at three supply voltages, 2026-09-09** (PLAN.md step 3):
+  `MJ_DAMPING` = 1.37, `MJ_FRICTIONLOSS` = 0.184, `MJ_ARMATURE` = **0.0165**,
+  `MJ_KP` = 40.9. Only `MJ_DAMPRATIO` = 1.0 is still a choice. `mini_dog.py` section 4
+  carries each one's provenance and reads them, not a paraphrase of them.
+  **`MJ_ARMATURE` is deliberately NOT `rl/actuator.py`'s `Params.J_m`** — that default is
+  still 0.008 and should stay there, because it is flagged as an unfitted vendor prior and
+  `rl/params/st3215.json` carries the fit. The two numbers disagreeing is the record of
+  which one was measured, not a divergence to reconcile; see the note at `MJ_ARMATURE`
+  itself. This bullet said 0.008 and called it the same number, and it was neither.
 - **The foot's contact lives there too, and it was the same defect a fifth time** —
   `MJ_FOOT_CONDIM` = 4, `MJ_FOOT_FRICTION` = (1.2, 0.002, 0.001), `MJ_FOOT_PRIORITY` = 1,
   read by both exporters. They had diverged (torsion 0.05 in `export_sim.py` against 0.02
@@ -253,7 +263,7 @@ name → (workplane, qty, note) and drives both the export loop and the BOM;
   nothing but that pitch.** `cell_holder`, x2, one at each end of the cells: they exist
   because welding six loose cylinders into a brick by hand is the assembly step this
   design had no answer for. The obvious holder - a frame round the outside of the array -
-  does not fit, and that is measured, not felt: the module had 1.4 mm to the deck and its
+  does not fit, and that is measured, not felt: the module had 0.60 mm to the deck and its
   side walls are 0.5 mm off the deck screws' nut bosses, whose inner faces stand at
   |y| = 35.2 over the module's whole height. So the combs are **clipped flush with the
   outermost cells' own tangent planes in both y and z** - no material outboard of any cell
@@ -288,7 +298,8 @@ name → (workplane, qty, note) and drives both the export loop and the BOM;
   from |y| = 38 to 41, because at 38 their bosses took a 1.9 mm bite out of the module's
   corners; and `DECK_SCREWS` now carries its nut-channel direction explicitly, because |y|
   no longer tells the two pairs apart. `batt_clear()` prints the air over the lid on every
-  run - it is 1.4 mm, it is where a foam strip goes, and it may never be negative.
+  run - it is 0.60 mm (it was 1.4 before the cell holder's two separator gaps), it is
+  where a foam strip goes, and it may never be negative.
   **And the two things INSIDE the module are payloads, so they get their own probe**, the
   same way the foot bolt and the IMU do: `module_clear()` intersects the case and the lid
   against `brick_solid()` and `bms_solid()`, and both must be zero. It is not decoration -
@@ -434,16 +445,24 @@ name → (workplane, qty, note) and drives both the export loop and the BOM;
    **Re-baselined 2026-09-10 by the measured stall torque** (`SERVO_STALL_NM` 2.94 -> 4.50,
    a scale on `torque_rig.py`). `stall` is the FOURTH column and scales directly with that
    constant, so every stall number moved by exactly 1.53x and no other column moved at all.
-   At 2.46 kg, inter-layer: `hip_bracket_A` 46.8 / 23.4 / 7.8 / **1.6**,
-   `thigh_A` 18.8 / 9.4 / 3.1 / **0.8**, `shin_A` 60.0 / 30.0 / 10.0 / **3.2**,
-   `cradle_front` 4.0 / 2.0 / 0.7 / **1.9**.
+   **Re-baselined again 2026-09-11 by `fea.robot_mass()`**, which omitted `GPS_KG`,
+   `CAMERA_KG` and `IMU_KG` and counted the `servo_gauge` test print: the ground cases had
+   been running at 2.462 kg against the robot's real 2.493. The three ground columns are
+   now 1.3 % hotter and `stall` did not move by a digit - it scales with `SERVO_STALL_NM`,
+   not with mass. At 2.493 kg, inter-layer: `hip_bracket_A` 46.2 / 23.1 / 7.7 / **1.6**,
+   `thigh_A` 18.6 / 9.3 / 3.1 / **0.8**, `shin_A` 59.2 / 29.6 / 9.9 / **3.2**,
+   `cradle_front` 4.0 / 2.0 / 0.7 / **1.9**. `export_sim.py --check`'s cross-check now
+   agrees with `fea.robot_mass()` to the gram instead of by 31 g. The superseded 2.46 kg
+   set: 46.8 / 23.4 / 7.8 / 1.6, 18.8 / 9.4 / 3.1 / 0.8, 60.0 / 30.0 / 10.0 / 3.2,
+   4.0 / 2.0 / 0.7 / 1.9.
    **`thigh_A`'s 0.8 is not a part that fails.** That is the crude column, which assumes the
    worst stress orientation; read `--orient` here for exactly the reason the `cradle_front`
    invariant above already gives. On its real build direction `thigh_A` is **2.01**, down
    from 3.08 - still the second-weakest printed part, and it has lost a third of its margin.
    The `--orient` set is now `shin_A` 12.65, `hip_bracket_A` 5.57, `thigh_A` 2.01,
-   `cradle_front` **1.35 unchanged** - unchanged because that part is governed by `land3g`
-   and not by `stall`, which is also why it is still the weakest printed part on the robot.
+   `cradle_front` **1.33** - it read 1.35 until the `robot_mass()` fix above, and it is the
+   only one of the four that moved, because it is governed by `land3g` and not by `stall`,
+   which is also why it is still the weakest printed part on the robot.
    The superseded 2.94 set: `.. / 2.4`, `.. / 1.2`, `.. / 4.9`, `.. / 3.0`, and `--orient`
    19.36 / 8.52 / 3.08 / 1.35. Three of those moved by 0.1 against the
    2026-09-09 set (46.9 / 18.9 / 60.1) and it is the cell holder's +7 g of robot mass
@@ -519,6 +538,53 @@ name → (workplane, qty, note) and drives both the export loop and the BOM;
    The gait is due a re-tune regardless - see the fitted-actuator paragraph below, which
    says the walker is still asking for swing speeds the servo does not have - so do not
    spend mass buying these numbers back until that is done.
+
+   **Re-baselined 2026-09-11 by `settle()`, and this one is a HARNESS fix, not a model
+   change.** `ros2/tools/standalone_sim.py`'s `settle()` took its command once with
+   `dt = 0`; the gait rate-limits to `max_joint_rate * max(dt, 1e-4)`, so that bought
+   3e-4 rad from zeros and the robot settled with its legs STRAIGHT. Every arm below then
+   started its trot from a body still ramping down to the stance, and the self-test's
+   `stand` line read 199.4 mm against a 181 mm nominal. It seeds the limiter from the
+   stance now. Measured on one tree in one process, old `settle()` beside new, same scenes
+   and same seeds:
+
+   | | before (old `settle`, hand-typed limits) | `settle` fixed only | **after** (`settle` + CAD limits) |
+   |---|---|---|---|
+   | flat trot | 457.8 mm | 457.9 mm | **457.9 mm** |
+   | terrain, seeds 7…12 | 347 ±18 mm, 0/6 down | 420 ±16 mm, 0/6 down | **419 ±16 mm, 0/6 down** |
+   | course, seeds 7 / 8 / 9 | 2/7 1747, 1/7 1597, 2/7 1812, all upright | 0/7 731 **DOWN**, 2/7 1873, 2/7 1911 | **1/7 1663, 2/7 1733, 2/7 1836, all upright** |
+
+   **The third column also carries the JOINT LIMITS**, which moved in the same pass and are
+   the other half of this re-baseline: `../ros2/.../generate_model.py` had a hand-typed
+   `J_LIM` of 0.90 / 1.30 / 1.85 rad with a comment claiming it came from the CAD ROM scan.
+   It did not - `out/bom.json` reads +-90 / +-90 / +-110 deg and `export_sim.py` has always
+   exported exactly those - so the TWO EXPORTERS OF THIS CAD were shipping robots with
+   different mechanical limits, narrower there by 51.6 deg of roll and 74.5 deg of pitch.
+   That is the servo-mass defect again, and it is fixed the same way: the generator now
+   imports `export_sim.joint_rom()`/`limits()` rather than re-deriving them. Note what the
+   arms say about it - the flat trot and the terrain sweep did not move at all, so the gait
+   does not live near its clamps on open ground; the only place it mattered was the course.
+   It also widens the REAL robot, because `robot/runtime/calib.py` clamps the servos with
+   the derived `joint_soft_limits_rad` (roll 0.78 -> 1.45 rad).
+
+   **Seed 7 on the course is a coin and the 2x2 is worth keeping**: old settle + old limits
+   2/7 upright, EITHER change alone 0/7 and down (731 mm with the new settle, 752 with the
+   old settle and wide limits), both changes 1/7 1663 and upright. Seeds 8 and 9 barely
+   moved through all four cells. Read the course over seeds, as this section already says.
+
+   **The flat arm not moving is the control.** It is deterministic and it came back to
+   0.1 mm, which is what says the model itself did not move in this pass — same 2.493 kg,
+   same limits, same `MJ_*`. The terrain arm went UP on all six seeds, 73 mm of means
+   against spreads of 18 and 16, no falls either side: that is a different distribution,
+   not chaos. The course put **seed 7** on its back while the other two improved; the
+   default seed IS seed 7, so a bare `--course` now reads `DOWN at x=612 mm`. Read it over
+   seeds, as the paragraphs below already insist.
+
+   **CLOCKING the gait through the settle was tried first and is worse.** Calling
+   `joint_targets()` every step satisfies `_ground()`'s landing test while the robot just
+   stands there, so each leg latches a `_gz` offset during the settle and carries it into
+   the first stride: flat was unaffected, the terrain arm flipped the robot inside 5 s.
+   The settle holds a pose; it does not integrate terrain feedback against one.
 
    **Re-baselined 2026-09-11 by the gait's rate limit** (PLAN.md step 3b). No CAD, mass
    or actuator constant moved; `smalldog_walker/gait.py` stopped limiting itself against

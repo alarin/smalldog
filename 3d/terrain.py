@@ -1,9 +1,11 @@
 """
 terrain.py — procedural MuJoCo heightfield ground, shared by both sim exporters.
 
-`export_sim.py --terrain` and `../ros2/.../generate_model.py --terrain` both call
-`write(dir)` here; it drops a `terrain.png` next to the model and hands back the
-`<hfield>`/`<geom>` attributes that put the robot on it instead of on a flat plane.
+`export_sim.py` and `../ros2/.../generate_model.py` both call `write(dir)` here on every
+run; it drops a `terrain.png` next to the model and hands back the `<hfield>`/`<geom>`
+attributes that put the robot on it instead of on a flat plane.  The flags either exporter
+takes are `--terrain-amp`, `--terrain-wave` and `--no-terrain-obstacles`; there is no
+`--terrain` switch, because the terrain model is not optional output.
 
 The field is deterministic (seeded value noise), so two exporters — and two runs — get
 the same ground, and a self-test on terrain stays comparable between runs.  It is always
@@ -317,6 +319,12 @@ def course_geoms(h, course=COURSE, half_m=HALF_M, clear_r_m=FLAT_R_M):
         if lo < clear_r_m:
             raise ValueError(f"{kind} at x={x} reaches x={lo:.3f}, inside the spawn pad"
                              f" (r={clear_r_m}) — the robot would start on top of it")
+        # ... and the FAR end, which went unchecked: an obstacle whose ramp runs off the
+        # heightfield is bedded into ground_mm() readings clamped at the edge, so it comes
+        # out silently the wrong height rather than raising anything.
+        if hi > half_m:
+            raise ValueError(f"{kind} at x={x} reaches x={hi:.3f}, past the field's own"
+                             f" half-extent ({half_m}) — extend HALF_M or move it in")
     return out
 
 

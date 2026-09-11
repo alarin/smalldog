@@ -169,43 +169,31 @@ def limits(rom_deg, sign):
 # =====================================================================================
 # ROM
 # =====================================================================================
-# the window mini_dog.main() sweeps for each joint.  A free range that reaches its window
-# is not a mechanical limit, it is the end of the scan - say so rather than exporting it
-# as if the geometry had stopped the joint.
-SCAN_WINDOW = {"hip_roll": 90, "hip_pitch": 150, "knee": 150}
+# the window mini_dog.rom_scan_all() sweeps for each joint.  A free range that reaches its
+# window is not a mechanical limit, it is the end of the scan - say so rather than
+# exporting it as if the geometry had stopped the joint.  It lives in mini_dog with the
+# scan itself; this is an alias so the report below reads the same.
+SCAN_WINDOW = md.SCAN_WINDOW
 
 
 def joint_rom(step):
-    """{joint: (lo_deg, hi_deg)} in mini_dog's own (front-left) convention"""
+    """{joint: (lo_deg, hi_deg)} in mini_dog's own (front-left) convention.
+
+    The scan itself is md.rom_scan_all(), NOT a copy of it: this file used to spell the
+    three sweeps out again against a weaker static set (no gps_mount, no camera_mount, no
+    camera module, no thrust bolts, no fork screws), so --rom-step exported a wider roll
+    joint than mini_dog.py had just printed."""
     if step is None:
         bom = os.path.join(md.OUT, "bom.json")
         if os.path.exists(bom):
             with open(bom) as f:
                 rom = json.load(f).get("rom_deg")
             if rom:
-                print(f"  joint limits from {bom} (coarse 10 deg scan)")
+                print(f"  joint limits from {bom} (coarse {md.ROM_STEP} deg scan)")
                 return {k: tuple(v) for k, v in rom.items()}
-        step = 10
+        step = md.ROM_STEP
     print(f"  scanning joint limits at {step} deg - this is the slow part")
-    if not md.PARTS:
-        md.build()
-    return {
-        "hip_roll":  md.rom_scan(md.hip_bracket(),
-                                 md.PARTS["chassis_bottom"][0]
-                                   .union(md.PARTS["cradle_front"][0])
-                                   .union(md.mv(md.servo_dummy(), md.ROLL_LOC)),
-                                 (md.ROLL_X, md.ROLL_Y, md.ROLL_Z), axis=(1, 0, 0),
-                                 lo=-SCAN_WINDOW["hip_roll"], hi=SCAN_WINDOW["hip_roll"],
-                                 step=step),
-        "hip_pitch": md.rom_scan(md.thigh(),
-                                 md.hip_bracket().union(md.mv(md.servo_dummy(), md.PITCH_LOC)),
-                                 (md.PITCH_X, md.LEG_Y, md.PITCH_Z), step=step,
-                                 lo=-SCAN_WINDOW["hip_pitch"], hi=SCAN_WINDOW["hip_pitch"]),
-        "knee":      md.rom_scan(md.shin(),
-                                 md.thigh().union(md.mv(md.servo_dummy(), md.KNEE_LOC)),
-                                 (md.PITCH_X, md.LEG_Y, md.KNEE_Z), step=step,
-                           lo=-SCAN_WINDOW["knee"], hi=SCAN_WINDOW["knee"]),
-    }
+    return md.rom_scan_all(step=step)
 
 
 # =====================================================================================
@@ -374,7 +362,7 @@ def urdf(base_mp, legmp, rom, meshes, mesh_uri):
                   f' rpy="0 0 0"/>',
                   f'    <axis xyz="{fmt(axis)}"/>',
                   f'    <limit lower="{lo:.6g}" upper="{hi:.6g}"'
-                  f' effort="{md.SERVO_STALL_NM:.6g}" velocity="{md.SERVO_NOLOAD_RADS:.6g}"/>',
+                  f' effort="{md.SERVO_STALL_NM:.6g}" velocity="{JOINT_RATE_CEILING:.6g}"/>',
                   f'    <dynamics damping="{MJ_DAMPING}" friction="{MJ_FRICTIONLOSS}"/>',
                   '  </joint>',
                   f'  <link name="{link}_{tag}">',
@@ -384,6 +372,16 @@ def urdf(base_mp, legmp, rom, meshes, mesh_uri):
             x.append('  </link>')
     x.append('</robot>')
     return "\n".join(x) + "\n"
+
+
+# A joint cannot turn faster than where the actuator's torque ceiling meets its damping,
+# (forcerange - frictionloss)/damping = 3.15 rad/s, and that is BELOW the servo's measured
+# no-load 3.86 - so the no-load figure alone over-states the URDF's velocity limit by 23 %.
+# ../ros2/.../generate_model.py has taken the min() of the two since the rate-limit
+# re-baseline (3d/CLAUDE.md step 6, 2026-09-11); this file was still writing the raw
+# no-load number, which is the two-exporters-disagree defect again.
+JOINT_RATE_CEILING = min((md.SERVO_STALL_NM - md.MJ_FRICTIONLOSS) / md.MJ_DAMPING,
+                         md.SERVO_NOLOAD_RADS)
 
 
 def _urdf_collision(link, f):
@@ -616,19 +614,19 @@ def main():
     try:
         import fea
         ref = fea.robot_mass()
-        # fea's estimate prints everything at PETG density and counts the servo_gauge
-        # test print, so it sits a few grams high; a big gap means a real disagreement.
+        # fea.robot_mass() carries the same payload list this file does and uses
+        # md.part_rho() per part (so the foot is TPU, not PETG); the two should now agree
+        # to the gram, and any gap is a real disagreement about what is on the robot.
         flag = "" if abs(ref - total) < 0.05 else "   !! disagrees with fea.robot_mass()"
-        print(f"  cross-check: fea.robot_mass() = {ref:.3f} kg (PETG everywhere,"
-              f" incl. servo_gauge){flag}")
+        print(f"  cross-check: fea.robot_mass() = {ref:.3f} kg{flag}")
     except Exception as e:
         print(f"  cross-check against fea.robot_mass() skipped ({e})")
 
     if a.check:
-        check(uri)
+        check()
 
 
-def check(uri):
+def check():
     """load what we just wrote and actually stand on it"""
     try:
         import mujoco
@@ -733,8 +731,11 @@ def check(uri):
         f.write(txt)
     try:
         u = mujoco.MjModel.from_xml_path(tmp)
-        # a URDF root has no free joint, so MuJoCo welds base_link to the world and
-        # its mass lands in body 0 - sum the bodies instead of taking a subtree.
+        # A URDF root has no free joint, so MuJoCo welds base_link to the world and
+        # DISCARDS its inertial: u.body_mass[0] is 0.0, not the base link's mass.  So this
+        # sum is the twelve leg links and nothing else, which is what makes it comparable
+        # to the mjcf subtree below - but it also means the base link's own mass is the one
+        # thing this cross-check never looks at.  fea.robot_mass() above is what covers it.
         um = float(sum(u.body_mass))
         moving = m.body_subtreemass[1] - m.body_mass[1]      # the mjcf's 12 leg links
         dm = abs(um - moving)

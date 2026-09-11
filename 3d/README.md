@@ -411,9 +411,12 @@ in the deck window, and both are gone. Redraw it before relying on it.
   `panel_clear()` probes every opening along −x against the assembled body on every run,
   and it is a failure line like `!! INTERFERENCE`, not a note.
 - Orange Pi 5 Pro: four printed standoffs on the deck (92 × 54 pattern — **verify**).
-  With that pattern the rear pair lands at x = −68 on a deck that ends at −63, i.e. 0.8 mm
-  clear of it, so `chassis_top` currently comes out as three solids. That is the hole
-  pattern being wrong, not the deck: fix `OPI_HOLES` / `OPI_X` once a real board is measured.
+  With that pattern the rear pair lands at x = −68 on a deck that ends at −63; with
+  `OPI_STAND_R` = 4.8 the standoff's nearest material is at −63.2, i.e. **0.2 mm** clear
+  of the deck (it said 0.8 here and that was never measured), so `chassis_top` currently
+  comes out as three solids — two of them 384 mm³ of standoff floating on nothing. That is
+  the hole pattern being wrong, not the deck: fix `OPI_HOLES` / `OPI_X` once a real board
+  is measured. Open, and recorded in `../MAC.md`, "Open CAD defects found 2026-09-11".
   Its **envelope** is a separate number and a load-bearing one: `OPI_BOX` = 100 × 62 × 20
   over the deck (board, connector row, heatsink), the box every exporter hangs
   `ELECTRONICS_KG` on *and* the keep-out `gps_mount` arches over. It used to be a literal
@@ -562,10 +565,14 @@ OV5693 module for the sensor, not the megapixels: 1/2.8" is ~3× the area of the
   `z + (x − 42)·tan 45° = −9` against the seat's 60 — 69 mm of margin, where the deck lip
   in front has 4 — and `lidar_fov_clear()` charges the real 96° NEGA cone against the part
   on every build: **+48.1° outside it**.
-- So the mount is a trestle on the deck's **rear** pair of boss screws, mirroring what
-  the removed `lidar_guard` used to play with the front pair: it drills nothing, those
-  two M3 × 12 simply
-  become M3 × 24. The receiver lies on the platform and the patch sits on the receiver,
+- So the mount is a trestle over the deck's **rear** pair of boss screws, mirroring what
+  the removed `lidar_guard` used to play with the front pair: the intent is that it drills
+  nothing and those two M3 × 12 simply become M3 × 24. **It does not line up any more, and
+  that is an open defect**: `GPS_Y` is 38 and all four deck-screw pairs moved to |y| = 41
+  when the battery module went in, so the feet and the boss screws are 3 mm apart. Neither
+  `interference()` nor `rom_scan` can see it — the two parts share no solid. Recorded in
+  `../MAC.md`, "Open CAD defects found 2026-09-11"; the fix is not free, because
+  `GPS_PAD_R` = 4.8 at y = 41 reaches 45.8 into the stiffening lip at 43. The receiver lies on the platform and the patch sits on the receiver,
   which is how the module ships.
 - **The kink in the arms is derived, not styled.** Two constraints pull opposite ways: no
   run may lean more than 45° off vertical or the part stops printing without support (the
@@ -681,7 +688,12 @@ That orientation is `PRINT_ORIENT` in `mini_dog.py`, and it is measured, not cho
 and all six axis-aligned directions were then sliced. Two things came out of it and both are
 in the table above — the deck and the LiDAR pedestal were being printed upside down (the
 deck's flat face had 263 mm² on the bed against 9212 mm² the other way up), worth 22 g of
-support and 40 min. The rest is already at its optimum, and for `hip_bracket` / `thigh` /
+support and 40 min. **The pedestal's entry did not actually get that fix until
+2026-09-11**: `PRINT_ORIENT["lidar_mount"]` was still `((1,0,0), 180)`, which stands the
+part on its seat — a face with no flat at all. Measured with `tools/orient_scan.py` on the
+shipping STL: 4310 mm² of overhang and **zero** bed contact that way up, against 2392 mm²
+and 1656 mm² on its base disc, which is the direction `lidar_mount()`'s docstring has
+always claimed it prints in. The rest is already at its optimum, and for `hip_bracket` / `thigh` /
 `shin` that optimum is also the *strongest* build direction (`fea.py --all --orient` scores
 the traction on the layer plane): the hip bracket printed on its Y face would save 17 g of
 support for a third of its interlayer margin — 5.35 → 3.53 — so it stays where it is.
@@ -755,9 +767,14 @@ well as a floor — a longer screw is not the safe direction:
 - **the camera, M3 × 20.** Head counterbore at `top` − 6 = 25.96, nut floor at
   `CAM_LEDGE` − `CAM_NUT_DZ` = 7.36: 18.6 mm to full engagement. M3 × 16 reaches 9.96 and
   the nut's top face is at 10.06, i.e. it does not enter the nut at all.
-- **the IMU, M2.5 × 6.** 1.6 of board + 1.75 of tab reaches the nut, 2.0 more clears it —
-  5.35. It stands 0.65 proud of the deck's top face, under the Pi's 7 mm standoffs.
-  The board thickness is `IMU_BOARD` and is still **verify**; so is this length.
+- **the IMU, M2.5 × 8 thread-forming, no nut.** The board no longer hangs from two tabs in
+  the deck window — it sits on two standoffs on the deck's TOP face (see the IMU block) —
+  so the screw runs down through 1.6 of board and then `IMU_TAP_L` = 5.0 of formed thread
+  (2 × D: the 2 mm standoff plus 3 mm into the deck's own 4, not through it) — 6.6 mm of
+  path, i.e. M2.5 × 8 and never × 10, which would break out under the deck.
+  This is one of the only two screws on the robot that threads into plastic, and it
+  qualifies because nothing loads it (`M25_TAP`, and that radius is still **UNVERIFIED**).
+  The board thickness is `IMU_BOARD` and is still **verify**.
 
 **Nothing in a torque path threads into plastic.** Every screw above — they are all load
 paths — that is not going into the stock aluminium lands in a nut, and every one of those
