@@ -133,7 +133,7 @@ The `tau_c` result is worth more than the number: the bidirectional ladder and
 the free-swing fit are two independent routes that had disagreed by 2×, and they
 now agree at **0.184 vs 0.186**. That is the cross-check this parameter never had.
 
-### 2b. HALF DONE 2026-09-11 — the bench model sticks; the training path does not
+### 2b. DONE 2026-09-11 — both halves stick now, by two different mechanisms
 
 **Done: `simulate()` uses Karnopp.** Below `v_eps` friction opposes the NET applied
 torque up to `tau_c + mu_load*|tau_t|` and the shaft is held, instead of
@@ -150,14 +150,39 @@ does not exist yet. No amount of care inside `actuator.py` recovers it. So stick
 training path has to be **MuJoCo's own `frictionloss`**, which is a real stick-slip
 constraint solved with everything else.
 
-**Not done, and why.** That swap means `rl/model.py` stops zeroing `frictionloss` and
-sets it to `tau_c`, while `actuator.py` stops applying the same floor on that path or it
-double-counts. It was not done here because this machine has no jax and the change could
-not be run end to end — shipping untested training physics is worse than shipping none.
-Note one honest limit of the plan even when it is done: `frictionloss` is a constant
-per joint, so it can carry the `tau_c` floor but NOT the load-dependent
-`mu_load*|tau_t|` part, which at stance is roughly 0.11 N*m of the ~0.30 total. That
-half keeps the smooth law and keeps lacking stick.
+**Done on the WSL2 box, 2026-09-11**, where the change could be run end to end.
+`model.build_spec()` sets every joint's `frictionloss` to the fitted `tau_c` = 0.184
+instead of zeroing it, and `actuator.friction()`/`motor_torque()` take a
+`tau_c_external` flag that `walk.py`, `eval.py` and all three of `tools/` pass, so the
+floor is applied once rather than twice. Two A/Bs on the same model, the law's own code
+path either side:
+
+| | frictionloss 0, law owns `tau_c` | frictionloss = `tau_c` |
+|---|---|---|
+| torque off, 1 s from the CAD stance | base falls **107.7 mm**, worst joint 93.9 deg | **65.6 mm**, 44.1 deg |
+| holding the stance, residual joint speed at 3 s | 0.0033 rad/s | **0.0009** — it stops rather than creeps |
+
+The honest limit stands as this section predicted: `frictionloss` is a constant per
+joint, so it carries the `tau_c` floor but NOT the load-dependent `mu_load*|tau_t|`
+part, roughly 0.11 N*m of the ~0.30 at stance. That half keeps the smooth law and
+keeps lacking stick.
+
+**`tau_c` changed sides with it, and that was forced too.** It is a MuJoCo model field
+now, and the only thing that can randomise a model field is brax's `randomization_fn` —
+so the draw left `walk._sample_episode` for `env/randomize.py`: same range, same
+evidence, multiplicative on the fitted nominal, **per environment and fixed for the run**
+instead of per episode. Grease and preload do not change between one episode and the
+next, so the physical reading is not worse; what is lost is variety per unit of
+wall-clock. It lands beside `J_m`, which left the same draw the same day for the
+complementary reason — it was drawn correctly and read by nothing — so `env/randomize.py`
+now carries both `dof_frictionloss` and `dof_armature` and `model.EPISODE_DRAW` lists
+neither. (That table is walked by its own index rather than by a hand-numbered
+`jax.random.split`, so a field leaving it costs no spare key; the seeds were not
+comparable across this day's work either way.) `check_model.py` asserts both are absent
+from the episode draw and installed at their fitted nominal on the compiled training
+model (it must run on the robot, where there is no jax); `python -m env.randomize` is the
+batched-shape probe on the jax side, covering both fields, written because `mu_load`'s
+only symptom was ever a shape.
 
 **The refit was run, and it does NOT rescue `mu_load`.** `fit_bam.py --holdout chirp`
 over the 44-run set, against the Karnopp model, 2026-09-11: `J_m` +20.5 %
@@ -554,13 +579,13 @@ Train and evaluate in sim now. **Do not expect to deploy** — that needs the IM
 Three things, none of them large, and two are decisions about which number goes where
 rather than new work:
 
-1. **`rl/` has no static friction at all.** `model.py` zeroes MuJoCo's `damping` and
-   `frictionloss` because `actuator.py` supplies them, but `actuator.py`'s friction is
-   `tanh(w/v_eps)` — exactly zero at rest (step 2b). So a standing or stancing robot in
-   `rl/` feels **zero** joint friction while the real servo has 0.18–0.35 N·m and the
-   ROS 2 model now has 0.184. At ~0.3–0.5 N·m of knee torque in stance that is a third
-   to a half of the load. Step 3 made this gap *wider* rather than narrower: both sims
-   were wrong together at 0.02 before, and now `ros2/` is right and `rl/` is at zero.
+1. **RESOLVED 2026-09-11 — step 2b's swap is in.** `rl/` had **zero** joint friction at
+   rest while the real servo has 0.18–0.35 N·m, because `model.py` zeroed MuJoCo's
+   `frictionloss` and `actuator.py`'s own friction is `tanh(w/v_eps)`, exactly zero at
+   w = 0. The floor is MuJoCo's `frictionloss` = `tau_c` now and the law drops its copy
+   on that path (`tau_c_external`). The two sims agree again; what `rl/` still lacks at
+   rest is the load-dependent `mu_load*|tau_t|` half, ~0.11 N·m of the ~0.30 at stance,
+   which no per-joint constant can carry.
 2. **RESOLVED 2026-09-10, in `rl/`'s favour.** The two sims disagreed about servo
    strength by 44 % — `rl/`'s emergent `k_u × 12` = 4.23 N·m against `ros2/` clamping
    the same joint at the datasheet's 2.94 — and it decided how strong the servo was

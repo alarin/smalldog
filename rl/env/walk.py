@@ -408,15 +408,21 @@ class Walk(PipelineEnv):
         """A Params whose fields are this environment's draw. One copy of the law:
         these feed actuator.py's own functions with xp=jnp.
 
-        `J_m` is absent on purpose and keeps its nominal value here. It is
-        inertia; MuJoCo owns the mass matrix, no function in actuator.py's array
-        API reads it, and it is randomised as `dof_armature` in env/randomize.py
-        where the physics can see it. A draw placed here moved nothing at all.
+        NEITHER `J_m` NOR `tau_c` is replaced here, and the two absences are the
+        same lesson from opposite ends. `J_m` is inertia: MuJoCo owns the mass
+        matrix, no function in actuator.py's array API reads it, and a draw
+        placed here moved nothing at all - it is `dof_armature` in
+        env/randomize.py now. `tau_c` is read by the law, but not on this path:
+        the Coulomb floor is MuJoCo's `dof_frictionloss` (model.py docstring 2),
+        so `actuator.bus_torque` is called with `tau_c_external=True` and
+        whatever `_p0.tau_c` holds is unused; its per-environment spread is drawn
+        in env/randomize.py too. Replacing either here would look like it
+        mattered and would not.
         """
         return dataclasses.replace(
             self._p0,
             k_u=info["k_u"], k_e=info["k_e"], R=info["R"],
-            tau_c=info["tau_c"], b_v=info["b_v"], mu_load=info["mu_load"],
+            b_v=info["b_v"], mu_load=info["mu_load"],
             kp=info["kp"],
             deadband=info["deadband"], punch=info["punch"])
 
@@ -479,6 +485,14 @@ class Walk(PipelineEnv):
         different draws again. The ranges and the evidence behind each are in
         params/domain_rand.json.
         """
+        # One key per field of EPISODE_DRAW, plus one for delay_ticks' fractional
+        # tick. No hand-numbered count and so no spare key to keep: `tau_c` and
+        # `J_m` both left that table for env/randomize.py, and because the table
+        # is walked by its own index the fields after them simply close up. (The
+        # reason a hand-numbered split wanted a spare - keeping a seed's other
+        # draws where they were - does not survive this commit anyway: the 12
+        # fields, their order and delay_ticks' arithmetic all changed with it,
+        # and rl/CLAUDE.md records the whole of it as a retrain.)
         keys = jax.random.split(rng, len(model_mod.EPISODE_DRAW) + 1)
 
         def uniform(i, lo, hi, shape):
@@ -575,7 +589,14 @@ class Walk(PipelineEnv):
             # current of all twelve — actuator.bus_torque is that whole chain,
             # stated once and shared with eval.py's CPU pass and with
             # check_model.py's probe that every drawn parameter is consumed.
-            tau = actuator.bus_torque(p, target - q, w, u_bat, sag, xp=jnp)
+            #
+            # tau_c_external: MuJoCo's frictionloss applies the Coulomb floor
+            # here, because tanh(w/v_eps) cannot hold a joint at rest and a
+            # stance foot spends most of its time there. Counting it in both
+            # places would double it (actuator.friction, model.build_spec,
+            # PLAN.md 2b).
+            tau = actuator.bus_torque(p, target - q, w, u_bat, sag, xp=jnp,
+                                      tau_c_external=True)
             return self._pipeline.step(self.sys, ps, tau, self._debug), tau
 
         ps, taus = jax.lax.scan(one, state.pipeline_state, (), self._n_frames)

@@ -155,7 +155,7 @@ ladders mean three different things.
 | `actuator.py` | ST3215 voltage law, back-EMF, friction, backlash — step 3 |
 | `params/st3215.json` | actuator parameters. **A fit** — `fit_bam.py`, 44 runs at three voltages — and under-determined; read its `source` before quoting it, and note its free speed of 5.90 rad/s against a measured 3.86 |
 | `params/bus_timing.json` | written by `robot/bench/bus_probe.py`; **read** by `model.domain_ranges()`, which is where the command-delay range comes from |
-| `params/domain_rand.json` | randomisation ranges, each marked measured or guessed — step 4 |
+| `params/domain_rand.json` | randomisation ranges, each marked measured or guessed — step 4. Two of them (`J_m`, `tau_c`) are applied to MuJoCo model fields in `env/randomize.py` rather than to the per-episode draw; the rest are `model.EPISODE_DRAW` |
 | `model.py` | training model = generated MJCF + MjSpec edits — step 4 |
 | `env/` | observations, actions, rewards, commands, randomisation — step 4 |
 | `jaxenv.py` | the env vars this box needs, each set before the library that reads it |

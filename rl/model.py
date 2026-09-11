@@ -27,19 +27,39 @@ What gets changed, and why each one is a training concern rather than a model fi
    servo, good enough for the analytic trot in `ros2/`, and check_model.py lists
    it under "GUESSED — and not a servo model".
 
-2. ARMATURE BECOMES THE REFLECTED ROTOR INERTIA, DAMPING AND FRICTIONLOSS GO TO ZERO.
+2. ARMATURE BECOMES THE REFLECTED ROTOR INERTIA, DAMPING GOES TO ZERO, AND
+   FRICTIONLOSS BECOMES THE MEASURED COULOMB FLOOR.
    Not a tightening — a move. `armature`, `damping` and `frictionloss` in the
-   MJCF are three of the four guesses check_model.py flags. Once `actuator.py`
-   supplies Coulomb friction (tau_c), viscous friction (b_v) and back-EMF damping
-   (k_w = k_u*k_e), leaving MuJoCo's own damping and frictionloss in place counts
-   the same physics twice. The reflected inertia J_m has to stay in MuJoCo — it
-   is inertia, it belongs in the mass matrix, and at 1:345 it is ~151x the knee
-   link's own, which check_model.py measures and calls the dominant term.
+   MJCF are three of the four guesses check_model.py flags. `actuator.py`
+   supplies viscous friction (b_v) and back-EMF damping (k_w = k_u*k_e), so
+   leaving MuJoCo's own damping in place counts the same physics twice. The
+   reflected inertia J_m has to stay in MuJoCo — it is inertia, it belongs in the
+   mass matrix, and at 1:345 it is ~151x the knee link's own, which check_model.py
+   measures and calls the dominant term.
    It is also where J_m is RANDOMISED, for the same reason: `env/randomize.py`
    scales `dof_armature` per environment, because that field is what the physics
    reads. A per-episode draw on `actuator.Params.J_m` moved nothing at all — no
    function on the training path reads it — and it shipped that way until
    check_model.py's probe was taught to ask whether a drawn field is consumed.
+
+   `frictionloss` USED to go to zero on the same argument, and that was the one
+   place the argument failed (PLAN.md 2b). `actuator.py`'s Coulomb term is
+   `(tau_c + mu_load*|tau_t|) * tanh(w/v_eps)`, which is exactly zero at rest, so
+   a standing or stancing robot here felt NO joint friction at all while the real
+   servo breaks away at 0.18-0.35 N*m and the ROS 2 model carries 0.184. Karnopp
+   fixes this inside `actuator.simulate()`, which owns every torque as state; it
+   cannot be done on this path, where MuJoCo owns the load and the net torque
+   does not exist when the law is called. So the floor is MuJoCo's own
+   `frictionloss` — a real stick-slip constraint, solved with everything else —
+   set to the fitted `tau_c`, and every MuJoCo caller of `actuator.motor_torque`
+   passes `tau_c_external=True` so it is applied once. What MuJoCo cannot carry
+   is the load-dependent half: `frictionloss` is a constant per joint, so
+   `mu_load*|tau_t|` (~0.11 N*m of the ~0.30 at stance) keeps the smooth law and
+   keeps lacking stick.
+   `tau_c` is therefore randomised exactly where J_m is — `dof_frictionloss` in
+   `env/randomize.py`, per environment — and for exactly the same reason: the
+   field the physics reads is the field the draw has to touch. Two constants left
+   the episode draw by two different routes and arrived at the same place.
 
 3. THE FEET KEEP priority=1.
    The generated model already ships `priority="1"` on the foot geoms: the CAD's
@@ -195,17 +215,20 @@ def build_spec(terrain: bool = False, n_boxes: int = 0, p: actuator.Params | Non
                  f"+-{ceiling:g} N*m ceiling (derived: k_u x the top of its own "
                  f"range x a full pack, x{TORQUE_CEILING_MARGIN:g})")
 
-    # 2. armature <- J_m; damping and frictionloss go to the law.
+    # 2. armature <- J_m; damping goes to the law; frictionloss is the floor
+    #    the law cannot supply at rest (docstring 2, PLAN.md 2b).
     n = 0
     for j in spec.joints:
         if j.type == mujoco.mjtJoint.mjJNT_FREE:
             continue
         j.armature = float(p.J_m)
         j.damping = [0.0, 0.0, 0.0]     # MjsJoint.damping is a 3-vector, not a scalar
-        j.frictionloss = 0.0
+        j.frictionloss = float(p.tau_c)
         n += 1
     notes.append(f"{n} joints: armature <- J_m = {p.J_m:g} kg*m^2, "
-                 f"damping and frictionloss -> 0 (actuator.py supplies b_v, tau_c, k_w)")
+                 f"damping -> 0 (actuator.py supplies b_v and k_w), "
+                 f"frictionloss <- tau_c = {p.tau_c:g} N*m (MuJoCo sticks; the "
+                 f"law drops its own tau_c on this path)")
 
     # 3. the feet win their own contact parameters.
     if foot_priority:
@@ -401,9 +424,20 @@ N_JOINTS = 12
 #: was dead (every draw truncated to 0 ticks) and `J_m` was being drawn into a
 #: field no function on the training path reads.
 #:
-#: `J_m` is deliberately NOT here. It is inertia, the physics reads it as
-#: `dof_armature`, and that is where env/randomize.py randomises it — see the
-#: module docstring, item 2.
+#: `J_m` and `tau_c` are deliberately NOT here, and for the same reason. J_m is
+#: inertia and the physics reads it as `dof_armature`; tau_c is the Coulomb floor
+#: and the physics reads it as `dof_frictionloss` — the only thing in this tree
+#: that sticks at rest (PLAN.md 2b). Both are MuJoCo model fields, so both are
+#: randomised per environment in env/randomize.py, where the physics can see
+#: them. See the module docstring, item 2.
+#:
+#: Removing one of these does NOT leave a hole in the key numbering. This table
+#: is walked by POSITION IN ITSELF — `sample_episode` hands `uniform` the index
+#: of the field it is drawing — so a field that leaves simply stops being drawn
+#: and the ones after it close up. (b7ff02d kept `keys[4]` spare against the day
+#: `tau_c` left a hand-numbered `jax.random.split(rng, 13)`; that numbering is
+#: gone, so there is no spare key to preserve. Seeds are not comparable across
+#: this table changing either way, which the 2026-09-11 re-baseline already says.)
 #:
 #: A key ending in `_abs` means the range is the value itself in SI; otherwise it
 #: multiplies the nominal in params/st3215.json.
@@ -412,7 +446,6 @@ EPISODE_DRAW = (
     ("k_u",      "actuator", "k_u",          True),
     ("k_e",      "actuator", "k_e",          True),
     ("R",        "actuator", "R",            True),
-    ("tau_c",    "actuator", "tau_c",        True),
     ("b_v",      "actuator", "b_v",          True),
     ("mu_load",  "actuator", "mu_load",      True),
     ("kp",       "actuator", "kp",           True),
@@ -427,6 +460,13 @@ EPISODE_DRAW = (
 #: per-episode `J_m` draw read, applied where the physics can see it.
 ARMATURE_RANGE = ("actuator", "J_m")
 
+#: What `dof_frictionloss` is scaled by, per environment — the same arrangement
+#: one field over. `tau_c` left this table on 2026-09-11 for the same reason
+#: `J_m` did: the physics reads a MuJoCo field, not a Params attribute, and a
+#: draw that does not touch that field is a dead axis. See the module docstring,
+#: item 2, and env/randomize.py.
+FRICTIONLOSS_RANGE = ("actuator", "tau_c")
+
 
 def sample_episode(uniform, ranges: dict | None = None,
                    base: actuator.Params | None = None) -> dict:
@@ -440,6 +480,12 @@ def sample_episode(uniform, ranges: dict | None = None,
 
     Per joint where the spread is per-servo (twelve different motors out of one
     bag), per robot where it is not (one pack, one bus).
+
+    Neither `J_m` nor `tau_c` is here, and both absences say the same thing: the
+    physics reads `dof_armature` and `dof_frictionloss`, which are MuJoCo model
+    fields, so only brax's randomization_fn can move them and their draws live in
+    env/randomize.py — same ranges, same evidence, per environment rather than
+    per episode.
     """
     ranges = ranges or domain_ranges()
     base = base or actuator.load(quiet=True)

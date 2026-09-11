@@ -261,7 +261,8 @@ def current(p: Params, u_volt: float, w: float, driven=True, xp=np) -> float:
     return xp.where(driven, (u_volt - p.k_e * w) / p.R, 0.0)
 
 
-def friction(p: Params, w: float, tau_t: float, xp=np) -> float:
+def friction(p: Params, w: float, tau_t: float, xp=np,
+             tau_c_external: bool = False) -> float:
     """Gearbox friction: a constant, a term that grows with LOAD, and a viscous one.
 
     The middle term is the one most models leave out, and leaving it out is not a
@@ -287,13 +288,29 @@ def friction(p: Params, w: float, tau_t: float, xp=np) -> float:
     56 %. Both land on the reported numbers without a second coefficient, and a
     second coefficient fitted to the residual of the first would not be
     identifiable from this bench anyway.
+
+    **`tau_c_external` says who applies the Coulomb floor, not whether it
+    exists.** `_sign()` is `tanh(w/v_eps)`, which is exactly zero at rest, so
+    this expression cannot hold a joint at w = 0 — the defect PLAN.md 2b names.
+    `simulate()` below fixes it with Karnopp, because it has every torque as
+    state and can ask whether the NET one is below breakaway. The MuJoCo
+    consumers — `rl/env/walk.py`, `rl/eval.py`, `rl/tools/` — cannot: MuJoCo owns
+    the load, so at the moment this is called the net torque does not exist yet.
+    There the floor is MuJoCo's own `dof_frictionloss`, a real stick-slip
+    constraint solved with everything else, installed by `model.build_spec()`;
+    those callers pass `tau_c_external=True` and the floor is applied once rather
+    than twice. What stays here on that path is deliberate: `frictionloss` is one
+    constant per joint and cannot carry `mu_load*|tau_t|` — roughly 0.11 N*m of
+    the ~0.30 at stance — and viscous drag does not stick, so `b_v*w` was never a
+    candidate for it either.
     """
-    return ((p.tau_c + p.mu_load * xp.abs(tau_t)) * _sign(w, p.v_eps, xp)
+    tau_c = 0.0 if tau_c_external else p.tau_c
+    return ((tau_c + p.mu_load * xp.abs(tau_t)) * _sign(w, p.v_eps, xp)
             + p.b_v * w)
 
 
 def motor_torque(p: Params, u_volt: float, w: float, driven=True, tau_t=None,
-                 xp=np) -> float:
+                 xp=np, tau_c_external: bool = False) -> float:
     """Torque at the joint before the transmission.
 
     The back-EMF term is gated by `driven`, and the distinction is not
@@ -320,14 +337,20 @@ def motor_torque(p: Params, u_volt: float, w: float, driven=True, tau_t=None,
     the bridge off, i.e. a free swing, where tau_drive is zero and the gearbox is
     still carrying the whole load. That case only arises on the bench, and on the
     bench `simulate()` passes the real value.
+
+    `tau_c_external=True` hands the Coulomb floor to MuJoCo's `dof_frictionloss`
+    and is what every MuJoCo caller passes — see `friction()`. The proxy above is
+    unaffected by it: it converts a drive torque into a transmitted one, which is
+    a property of the gearbox, not of who books the friction.
     """
     if tau_t is None:
         tau_t = p.k_u * u_volt / (1.0 + p.mu_load)
     return (p.k_u * u_volt - xp.where(driven, p.k_w * w, 0.0)
-            - friction(p, w, tau_t, xp))
+            - friction(p, w, tau_t, xp, tau_c_external=tau_c_external))
 
 
-def bus_torque(p: Params, err, w, u_bat, sag, xp=np):
+def bus_torque(p: Params, err, w, u_bat, sag, xp=np,
+               tau_c_external: bool = False):
     """The whole chain a ROBOT joint sees: inner loop, pack sag, motor torque.
 
     One statement of it, because it was written out three times — rl/env/walk.py
@@ -351,11 +374,20 @@ def bus_torque(p: Params, err, w, u_bat, sag, xp=np):
     negative voltage. (The range has since been narrowed to 0-0.06 ohm as well,
     which makes the clamp unreachable in normal operation. Both, not either: a
     floor that is only satisfied by accident is not a floor.)
+
+    `tau_c_external` is passed straight through to `motor_torque`, and EVERY
+    caller of this function passes True, because every one of them is a MuJoCo
+    path: rl/env/walk.py inside the physics scan, rl/eval.py's vanilla-MuJoCo
+    pass, rl/checks/check_model.py's consumption probe, which exists to describe
+    the first two. It is a parameter rather than a default so that this stays the
+    whole chain a joint sees and not the chain a joint sees in one simulator -
+    the bench path reaches the law through `simulate()`, which owns every torque
+    as state and applies the Coulomb floor itself with Karnopp. See `friction()`.
     """
     d = duty(p, err, w, xp=xp)
     i = current(p, d * u_bat, w, xp=xp)
     volt = xp.clip(u_bat - sag * xp.sum(xp.abs(i)), 0.0, u_bat)
-    return motor_torque(p, d * volt, w, xp=xp)
+    return motor_torque(p, d * volt, w, xp=xp, tau_c_external=tau_c_external)
 
 
 def transmitted(p: Params, delta: float, dw: float, xp=np) -> float:
@@ -588,6 +620,23 @@ def _selftest() -> int:
     check("friction grows with load at mu_load",
           float(friction(p, 1.0, 1.0) - friction(p, 1.0, 0.0)),
           p.mu_load, tol=1e-9)
+
+    # --- who books the Coulomb floor ---------------------------------------
+    # On the MuJoCo paths the floor is dof_frictionloss (model.build_spec), so
+    # the law must remove tau_c and NOTHING else: the load term and the viscous
+    # term stay here, because frictionloss is one constant per joint and viscous
+    # drag does not stick. Double-counting this is worth 0.18 N*m per joint,
+    # which is a third of the knee's stance torque.
+    check("tau_c_external removes exactly the floor",
+          float(friction(p, 1.0, 0.5) - friction(p, 1.0, 0.5, tau_c_external=True)),
+          p.tau_c * _sign(1.0, p.v_eps), tol=1e-12)
+    check("tau_c_external keeps the load and viscous terms",
+          float(friction(p, 1.0, 0.5, tau_c_external=True)),
+          p.mu_load * 0.5 * _sign(1.0, p.v_eps) + p.b_v * 1.0, tol=1e-12)
+    check("tau_c_external reaches motor_torque",
+          float(motor_torque(p, 6.0, 1.0) - motor_torque(p, 6.0, 1.0,
+                                                         tau_c_external=True)),
+          -p.tau_c * _sign(1.0, p.v_eps), tol=1e-12)
     check("load-dependent friction opposes motion, not load",
           float(np.sign(friction(p, -1.0, 1.0))), -1.0)
     check("its magnitude ignores the load's sign",
