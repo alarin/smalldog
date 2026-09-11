@@ -78,6 +78,11 @@ def parse():
                     help="only keep the final weights. The row-per-checkpoint "
                          "video needs the intermediate ones and they cannot be "
                          "recovered afterwards.")
+    ap.add_argument("--init-from", default=None, metavar="RUN",
+                    help="start from a saved policy: a runs/<name> or ckpt/<step> "
+                         "directory's params (normaliser, policy, value). A "
+                         "fine-tune, not a fresh draw; the observation width must "
+                         "match. Recorded in run.json like every arg.")
     ap.add_argument("--no-frictionloss", action="store_true",
                     help="DIAGNOSTIC: build the training model with no Coulomb "
                          "floor (dof_frictionloss 0). The robot has one; eval.py "
@@ -226,6 +231,16 @@ def main():
         randomization_fn=randomization,
         policy_params_fn=(lambda *_: None) if a.no_checkpoints else save_checkpoint,
         seed=a.seed)
+
+    if a.init_from:
+        from env import check_obs_width
+        init = brax_io_model.load_params(os.path.join(a.init_from.rstrip("/"), "params"))
+        check_obs_width(init, env.observation_size, a.init_from)
+        if len(init) != 3:
+            sys.exit(f"--init-from {a.init_from}: expected (normaliser, policy, value), "
+                     f"got {len(init)} arrays")
+        print(f"init        {a.init_from} (normaliser, policy and value restored)")
+        train = functools.partial(train, restore_params=init)
 
     print("\n  step        reward      ep_len   tracking       vx       elapsed")
     make_policy, params, _ = train(environment=env, eval_env=eval_env,
