@@ -78,6 +78,11 @@ def parse():
                     help="only keep the final weights. The row-per-checkpoint "
                          "video needs the intermediate ones and they cannot be "
                          "recovered afterwards.")
+    ap.add_argument("--no-frictionloss", action="store_true",
+                    help="DIAGNOSTIC: build the training model with no Coulomb "
+                         "floor (dof_frictionloss 0). The robot has one; eval.py "
+                         "puts it back, so a policy trained this way is scored "
+                         "against the real floor.")
     ap.add_argument("--reward", action="append", default=[], metavar="FIELD=VALUE",
                     help="override one rewards.Weights field (a weight or a width), "
                          "e.g. --reward tracking_sigma=0.1 --reward joint_vel=0. "
@@ -133,8 +138,10 @@ def main():
         weights = Weights(**over)
         for k, v in over.items():
             print(f"reward      {k} = {v:g}")
-    env = Walk(terrain=a.terrain, n_boxes=a.boxes, weights=weights)
-    eval_env = Walk(terrain=a.terrain, n_boxes=a.boxes, weights=weights)
+    kw = dict(terrain=a.terrain, n_boxes=a.boxes, weights=weights,
+              frictionloss=not a.no_frictionloss)
+    env = Walk(**kw)
+    eval_env = Walk(**kw)
     for n in env.build_notes:
         print(f"model       {n}")
     print(f"env         obs {env.observation_size}, act {env.action_size}, "

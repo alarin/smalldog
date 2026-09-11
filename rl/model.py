@@ -195,7 +195,7 @@ def torque_ceiling(base: actuator.Params | None = None,
 # ===================================================================== build
 def build_spec(terrain: bool = False, n_boxes: int = 0, p: actuator.Params | None = None,
                impratio: float = 10.0, foot_priority: bool = True,
-               mjx_safe: bool = True):
+               mjx_safe: bool = True, frictionloss: bool = True):
     """The training spec. Returns (spec, notes) where notes lists every edit."""
     p = p or actuator.load(quiet=True)
     scene = os.path.join(MJCF, "scene_terrain.xml" if terrain else "scene.xml")
@@ -223,12 +223,17 @@ def build_spec(terrain: bool = False, n_boxes: int = 0, p: actuator.Params | Non
             continue
         j.armature = float(p.J_m)
         j.damping = [0.0, 0.0, 0.0]     # MjsJoint.damping is a 3-vector, not a scalar
-        j.frictionloss = float(p.tau_c)
+        # frictionloss=False is a DIAGNOSTIC (train_ppo --no-frictionloss): the
+        # Coulomb floor off entirely, on the MuJoCo path and the law's alike,
+        # to ask whether the floor is what stops a policy finding a gait.
+        # Not a robot that exists; eval.py builds the floor back in.
+        j.frictionloss = float(p.tau_c) if frictionloss else 0.0
         n += 1
     notes.append(f"{n} joints: armature <- J_m = {p.J_m:g} kg*m^2, "
                  f"damping -> 0 (actuator.py supplies b_v and k_w), "
-                 f"frictionloss <- tau_c = {p.tau_c:g} N*m (MuJoCo sticks; the "
-                 f"law drops its own tau_c on this path)")
+                 + (f"frictionloss <- tau_c = {p.tau_c:g} N*m (MuJoCo sticks; the "
+                    f"law drops its own tau_c on this path)" if frictionloss else
+                    "frictionloss -> 0 (DIAGNOSTIC: no Coulomb floor anywhere)"))
 
     # 3. the feet win their own contact parameters.
     if foot_priority:
