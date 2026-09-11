@@ -260,8 +260,20 @@ J_LIM  = {"roll": 0.90, "pitch": 1.30, "knee": 1.85}     # rad, from the CAD ROM
 MJ_MARGIN = 0.03    # MuJoCo hard stops sit INSIDE the URDF limits, so the measured
                     # position can never trip ros2_control's joint limiter
 SOFT_MARGIN = 0.12  # the gait must stay this far inside the mechanical limit
-J_EFF  = md.SERVO_STALL_NM      # N*m, ST3215 stall 30 kg*cm = 2.94
-J_VEL  = md.SERVO_NOLOAD_RADS   # rad/s, 0.222 s / 60 deg = 4.71
+J_EFF  = md.SERVO_STALL_NM      # N*m, MEASURED 2026-09-10 on the torque rig
+J_VEL  = md.SERVO_NOLOAD_RADS   # rad/s, 0.222 s / 60 deg = 4.71 — VENDOR, NO LOAD
+
+#: What the joint can ACTUALLY turn at, which is not J_VEL and never was.  A
+#: joint goes no faster than where its torque ceiling meets its damping:
+#: (forcerange - frictionloss)/damping.  J_VEL is the vendor's NO-LOAD speed, a
+#: figure the servo reaches carrying nothing, and a gait planner that limits
+#: itself against it commands speeds the real joint cannot deliver - measured,
+#: 31.7 % of joint-samples in the trot did exactly that, because
+#: smalldog_walker/gait.py derived its slew limit from J_VEL * 0.85 = 4.00 while
+#: this number was 3.15.  That is PLAN.md step 3b, and it is one line.
+#: Both inputs are measured: SERVO_STALL_NM on the torque rig 2026-09-10,
+#: MJ_DAMPING and MJ_FRICTIONLOSS on the bench 2026-09-09.
+J_RATE = (md.SERVO_STALL_NM - md.MJ_FRICTIONLOSS) / md.MJ_DAMPING
 #                   Read, not copied.  These were 3.0 and 4.7 here - rounded
 #                   duplicates of the same two vendor numbers mini_dog.py already
 #                   held - which is the servo-mass and the MJ_* divergence a third
@@ -604,7 +616,9 @@ with open(os.path.join(PKG, "robot_params.json"), "w") as f:
         "l_thigh_mm": R.L_THIGH, "l_shin_mm": R.L_SHIN, "foot_r_mm": R.FOOT_D/2,
         "joint_limits_rad": J_LIM,
         "joint_soft_limits_rad": {k: round(v - SOFT_MARGIN, 4) for k, v in J_LIM.items()},
-        "joint_velocity_limit": J_VEL, "stance_rad": STANCE,
+        "joint_velocity_limit": J_VEL,
+        "joint_rate_ceiling_rad_s": round(J_RATE, 4),
+        "stance_rad": STANCE,
         "stance_base_height_m": Z0,
         "total_mass_kg": round(total, 4),
     }, f, indent=2)

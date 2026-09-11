@@ -159,6 +159,18 @@ per joint, so it can carry the `tau_c` floor but NOT the load-dependent
 `mu_load*|tau_t|` part, which at stance is roughly 0.11 N*m of the ~0.30 total. That
 half keeps the smooth law and keeps lacking stick.
 
+**The refit was run, and it does NOT rescue `mu_load`.** `fit_bam.py --holdout chirp`
+over the 44-run set, against the Karnopp model, 2026-09-11: `J_m` +20.5 %
+(0.0165 -> 0.0199 — the free swing now has stick in it, so the inertia inferred from a
+timed fall moves), `tau_c` -2.1 %, and **everything else bit-identical**, `mu_load`
+included. Position RMS 8.84 -> 8.81 deg, current RMS 1.010 -> 1.105 A. So the hope in
+this section — that fixing the rest case makes `mu_load` recoverable — is not delivered
+by the analytic pass, because that pass does not fit `mu_load` at all: it reads only
+freeswing, hold and holdbi, and everything else reaches the fit ONLY under `--refine`.
+The refit was NOT adopted (`rl/params/st3215.json` is unchanged): the result is mixed,
+one RMS better and one worse, and the fit is documented as under-determined without
+`--refine`. Adopting it is a judgement call for whoever next trains, not a cleanup.
+
 **Two consequences worth carrying.** The magnitude is uncalibrated: on the bench arm at
 0.6 rad the model gives a half-difference of 0.72 V against the real servo's 0.29 — the
 right order, and not strictly comparable, since that figure is "the friction at that
@@ -323,7 +335,35 @@ load at all, and the hand-tuned gait had settled into that headroom.
 So the sim was flattering the robot in the one dimension a walker spends most, and the
 distances that just fell were never real. **Do not put `MJ_DAMPING` back.**
 
-### 3b. The gait needs re-tuning against the honest joint
+### 3b. DONE 2026-09-11 — it was one line, and the line came from the datasheet
+
+**Root cause.** `smalldog_walker/gait.py` set its slew limit to
+`joint_velocity_limit * 0.85` = **4.00 rad/s**, and `joint_velocity_limit` is
+`SERVO_NOLOAD_RADS` = 4.71 — the vendor's **no-load** speed, which the servo reaches
+carrying nothing. A joint under load turns no faster than
+`(forcerange - frictionloss)/damping` = **3.15 rad/s**. So the planner was commanding
+past the ceiling *by construction*: measured, **31.7 % of commanded joint-samples** in
+the 5 s trot asked for a speed the joint does not have, with the commanded rate pinned
+at exactly 4.00 — a clamp, not a gait consequence, which is what gave it away.
+
+**Fix.** `generate_model.py` now emits `joint_rate_ceiling_rad_s` (3.15, derived from
+`SERVO_STALL_NM`, `MJ_FRICTIONLOSS`, `MJ_DAMPING` — all measured) and the gait limits
+against that, falling back to the old expression for a params file that predates the
+field. `joint_velocity_limit` is left alone and still means the no-load speed, because
+`rl/env/walk.py` reads it for a different purpose.
+
+**The over-ask went 31.7 % -> 0.1 %, and the distances fell**, which is the point rather
+than a regression: the missing millimetres were bought by commanding a servo this project
+does not own. Yesterday's stall measurement had already reduced the over-ask from 37.9 %
+to 31.7 % on its own, which is why 3b survived it and had to be done properly.
+
+**Still vendor, and now the weakest link in this chain:** `SERVO_NOLOAD_RADS` itself.
+The torque rig measures a BLOCKED output and says nothing about speed, so 4.71 has never
+been checked. The bench saw ~1.8 rad/s under the 1 kg arm, which is well under even the
+3.15 ceiling — so the ceiling may still be optimistic. A no-load speed run on the bench
+is what would close it.
+
+#### (superseded) The gait needs re-tuning against the honest joint
 
 Not started. `ros2/tools/standalone_sim.py`'s hand-tuned trot is now commanding swing
 speeds the servo does not have, which is why the distances fell; re-tuning is what gets

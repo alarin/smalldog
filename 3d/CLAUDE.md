@@ -519,7 +519,24 @@ name → (workplane, qty, note) and drives both the export loop and the BOM;
    says the walker is still asking for swing speeds the servo does not have - so do not
    spend mass buying these numbers back until that is done.
 
-   **Re-baselined 2026-09-10 by the MEASURED stall torque**, `SERVO_STALL_NM` 2.94 -> 4.50
+   **Re-baselined 2026-09-11 by the gait's rate limit** (PLAN.md step 3b). No CAD, mass
+   or actuator constant moved; `smalldog_walker/gait.py` stopped limiting itself against
+   the vendor NO-LOAD speed (4.71 x 0.85 = 4.00 rad/s) and now limits against the
+   achievable ceiling `(forcerange - frictionloss)/damping` = 3.15, emitted by the
+   generator as `joint_rate_ceiling_rad_s`.
+
+   | | control (rate 4.00) | after (rate 3.15) |
+   |---|---|---|
+   | flat trot | 506.3 mm | **457.8 mm** |
+   | terrain, default seed | 364.3 mm | **328.8 mm** |
+   | course, default seed | 3/7, corridor 2174 mm | **2/7, corridor 1747 mm** |
+
+   **Every arm falls and that is the fix working.** 31.7 % of commanded joint-samples
+   used to ask for a speed the joint cannot reach; it is 0.1 % now. The distance that
+   went away was distance bought by commanding a servo that does not exist. Do not
+   "recover" it by putting the rate limit back.
+
+      **Re-baselined 2026-09-10 by the MEASURED stall torque**, `SERVO_STALL_NM` 2.94 -> 4.50
    (`robot/README.md`, "The stall torque, in newton-metres"). No mass, geometry or limit
    moved - `export_sim.py --check` reads the same 2.493 kg, 187 mm stand height and camera
    axis - so this is a pure servo-strength change and the control below differs from the

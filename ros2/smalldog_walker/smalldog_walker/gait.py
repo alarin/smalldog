@@ -58,7 +58,19 @@ class TrotGait:
         self.swing_height = 0.022
         self._body_height = 0.158
         self.body_height = self._body_height          # runs the setter -> clamps
-        self.max_joint_rate = p.get("joint_velocity_limit", 4.7) * 0.85
+        # Limit against what the joint can ACTUALLY turn at, not the vendor's
+        # no-load speed.  joint_velocity_limit is 4.71 rad/s with NOTHING on the
+        # output; under load the ceiling is (forcerange - frictionloss)/damping,
+        # which the generator now emits as joint_rate_ceiling_rad_s = 3.15.
+        # Limiting against 4.71*0.85 = 4.00 meant 31.7 % of commanded
+        # joint-samples in the trot asked for a speed the servo does not have
+        # (PLAN.md step 3b).  At the ceiling it is 0.1 %, and the flat trot goes
+        # 475 -> 432 mm: the missing 43 mm was never real, it was distance
+        # bought by commanding a servo this project does not own.
+        # The fallback keeps the old behaviour for a params file that predates
+        # the field, so an old robot_params.json still runs.
+        self.max_joint_rate = p.get("joint_rate_ceiling_rad_s",
+                                    p.get("joint_velocity_limit", 4.7) * 0.85)
 
         # ---- terrain feedback: all off until feedback() is actually called ----------
         # tuned over 12 terrain seeds, because one seed's distance is noise: the blind
