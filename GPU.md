@@ -91,3 +91,21 @@ The trainer's VRAM stays allocated while it is stopped. Whether Windows pages it
 host RAM when the game asks is **unmeasured** — check Task Manager's dedicated GPU memory
 with a run stopped and a game up before trusting it. If it does not page, the run's
 `--mem-fraction` is the lever, and the table above says how low it can go.
+
+## Reaching it over the LAN
+
+The mac reaches this distro at `ssh -p 2222 alarin@10.0.1.12` (the Windows host's LAN IP).
+WSL2 sits behind Windows NAT, so it is two hops: `sshd` in the distro, and a Windows
+portproxy from the host's 2222 to the distro's 22. `~/setup_ssh.sh` on the box does the
+WSL half; the Windows half is:
+
+```powershell
+# admin PowerShell; connectaddress is `hostname -I` inside WSL
+netsh interface portproxy add v4tov4 listenaddress=0.0.0.0 listenport=2222 connectaddress=172.18.8.28 connectport=22
+New-NetFirewallRule -DisplayName "WSL ssh 2222" -Direction Inbound -Protocol TCP -LocalPort 2222 -Action Allow
+```
+
+The WSL IP changes on `wsl --shutdown` and on reboot; when the mac gets connection refused,
+`netsh interface portproxy delete v4tov4 listenport=2222` and re-add with the new
+`hostname -I`. `PasswordAuthentication no` — key only. The repository is still the only
+thing that crosses between machines; this is for looking, not for copying.
