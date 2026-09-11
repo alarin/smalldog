@@ -105,7 +105,14 @@ netsh interface portproxy add v4tov4 listenaddress=0.0.0.0 listenport=2222 conne
 New-NetFirewallRule -DisplayName "WSL ssh 2222" -Direction Inbound -Protocol TCP -LocalPort 2222 -Action Allow
 ```
 
-The WSL IP changes on `wsl --shutdown` and on reboot; when the mac gets connection refused,
-`netsh interface portproxy delete v4tov4 listenport=2222` and re-add with the new
-`hostname -I`. `PasswordAuthentication no` — key only. The repository is still the only
-thing that crosses between machines; this is for looking, not for copying.
+The WSL IP changes on `wsl --shutdown` and on reboot, so a scheduled task **"WSL ssh
+tunnel"** (at logon of `me`, 20 s delay, highest privileges) runs
+`C:\Users\me\wsl-ssh-tunnel.ps1`: it starts the distro, parks a hidden `wsl -- sleep infinity`
+so WSL does not shut the VM down with no terminal open, waits for `hostname -I`, and
+re-adds the portproxy with the new IP (log: `C:\Users\me\wsl-ssh-tunnel.log`). `sshd`
+itself needs nothing — `systemd=true` in `/etc/wsl.conf` and the service is enabled. Master
+copy of the script is `~/wsl-ssh-tunnel.ps1` in the distro; if the mac still gets
+connection refused after a reboot, nobody has logged in on the Windows side yet, or the
+task is stuck — `Start-ScheduledTask 'WSL ssh tunnel'` from an admin PowerShell reruns it.
+`PasswordAuthentication no` — key only. The repository is still the only thing that
+crosses between machines; this is for looking, not for copying.
