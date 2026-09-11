@@ -27,7 +27,7 @@
     "k_u": {"range": [0.65, 1.35], "evidence": "guessed",
             "why": "torque per volt. eta = k_u*R/k_e = 0.43 from the three vendor numbers, which is low even for a 1:345 spur stack — either the gearbox really is that lossy or a spec is optimistic. Both mean the true value is somewhere inside a band this wide."},
     "k_e": {"range": [0.80, 1.20], "evidence": "spec",
-            "why": "back-EMF, hence the no-load speed. Pinned by 4.71 rad/s @ 12 V, which is the vendor number most likely to be honest — it is measured with no load, where there is nothing to be optimistic about."},
+            "why": "back-EMF, hence the free speed d*U/k_e. The vendor no-load 4.71 rad/s was measured at 3.86 on 2026-09-11, but that is a firmware PLATEAU (TORQUE_LIMIT 800 and 1000 read the same), not k_e: the unsaturated rungs give k_e = 2.32 V*s/rad, 14 % above the 2.03 fit and inside this band. Keep the band; the plateau is a separate term the law does not have yet (PLAN.md 3c)."},
     "R": {"range": [0.75, 1.30], "evidence": "spec",
           "why": "4.44 ohm from the 2.7 A locked-rotor spec, at the terminals. Wiring, connector and the bus daisy-chain add series resistance the spec does not include, so the spread is asymmetric upward."},
     "J_m": {"range": [0.60, 1.60], "evidence": "guessed",

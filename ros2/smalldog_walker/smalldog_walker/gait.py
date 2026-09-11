@@ -59,8 +59,9 @@ class TrotGait:
         self._body_height = 0.158
         self.body_height = self._body_height          # runs the setter -> clamps
         # Limit against what the joint can ACTUALLY turn at, not the vendor's
-        # no-load speed.  joint_velocity_limit is 4.71 rad/s with NOTHING on the
-        # output; under load the ceiling is (forcerange - frictionloss)/damping,
+        # no-load speed.  joint_velocity_limit is 3.86 rad/s (measured
+        # 2026-09-11; it was the vendor's 4.71) with NOTHING on the output;
+        # under load the ceiling is (forcerange - frictionloss)/damping,
         # which the generator now emits as joint_rate_ceiling_rad_s = 3.15.
         # Limiting against 4.71*0.85 = 4.00 meant 31.7 % of commanded
         # joint-samples in the trot asked for a speed the servo does not have

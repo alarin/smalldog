@@ -57,11 +57,16 @@ walk.py's docstring is the authority on that.
 
 Two of them are NOT free choices and must not be tuned away:
 
-  joint_vel     the CAD reports joint_velocity_limit = 4.71 rad/s, which is the
-                servo's no-load speed at 12 V. A policy that commands past it is
-                writing cheques the hardware cannot cash, and in sim it simply
-                gets them — actuator.py's back-EMF makes the torque fall off but
-                MuJoCo will still integrate whatever the leg's momentum does.
+  joint_vel     the CAD reports joint_velocity_limit = 3.86 rad/s, which is the
+                servo's MEASURED no-load speed at 12 V (2026-09-11; the vendor's
+                4.71 was 22 % high). A policy that commands past it is writing
+                cheques the hardware cannot cash, and in sim it simply gets them
+                — actuator.py's law tops out at 5.9 rad/s free, because the
+                thing that stops the real servo at 3.86 is a firmware plateau
+                the law does not have (PLAN.md 3c), and MuJoCo will integrate
+                whatever the leg's momentum does on top. Until the law carries
+                that plateau, this penalty is the only thing holding the policy
+                under the real ceiling.
   joint_limit   the SOFT limits. rl/CLAUDE.md: the three ladders mean three
                 different things. Hitting the hard ROM limit in sim is a
                 simulated part collision; hitting it on the robot is a real one.

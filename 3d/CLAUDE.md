@@ -241,7 +241,8 @@ name → (workplane, qty, note) and drives both the export loop and the BOM;
   `ros2/README.md`'s "The foot's contact patch" is the write-up, including the three
   ways of growing the actual patch that were built, measured and **not** adopted.
 - **The servo's stall torque and no-load speed are read from here too**, by both
-  exporters — `SERVO_STALL_NM` = 2.94 and `SERVO_NOLOAD_RADS` = 4.71. This was the
+  exporters — `SERVO_STALL_NM` = 2.94 and `SERVO_NOLOAD_RADS` = 4.71 at the time (4.50
+  and 3.86 since 2026-09-10/11, both measured). This was the
   same defect a third time and the worst-stated of the three: `export_sim.py` read
   them, `generate_model.py` kept rounded copies (`J_EFF = 3.0`, `J_VEL = 4.7`), so
   the two exporters were not duplicating a constant, they were emitting **robots with
@@ -560,9 +561,11 @@ name → (workplane, qty, note) and drives both the export loop and the BOM;
    it spending headroom rather than the leg doing more work. The torque number is measured
    and the ceiling arithmetic is not a reason to doubt it; it IS a reason not to read the
    course going 1/7 -> 3/7 as the gait improving.
-   Note also that `SERVO_NOLOAD_RADS` is still the vendor 4.71 and is now the least
-   defensible constant in that block - the torque rig measures a blocked output and says
-   nothing about speed.
+   `SERVO_NOLOAD_RADS` was the vendor 4.71 when this was written; **measured 3.86 on
+   2026-09-11** (`robot/bench/noload_speed.py`, free hub). It is above the 3.15 ceiling,
+   so nothing here moved — the three sims re-ran bit-identical — and the generator now
+   takes `min()` of the two. The plateau it turned out to be, and what it may do to the
+   4.50 stall, is PLAN.md 3c.
 
    **Re-baselined 2026-09-09 by the fitted actuator** (`MJ_DAMPING`/`MJ_ARMATURE`/
    `MJ_FRICTIONLOSS`/`MJ_KP`, PLAN.md step 3). No geometry, no mass and no limit moved —

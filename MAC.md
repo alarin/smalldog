@@ -470,7 +470,7 @@ damping, `(forcerange − frictionloss)/damping`:
 
 - old, 0.12 / 0.02 → **24.3 rad/s**
 - new, 1.37 / 0.184 → **2.01 rad/s**
-- ST3215 vendor no-load speed → 4.71 rad/s
+- ST3215 vendor no-load speed → 4.71 rad/s (measured 3.86 on 2026-09-11, PLAN.md 3c)
 - measured on the bench under the 1 kg arm → **~1.8 rad/s**
 
 The old model let every joint swing **five times faster than the servo's own no-load

@@ -68,6 +68,9 @@ cd ~/smalldog/rl
 uv sync --extra cuda
 uv run python -c "import jax; print(jax.devices())"   # must list a CudaDevice
 uv run python checks/check_model.py                   # exit 0, or do not train
+# 2026-09-11: joint_velocity_limit is 3.86 now (measured; was vendor 4.71), and
+# actuator.py's law still frees to 5.9 - PLAN.md 3c.  Read a policy's p95 joint
+# speed against 3.86 with tools/ceiling.py before believing its distance.
 ```
 
 `rl/uv.lock` is **not in the tree yet** — the first `uv sync` writes it. Commit it, on its

@@ -39,6 +39,37 @@ of terminal speed against duty*volts, which is 1/k_e - and k_e is still carried
 as `spec` in rl/params/domain_rand.json (vendor 2.55 against a fitted 2.03).
 Same shape of argument as the torque rig: the slope is the measurement, the
 endpoint is not.
+
+MEASURED 2026-09-11, 12.1 V, 21-23 C, span 120 deg, 4 slews per rung
+-------------------------------------------------------------------
+    cap    d*U    w_pos    w_reg   ratio
+   1000  12.00    3.864    3.835   1.008
+    800   9.60    3.851    3.835   1.004
+    600   7.20    3.093    2.953   1.048
+    400   4.80    2.077    1.994   1.041
+
+**No-load speed 3.86 rad/s**, 18 % under the vendor's 4.71; it is
+SERVO_NOLOAD_RADS now.  w_pos/w_reg within 1-5 % says SPEED_LSB_COUNTS_PER_S =
+1.0 is right, which was the side question.  The main finding is the PLATEAU:
+800 and 1000 give the same speed, and PRESENT_SPEED reads a flat 2500 counts/s
+at both, while the two rungs below are linear through the origin at 0.43
+rad/s/V (k_e = 2.32 V*s/rad, between the 2.03 fit and the 2.55 vendor).  So the
+cap stops mattering somewhere around 740, and the first fit this tool printed -
+"k_e = 3.92, intercept +1.08" - was two plateau points dragged through a line;
+`--duty-ladder` now drops the plateau before it fits.
+
+Two readings of the plateau, and this tool cannot tell them apart on its own:
+  A. the position loop's PROFILE caps at 2500 counts/s (a round number in the
+     register, GOAL_SPEED = 0 meaning "the firmware's max", not "unlimited").
+     Then the motor's own ceiling is 12/2.32 = 5.2 rad/s, the stall extrapolation
+     to full duty (4.50 N*m) stands, and what the rl actuator needs is a rate cap
+     on the goal, not a duty cap.
+  B. the position loop never applies more than ~75 % PWM.  Then the same ceiling
+     applies against a block, and 4.50 N*m - a 2.2x extrapolation from rungs
+     200/350/450, all under the knee - would be ~3.3.
+`--pwm` decides it: MODE 2 drives the bridge open loop at a commanded duty, no
+profile in the way.  Same plateau at duty 1000 -> B.  ~5 rad/s -> A.  It was
+written after the adapter was unplugged and HAS NOT RUN on hardware yet.
 """
 from __future__ import annotations
 
@@ -90,6 +121,55 @@ def one_run(bus, servo, a, span_counts, direction):
     return plateau, w_reg, abs(goal - start) * 360.0 / COUNTS
 
 
+def pwm_spin(bus, servo, a, duty):
+    """One open-loop burst in MODE 2 at a signed duty (register 44, sign bit 0x400).
+    The hub turns continuously, so the position is unwrapped, not clipped."""
+    bus.write(a.id, R.GOAL_TIME, abs(duty) | (0x400 if duty < 0 else 0))
+    t0 = time.perf_counter()
+    ts, cs, ws = [], [], []
+    while time.perf_counter() - t0 < a.window:
+        fb = servo.feedback()
+        ts.append(time.perf_counter() - t0)
+        cs.append(fb["counts"])
+        ws.append(fb["w"])
+    bus.write(a.id, R.GOAL_TIME, 0)
+    t = np.asarray(ts)
+    c = np.unwrap(np.asarray(cs, float) * TAU / COUNTS)
+    v = np.gradient(c, t)
+    k = max(3, len(v) // 4)
+    sm = np.convolve(np.abs(v), np.ones(k) / k, mode="valid")
+    i = int(np.argmax(sm))
+    return float(sm[i]), float(np.median(np.abs(np.asarray(ws)[i:i + k])))
+
+
+def pwm_ladder(bus, servo, a):
+    """The discriminating run: the same duty rungs with no position loop between
+    the duty and the bridge.  Restores MODE 0 whatever happens."""
+    print("  MODE 2 (open-loop PWM).  The hub will turn CONTINUOUSLY.\n")
+    print(f"  {'duty':>5} {'d*U':>6} {'w_pos':>8} {'w_reg':>8}")
+    rows = []
+    try:
+        servo.torque(False)
+        bus.write(a.id, R.TORQUE_LIMIT, 1000)
+        bus.write(a.id, R.MODE, 2)
+        if bus.read(a.id, R.MODE) != 2:
+            print("  !! MODE would not take 2")
+            return rows
+        servo.torque(True)
+        for d in (400, 600, 800, 1000, -1000, -800):
+            w, wr = pwm_spin(bus, servo, a, d)
+            time.sleep(0.3)
+            print(f"  {d:>5} {abs(d) / 1000 * a.volts:6.2f} {w:8.3f} {wr:8.3f}")
+            rows.append((abs(d) / 1000 * a.volts, w))
+    finally:
+        bus.write(a.id, R.GOAL_TIME, 0)
+        time.sleep(0.3)
+        servo.torque(False)
+        bus.write(a.id, R.MODE, 0)
+        print(f"\n  restored MODE = {bus.read(a.id, R.MODE)}")
+    return rows
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -107,6 +187,11 @@ def main():
                          "caps the speed and the number would be meaningless")
     ap.add_argument("--duty-ladder", action="store_true",
                     help="sweep TORQUE_LIMIT and fit 1/k_e from the slope")
+    ap.add_argument("--pwm", action="store_true",
+                    help="MODE 2, open loop: the same rungs with no position loop "
+                         "between the duty and the bridge. Decides whether the "
+                         "plateau is the profile's (A) or the PWM's (B). UNTESTED "
+                         "on hardware as of 2026-09-11.")
     ap.add_argument("--volts", type=float, default=12.0)
     a = ap.parse_args()
 
@@ -126,16 +211,24 @@ def main():
         return 2
 
     caps = [1000, 800, 600, 400] if a.duty_ladder else [1000]
+    if caps[0] < a.min_cap:
+        # the guard is against measuring a capped duty and calling it the
+        # ceiling.  It applies to the rung that CLAIMS to be the ceiling, not to
+        # the ladder below it - a --min-cap of 900 used to silently reduce
+        # --duty-ladder to its top rung.
+        raise SystemExit(f"top rung {caps[0]} is under --min-cap {a.min_cap}")
     span = int(round(a.span_deg * COUNTS / 360.0))
     fb = servo.feedback()
     print(f"  {fb['volt']:.1f} V, {fb['temp']:.0f} C, span {a.span_deg:.0f} deg\n")
+    if a.pwm:
+        rows = pwm_ladder(bus, servo, a)
+        report(rows, a, pwm=True)
+        return 0
     print(f"  {'cap':>5} {'d*U':>6} {'w_pos':>8} {'w_reg':>8} {'ratio':>7}  "
           f"(w from position | from PRESENT_SPEED)")
     rows = []
     try:
         for cap in caps:
-            if cap < a.min_cap:
-                continue
             bus.write(a.id, R.TORQUE_LIMIT, cap)
             if bus.read(a.id, R.TORQUE_LIMIT) != cap:
                 print(f"  !! TORQUE_LIMIT would not take {cap}")
@@ -157,19 +250,45 @@ def main():
     finally:
         servo.torque(False)
 
-    if rows:
-        du = np.array([r[0] for r in rows]); w = np.array([r[1] for r in rows])
-        print(f"\n  no-load speed at {a.volts:g} V: {w[np.argmax(du)]:.3f} rad/s"
-              f"   (vendor SERVO_NOLOAD_RADS = 4.71)")
-        if len(rows) > 1:
-            A = np.vstack([du, np.ones_like(du)]).T
-            slope, icept = np.linalg.lstsq(A, w, rcond=None)[0]
-            print(f"  slope d(w)/d(d*U) = {slope:.4f} rad/s/V -> k_e = "
-                  f"{1.0/slope:.3f} V*s/rad   (fitted 2.03, vendor 2.55)")
-            print(f"  intercept {icept:+.3f} rad/s — should be near zero; a large "
-                  f"one means the slews never reached terminal speed")
+    report(rows, a)
     print("\n  Remember to cap TORQUE_LIMIT again before anything with a load on it.")
     return 0
+
+
+def report(rows, a, pwm=False):
+    if not rows:
+        return
+    rows = sorted(rows)
+    du = np.array([r[0] for r in rows]); w = np.array([r[1] for r in rows])
+    top = float(w[-1])
+    print(f"\n  {'open-loop' if pwm else 'no-load'} speed at {a.volts:g} V: "
+          f"{top:.3f} rad/s   (measured 3.86 in position mode; vendor 4.71)")
+    if len(rows) < 2:
+        return
+    # the plateau: rungs from the top down that agree within 3 %.  Fitting a
+    # line through those is how this printed k_e = 3.92 the first time.
+    n = len(rows)
+    while n > 1 and w[n - 2] > 0.97 * w[n - 1]:
+        n -= 1
+    if n < len(rows):
+        print(f"  plateau: {len(rows) - n + 1} rungs from d*U = {du[n - 1]:.2f} V up "
+              f"all read {top:.2f} rad/s - the duty stopped mattering there, "
+              f"{'so it is NOT the position loop (B)' if pwm else 'A or B, see --pwm'}")
+    # rows[n-1] is the lowest plateau rung; the ones below it are the slope
+    lo_du, lo_w = du[:n - 1], w[:n - 1]
+    n = len(lo_du)
+    if n >= 1:
+        # through the origin: a free output at duty d sits at d*U/k_e, nothing
+        # to intercept.  An intercept fit needs >=3 unsaturated rungs.
+        slope = float(np.dot(lo_du, lo_w) / np.dot(lo_du, lo_du))
+        print(f"  slope through origin over {n} unsaturated rung(s): "
+              f"{slope:.4f} rad/s/V -> k_e = {1.0 / slope:.3f} V*s/rad   "
+              f"(2.32 on 2026-09-11; fitted 2.03, vendor 2.55)")
+        if n >= 3:
+            A = np.vstack([lo_du, np.ones_like(lo_du)]).T
+            sl, ic = np.linalg.lstsq(A, lo_w, rcond=None)[0]
+            print(f"  with intercept: {sl:.4f} rad/s/V, {ic:+.3f} rad/s - a large "
+                  f"intercept means the slews never reached terminal speed")
 
 
 if __name__ == "__main__":

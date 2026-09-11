@@ -1013,10 +1013,17 @@ SERVO_STALL_NM    = 4.50          # MEASURED 2026-09-10 on torque_rig, NOT the v
                                   # three duty rungs at 12 V: k_u = 0.400 N*m/V, friction
                                   # intercept -0.30 N*m, extrapolated to full duty.  See
                                   # the block below - this is what settled PLAN.md 2c.
-SERVO_NOLOAD_RADS = 4.71          # 0.222 s / 60 deg at 12 V.  STILL the vendor figure:
-                                  # the torque rig measures a blocked output and says
-                                  # nothing about no-load speed.  MJ_DAMPING's ceiling
-                                  # (2.01 rad/s) is the number that has been measured.
+SERVO_NOLOAD_RADS = 3.86          # MEASURED 2026-09-11 on the bench stand, free hub,
+                                  # 12.1 V, robot/bench/noload_speed.py: 3.864 rad/s from
+                                  # the position, 3.835 from PRESENT_SPEED.  The vendor's
+                                  # 4.71 (0.222 s / 60 deg) was 22 % high.  It is a
+                                  # PLATEAU, not a back-EMF ceiling: TORQUE_LIMIT 800 and
+                                  # 1000 read the same speed and the register sits at a
+                                  # flat 2500 counts/s, while the rungs below are linear
+                                  # at k_e = 2.32 V*s/rad.  Whether that plateau is the
+                                  # position loop's profile or its PWM ceiling is open
+                                  # (`noload_speed.py --pwm` decides it), and the stall
+                                  # above depends on the answer - see PLAN.md 3c.
 
 # MuJoCo joint feel.  MEASURED, 2026-09-09, on the bench rig - this block used to
 # say "NOT measured ... plausible values" and every number in it has now been

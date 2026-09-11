@@ -883,6 +883,46 @@ back, and refuses to write while torque is enabled. Cap before every session and
 after every supply change — nothing else stands between a 2 kg scale and a servo
 that might be stronger than you think.
 
+### The no-load speed, and the plateau it turned out to be
+
+**3.86 rad/s at 12.1 V**, measured 2026-09-11 with `bench/noload_speed.py` on the
+stand, hub free, no arm — the last vendor number in the chain, and the vendor's
+4.71 (0.222 s/60°) was 22 % high. `mini_dog.py`'s `SERVO_NOLOAD_RADS` is 3.86 now.
+
+| `TORQUE_LIMIT` | d·U | ω from position | ω from `PRESENT_SPEED` | ratio |
+|---|---|---|---|---|
+| 1000 | 12.0 V | **3.864 rad/s** | 3.835 | 1.008 |
+| 800 | 9.6 | 3.851 | 3.835 | 1.004 |
+| 600 | 7.2 | 3.093 | 2.953 | 1.048 |
+| 400 | 4.8 | 2.077 | 1.994 | 1.041 |
+
+Four 120° slews per rung, alternating direction, speed taken off `PRESENT_POSITION`
+(known LSB) and the register compared against it. That comparison is the side
+result: `SPEED_LSB_COUNTS_PER_S = 1.0` in `feetech/registers.py` was flagged
+unverified, and the ratio column verifies it to 1–5 %.
+
+**The main result is the plateau.** 800 and 1000 read the same speed, and the
+register sits at exactly 2500 counts/s for both, while 400 and 600 are linear
+through the origin at 0.43 rad/s/V — k_e = **2.32 V·s/rad**, between the 2.03
+fit and the 2.55 vendor. So the duty stops mattering at a cap of roughly 740.
+The tool's first fit (k_e = 3.92, intercept +1.08) was two plateau points dragged
+through a line; it now finds the plateau and fits below it.
+
+**Two readings, and the stall number depends on which** (`PLAN.md` 3c has the
+consequences): either the position loop's profile caps at 2500 counts/s and
+`GOAL_SPEED = 0` means "the firmware's maximum" rather than "unlimited", or the
+position loop never drives the bridge past ~75 %. Under the second, the 4.50 N·m
+above — extrapolated from rungs 200/350/450, all under this knee — is nearer 3.3.
+`noload_speed.py --pwm` decides it: MODE 2, open-loop duty, the same rungs, no
+position loop in the way. It was written after the adapter came out and has
+**not run**. Ten seconds on the stand; do it before the next torque-rig session.
+
+**Two things the tool got wrong on its first outing**, fixed the same day: `--min-cap`
+(default 900) filtered the ladder's own rungs, so `--duty-ladder` silently ran one
+rung — the guard now applies to the top rung only — and the fit above. It leaves
+`TORQUE_LIMIT` at its last rung (400): re-cap before the arm goes back on, and
+remember the register is volatile anyway.
+
 ### Two things the fit cannot find, and the ladders that measure them instead
 
 Measured 2026-09-09, 1.066 kg on the 90 mm arm, at 8 / 10 / 12 V.

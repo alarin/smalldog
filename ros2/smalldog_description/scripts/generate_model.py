@@ -261,7 +261,7 @@ MJ_MARGIN = 0.03    # MuJoCo hard stops sit INSIDE the URDF limits, so the measu
                     # position can never trip ros2_control's joint limiter
 SOFT_MARGIN = 0.12  # the gait must stay this far inside the mechanical limit
 J_EFF  = md.SERVO_STALL_NM      # N*m, MEASURED 2026-09-10 on the torque rig
-J_VEL  = md.SERVO_NOLOAD_RADS   # rad/s, 0.222 s / 60 deg = 4.71 — VENDOR, NO LOAD
+J_VEL  = md.SERVO_NOLOAD_RADS   # rad/s, MEASURED 3.86 on the free hub (2026-09-11); was vendor 4.71
 
 #: What the joint can ACTUALLY turn at, which is not J_VEL and never was.  A
 #: joint goes no faster than where its torque ceiling meets its damping:
@@ -272,8 +272,14 @@ J_VEL  = md.SERVO_NOLOAD_RADS   # rad/s, 0.222 s / 60 deg = 4.71 — VENDOR, NO 
 #: smalldog_walker/gait.py derived its slew limit from J_VEL * 0.85 = 4.00 while
 #: this number was 3.15.  That is PLAN.md step 3b, and it is one line.
 #: Both inputs are measured: SERVO_STALL_NM on the torque rig 2026-09-10,
-#: MJ_DAMPING and MJ_FRICTIONLOSS on the bench 2026-09-09.
-J_RATE = (md.SERVO_STALL_NM - md.MJ_FRICTIONLOSS) / md.MJ_DAMPING
+#: MJ_DAMPING and MJ_FRICTIONLOSS on the bench 2026-09-09.  Since 2026-09-11
+#: J_VEL is measured too (3.86 on the free hub, not the vendor's 4.71) and it is
+#: a firmware plateau the joint never exceeds, so the ceiling is the smaller of
+#: the two.  Today that is still the damping figure, 3.15; the min() is there so
+#: the day MJ_DAMPING is refitted lower this cannot claim a speed the servo has
+#: been measured not to have.
+J_RATE = min((md.SERVO_STALL_NM - md.MJ_FRICTIONLOSS) / md.MJ_DAMPING,
+             md.SERVO_NOLOAD_RADS)
 #                   Read, not copied.  These were 3.0 and 4.7 here - rounded
 #                   duplicates of the same two vendor numbers mini_dog.py already
 #                   held - which is the servo-mass and the MJ_* divergence a third

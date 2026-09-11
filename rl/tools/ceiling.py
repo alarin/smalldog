@@ -41,7 +41,7 @@ lo,hi=model_mod.limits(P,soft=True); q0=model_mod.stance_qpos(mj,P); st_j=q0[qad
 VLIM=float(P["joint_velocity_limit"])
 sadr=lambda n:int(mj.sensor_adr[mujoco.mj_name2id(mj,mujoco.mjtObj.mjOBJ_SENSOR,n)])
 aq,ag,aa=sadr("imu_quat"),sadr("imu_gyro"),sadr("imu_accel")
-print(f"joint_velocity_limit (= datasheet no-load) {VLIM:.2f} rad/s")
+print(f"joint_velocity_limit (= MEASURED no-load, 2026-09-11) {VLIM:.2f} rad/s")
 print(f"{'cmd':>5}{'got':>8}{'ratio':>7}{'|w|p50':>8}{'p95':>7}{'max':>7}{'over%':>7}{'stallish%':>10}")
 for CMDV in (0.2,0.4,0.6,0.8):
     CMD=np.array([CMDV,0.0,0.0])

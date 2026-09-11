@@ -36,8 +36,8 @@ PARAMS = os.path.join(DESC, "robot_params.json")
 # The ST3215 as the CAD declares it (3d/mini_dog.py section 4).  Repeated here
 # only to be checked against, never to be read as a source: if these disagree
 # with the model, the model is what ships and this file is what is stale.
-SERVO_STALL_NM = 2.94        # 30 kg*cm @ 12 V, vendor spec
-SERVO_NOLOAD_RADS = 4.71     # 0.222 s / 60 deg @ 12 V
+SERVO_STALL_NM = 4.50        # MEASURED 2026-09-10, torque rig (vendor said 2.94)
+SERVO_NOLOAD_RADS = 3.86     # MEASURED 2026-09-11, free hub (vendor said 4.71)
 ENCODER_STEP_RAD = math.radians(360.0 / 4096)   # 0.088 deg, the reported resolution
 
 FAIL, WARN, INFO = "FAIL", "warn", "    "
@@ -374,6 +374,8 @@ def ledger(R):
         ("frictionloss", "3d/mini_dog.py MJ_FRICTIONLOSS", "MEASURED 2026-09-09, 2 routes"),
         ("actuator kp", "3d/mini_dog.py MJ_KP", "MEASURED 2026-09-09 — still not a servo model"),
         ("stall torque", "3d/mini_dog.py SERVO_STALL_NM", "MEASURED 2026-09-10, 4.50 N*m"),
+        ("no-load speed", "3d/mini_dog.py SERVO_NOLOAD_RADS",
+         "MEASURED 2026-09-11, 3.86 rad/s — actuator.py's law gives 5.9"),
         ("foot friction", "3d/export_sim.py", "GUESSED"),
         ("foot solref/solimp", "3d/export_sim.py", "GUESSED, and diluted (above)"),
         ("backlash", "not in the model at all", "ABSENT"),

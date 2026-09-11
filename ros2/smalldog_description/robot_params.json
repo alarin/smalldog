@@ -88,7 +88,7 @@
     "pitch": 1.18,
     "knee": 1.73
   },
-  "joint_velocity_limit": 4.71,
+  "joint_velocity_limit": 3.86,
   "joint_rate_ceiling_rad_s": 3.1504,
   "stance_rad": {
     "pitch": -0.42,

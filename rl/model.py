@@ -395,8 +395,9 @@ def main():
         print(f"  {u:5.1f} V   stall {tau:5.2f} N*m   no-load {w:5.2f} rad/s"
               f"   ({'ceiling ok' if tau < TORQUE_CEILING_NM else 'CEILING TOO LOW'})")
     print(f"  the joint velocity limit the CAD reports is "
-          f"{P['joint_velocity_limit']:.2f} rad/s — the law reaches it only "
-          f"unloaded and on a full pack, which is the point of modelling it")
+          f"{P['joint_velocity_limit']:.2f} rad/s, MEASURED on the free hub; the "
+          f"law's free speed above OVERSHOOTS it, because the real servo stops "
+          f"at a firmware plateau the law does not carry (PLAN.md 3c)")
 
     if not a.no_mjx:
         print("\n== MJX ===========================================================")

@@ -357,11 +357,55 @@ than a regression: the missing millimetres were bought by commanding a servo thi
 does not own. Yesterday's stall measurement had already reduced the over-ask from 37.9 %
 to 31.7 % on its own, which is why 3b survived it and had to be done properly.
 
-**Still vendor, and now the weakest link in this chain:** `SERVO_NOLOAD_RADS` itself.
-The torque rig measures a BLOCKED output and says nothing about speed, so 4.71 has never
-been checked. The bench saw ~1.8 rad/s under the 1 kg arm, which is well under even the
-3.15 ceiling — so the ceiling may still be optimistic. A no-load speed run on the bench
-is what would close it.
+**The no-load speed was the last vendor number in this chain and it is measured now**
+— 3c below. It came out 3.86, above the 3.15 ceiling, so the ceiling was not optimistic
+and nothing in 3b moves; the generator now takes `min()` of the two so it never can.
+
+### 3c. MEASURED 2026-09-11 — no-load 3.86 rad/s, and it is a plateau, not a k_e
+
+`robot/bench/noload_speed.py --duty-ladder --min-cap 400`, stand, free hub, 12.1 V:
+
+| `TORQUE_LIMIT` | d·U | ω from position | ω from `PRESENT_SPEED` |
+|---|---|---|---|
+| 1000 | 12.0 V | **3.864 rad/s** | 3.835 |
+| 800 | 9.6 | 3.851 | 3.835 |
+| 600 | 7.2 | 3.093 | 2.953 |
+| 400 | 4.8 | 2.077 | 1.994 |
+
+`SERVO_NOLOAD_RADS` is 3.86 now, the vendor's 4.71 was 22 % high, and the register's
+speed LSB is verified as a side effect (position-derived and register speeds agree to
+1–5 %). Consumers: `joint_velocity_limit` in `robot_params.json`, hence `rl/`'s
+`joint_vel` penalty and `rl/tools/ceiling.py`; the URDF velocity limit; `check_model.py`'s
+ledger. The gait was already limiting against 3.15, so the three sims came out
+**bit-identical** (457.8 / 328.8 mm, course 2/7 at 1747) — no re-baseline.
+
+**The finding is the plateau.** Cap 800 and 1000 give the same speed, and the register
+reads a flat 2500 counts/s at both, while the two rungs below are linear through the
+origin at 0.43 rad/s/V → **k_e = 2.32 V·s/rad** (fit 2.03, vendor 2.55, inside the
+`domain_rand` band). So the duty stops mattering around cap ~740. Two readings, and the
+stall number hangs on which:
+
+- **A — the position loop's profile caps at 2500 counts/s.** Then the motor's own free
+  speed is 12/2.32 = 5.2 rad/s, the 4.50 N·m stall extrapolation stands, and what
+  `rl/actuator.py` needs is a *rate cap on the goal* (the firmware slews its target at
+  ≤ 3.86 rad/s), which is a state variable per joint, not a parameter.
+- **B — the position loop never applies more than ~75 % PWM.** Then the same ceiling
+  holds against a block, and 4.50 — a 2.2× extrapolation from rungs 200/350/450, all
+  under this knee — is really ~3.3. That would move `SERVO_STALL_NM`, `fea.py`'s stall
+  column and the 3b ceiling (→ 2.3 rad/s).
+
+**`noload_speed.py --pwm` decides it**: MODE 2 drives the bridge open loop at a commanded
+duty with no position loop in between. Same plateau at duty 1000 → B; ~5 rad/s → A. It
+was written after the adapter was unplugged and has not run. Ten seconds on the stand,
+no arm — do it before the next torque-rig session, because under B the rig's next rungs
+should be 800 and 1000, not 8/10/12 V.
+
+**What `rl/` trains against meanwhile.** `actuator.py`'s law has no plateau, so its free
+speed is 12/2.03 = 5.9 rad/s, 53 % over the measured joint. The `joint_vel` penalty at
+3.86 is the only thing holding a policy under the real ceiling, and it is a penalty, not
+a constraint. Train now — `check_model.py` is 0 FAIL — but read any policy's p95 joint
+speed against 3.86 (`tools/ceiling.py` prints it), and expect the law to acquire the
+plateau once `--pwm` says which form it takes.
 
 #### (superseded) The gait needs re-tuning against the honest joint
 
