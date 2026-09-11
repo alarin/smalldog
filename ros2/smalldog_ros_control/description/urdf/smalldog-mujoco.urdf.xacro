@@ -9,13 +9,16 @@
       <plugin>mujoco_ros2_control/MujocoSystem</plugin>
     </hardware>
 
-    <xacro:macro name="pid_joint" params="name">
+    <!-- No PID gains here, and no "_pid" command interface.  They were never used:
+         MujocoSystem::write() writes the position command straight to the MuJoCo position
+         actuator, and the two control_toolbox::Pid it built out of position_kp/ki/kd/i_max
+         were constructed and never called - so turning these knobs did nothing at all.
+         The real gains are the actuator's own kp/dampratio in the MJCF, which come from
+         mini_dog.py's MJ_KP / MJ_DAMPRATIO (measured on the bench, 2026-09-09).
+         Removed 2026-09-11 together with the dead branch in the plugin. -->
+    <xacro:macro name="mj_joint" params="name">
       <joint name="${name}">
-        <param name="position_kp">120</param>
-        <param name="position_ki">0</param>
-        <param name="position_kd">3</param>
-        <param name="position_i_max">10</param>
-        <command_interface name="position_pid"/>
+        <command_interface name="position"/>
         <state_interface name="position">
           <param name="initial_value">0</param>
         </state_interface>
@@ -24,18 +27,18 @@
       </joint>
     </xacro:macro>
 
-   <xacro:pid_joint name="fl_roll" />
-   <xacro:pid_joint name="fl_pitch" />
-   <xacro:pid_joint name="fl_knee" />
-   <xacro:pid_joint name="fr_roll" />
-   <xacro:pid_joint name="fr_pitch" />
-   <xacro:pid_joint name="fr_knee" />
-   <xacro:pid_joint name="rl_roll" />
-   <xacro:pid_joint name="rl_pitch" />
-   <xacro:pid_joint name="rl_knee" />
-   <xacro:pid_joint name="rr_roll" />
-   <xacro:pid_joint name="rr_pitch" />
-   <xacro:pid_joint name="rr_knee" />
+   <xacro:mj_joint name="fl_roll" />
+   <xacro:mj_joint name="fl_pitch" />
+   <xacro:mj_joint name="fl_knee" />
+   <xacro:mj_joint name="fr_roll" />
+   <xacro:mj_joint name="fr_pitch" />
+   <xacro:mj_joint name="fr_knee" />
+   <xacro:mj_joint name="rl_roll" />
+   <xacro:mj_joint name="rl_pitch" />
+   <xacro:mj_joint name="rl_knee" />
+   <xacro:mj_joint name="rr_roll" />
+   <xacro:mj_joint name="rr_pitch" />
+   <xacro:mj_joint name="rr_knee" />
 
     <!-- Body IMU.  mujoco_ros2_control keys off the name: it strips everything after the
          last underscore and looks for MuJoCo sensors <prefix>_quat / _gyro / _accel, and

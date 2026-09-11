@@ -14,6 +14,11 @@ class LegKinematics:
     def __init__(self, dy, dz, l_thigh, l_shin, foot_r=0.0):
         self.dy, self.dz = float(dy), float(dz)
         self.l1, self.l2 = float(l_thigh), float(l_shin)
+        # Recorded, NOT used: ik() targets the foot sphere's CENTRE, which is where
+        # l_shin already ends, so subtracting a radius here would move every target up by
+        # 13 mm.  It is kept because callers ask for it (gait.py reads the same number out
+        # of robot_params.json to place the nominal stance), and because a future IK that
+        # aims at the contact point instead of the centre needs it.
         self.foot_r = float(foot_r)
         self.reach_max = self.l1 + self.l2
         self.reach_min = abs(self.l1 - self.l2) + 1e-4

@@ -216,31 +216,76 @@ work already there, so it is not in this repo's history — only the `rtf` launc
 A fresh clone gets the argument and a node that ignores it until the submodule is built from
 the same working tree.
 
-**One real defect found while profiling, unrelated to speed.** `robot.xml`'s camera declares
-`resolution="3840 2160"` while the scene's offscreen buffer is `offwidth="1400" offheight="1000"`.
-MuJoCo's Python API rejects that combination outright; the C++ `MujocoCameras::register_cameras`
-does not check, and sets the viewport to 3840x2160 against a 1400x1000 buffer — so what
-`camera/color` and `camera/depth` publish is not a valid image. It is not a performance
-problem (4K render+readback measured at 16.6 ms against 13.2 at 1400x1000, ~10 % of a frame at
-6 Hz), so fixing it is a correctness job: either raise the buffer to match `CAM_PIX` or give
-`camera.py` a render resolution that fits, and regenerate. Not done here.
+**One real defect found while profiling, unrelated to speed — since FIXED (2026-09-11).**
+`robot.xml`'s camera declared `resolution="3840 2160"` while the scene's offscreen buffer
+was `offwidth="1400" offheight="1000"`. MuJoCo's Python API rejects that combination
+outright; the C++ `MujocoCameras::register_cameras` did not check, and set the viewport to
+3840×2160 against a 1400×1000 buffer — so what `camera/color` and `camera/depth` published
+was not a valid image. Both halves are closed now: `generate_model.py`'s `SCENE` derives
+`offwidth`/`offheight` from `md.CAM_PIX`, so the buffer can no longer be smaller than the
+camera, and `register_cameras` refuses a camera larger than the buffer with an error
+instead of rendering into nothing. It was never a performance problem (4K render+readback
+measured at 16.6 ms against 13.2 at 1400×1000, ~10 % of a frame at 6 Hz).
 
 Current self-test result:
 
 ```
-model ok: 19 dof, 12 actuators, mass 2.499 kg
-  stand    z= 199.4 mm  roll= +0.0 pitch= +0.0
-  hold 1s  z= 170.0 mm  roll= -0.0 pitch= -0.0  drift= 10.5 mm
-  trot 5s  z= 167.7 mm  roll= +1.3 pitch= +0.5  travelled x= 780.1 mm  y=  -4.6 mm
-  turn 4s  z= 168.7 mm  roll= -0.0 pitch= +0.1
+model ok: 18 dof, 12 actuators, mass 2.493 kg
+  stand    z= 170.6 mm  roll= +0.0 pitch= +0.1
+  hold 1s  z= 170.5 mm  roll= +0.0 pitch= +0.0  drift= 21.0 mm
+  trot 5s  z= 169.9 mm  roll= +2.8 pitch= -1.1  travelled x= 457.9 mm  y= -10.6 mm
+  turn 4s  z= 152.9 mm  roll= +1.5 pitch= +1.4
 RESULT: OK — stands and trots forward
 ```
 
-0.15 m/s against a 0.20 m/s command, 5 mm lateral drift over 5 s, attitude within 1.4°.
+**Two of those lines changed meaning on 2026-09-11 and one is a typo fix.** `dof` was
+printing `model.nq` (19: 18 velocities plus the free joint's quaternion having four
+components for three); it prints `model.nv` now. And `stand` used to read **199.4 mm**
+against a 181 mm nominal stance, because `settle()` took its command with `dt = 0` and the
+gait's rate limiter turns that into 3e-4 rad — so the robot "settled" with its legs
+STRAIGHT and the 29 mm `hold 1s` "drop" underneath it was the gait ramping to the stance
+for the first time. `settle()` now seeds the limiter from the stance, so `stand` and
+`hold 1s` agree and the drop is gone. Every number downstream of `settle()` moved with it
+— see "Rough ground" for the re-baseline over seeds.
+
+0.15 m/s against a 0.20 m/s command, 10 mm lateral drift over 5 s, attitude within 2.8°.
 That 22 % is not lag or torque — see "Forward speed, and what does not move it" under Gait
 before trying to tune it out. It is also the *only* thing about this robot that is slow: both
 viewers were measured running at or above real time, so an impression that the gait looks slow
 is the gait, not the renderer.
+
+### Re-baselined 2026-09-11 by `settle()`
+
+`settle()` never settled at the stance (see the self-test block above), so every arm in
+this section and in `tools/foot_contact.py` started its trot from a body that was still
+ramping down off straight legs. Fixing it moves all three arms. Measured on one tree, in
+one process, the old `settle()` beside the new one, same scenes and same seeds:
+
+| | before (old `settle`, hand-typed limits) | `settle` fixed only | **after** (`settle` + CAD limits) |
+|---|---|---|---|
+| flat trot | 457.8 mm | 457.9 mm | **457.9 mm** |
+| terrain, seeds 7…12 | 347 ±18 mm, 0/6 down | 420 ±16 mm, 0/6 down | **419 ±16 mm, 0/6 down** |
+| course, seeds 7 / 8 / 9 | 2/7 1747, 1/7 1597, 2/7 1812 — all upright | 0/7 731 **DOWN**, 2/7 1873, 2/7 1911 | **1/7 1663, 2/7 1733, 2/7 1836 — all upright** |
+
+**The flat arm did not move at all** (0.1 mm on a deterministic run), which is what says
+nothing else in this pass touched the dynamics: the model regenerated with the same
+2.493 kg, the same limits and the same actuator constants. **The terrain arm went up on
+every one of the six seeds** — 73 mm of means against spreads of 18 and 16, so this is a
+different distribution and not one seed's chaos, and neither arm put the robot down. The
+5 s trot simply no longer spends its first fraction of a second finishing a ramp.
+
+**Widening the joint limits changed nothing on flat or on the terrain sweep** — 457.9 mm
+to the tenth of a millimetre, 419 ±16 against 420 ±16 — which is the answer to "does the
+gait live near its clamps": on open ground it does not. The one place it did matter is the
+course.
+
+**Seed 7 on the course is a coin, and the full 2×2 is worth keeping.** With the old
+`settle` and the old limits it was 2/7 upright; with EITHER change alone it went down
+(0/7 731 with the new `settle`, 0/7 752 with the old `settle` and the wide limits); with
+both it is 1/7 1663 and upright again. Seeds 8 and 9 barely moved through all four cells.
+So that seed sits on a knife edge at the first obstacle and no single run of it means
+anything — which is what this file already says about the course, and the reason the
+shipping figure is three seeds and not the default one.
 
 ## Rough ground
 
@@ -406,10 +451,12 @@ the scan parameters; both are written by `../3d/lidar.py` out of the CAD, like e
 else here.
 
 ```
-/mujoco_ros2_control_node/lidar/points   sensor_msgs/PointCloud2, 10 Hz, SensorDataQoS
+/mujoco_ros2_control_node/lidar/points   sensor_msgs/PointCloud2, 12 Hz, SensorDataQoS
 ```
 
-2160 points a frame, x/y/z float32, in `lidar_link` — the frame `robot_state_publisher`
+~5195 points a frame (the compiled model's `lidar_pps` / `lidar_frame_hz`, measured at
+62340 /s and 12 Hz on 2026-09-05; it read 2160 at 10 Hz when the catalogue's 21600 /s was
+believed), x/y/z float32, in `lidar_link` — the frame `robot_state_publisher`
 puts on TF from the URDF, whose **+Z is the sensor's own axis**, leaning 45° nose-down with
 the pedestal. Timestamps are simulated time, like `/clock` and the joint states.
 
@@ -530,7 +577,7 @@ This is also not the only exporter of that CAD: `../3d/export_sim.py` writes its
 URDF/MJCF into `3d/out/sim/` with a different link decomposition (the foot is a separate
 part there, merged into the shin here). Both read the same `mini_dog.py` and both have to
 be re-run after a model change; `3d/CLAUDE.md` step 6 is the checklist. As of the last
-run both report 2.495 kg.
+run both report 2.493 kg.
 
 `robot_params.json` is the single source the gait reads at runtime — link lengths,
 hip offsets, joint limits and the nominal stance all come from there, so the walker
@@ -540,13 +587,43 @@ can never drift out of sync with the mechanics.
 
 | | |
 |---|---|
-| total mass | 2.495 kg (base 1.558 kg incl. battery, Orange Pi, LiDAR, GPS) |
-| leg reach | 102…152 mm from the hip-pitch axis → usable body height 154…170 mm |
+| total mass | 2.493 kg (base 1.559 kg incl. battery, Orange Pi, LiDAR, GPS) |
+| leg reach | 98…152 mm from the hip-pitch axis → usable body height 150…170 mm (it was 102…152 and 154…170 until the knee soft limit widened on 2026-09-11 — a bigger knee angle is a shorter leg) |
 | joints | `{fl,fr,rl,rr}_{roll,pitch,knee}` — 12 servo IDs 1…12 in that order |
-| joint limits | roll ±0.90, pitch ±1.30, knee ±1.85 rad — from the CAD interference scan |
+| joint limits | roll ±1.5708, pitch ±1.5708, knee ±1.9199 rad — **read** from the CAD interference scan (`3d/out/bom.json`), see "Joint limits" below |
 | MuJoCo hard stops | 0.03 rad **inside** the URDF limits, so the measured position can never trip ros2_control's joint limiter |
-| gait soft limits | 0.12 rad inside the mechanical limits |
-| joint effort / velocity | 3.0 N·m / 4.7 rad/s (ST3215 stall + 0.222 s per 60°) |
+| gait soft limits | 0.12 rad inside the mechanical limits → roll/pitch 1.4508, knee 1.7999 |
+| joint effort / velocity | 4.50 N·m measured on the torque rig, 3.15 rad/s achievable ceiling (`(forcerange − frictionloss)/damping`, below the measured 3.86 no-load) |
+
+### Joint limits
+
+**Changed 2026-09-11: the generator now reads the ROM scan instead of a hand-typed dict.**
+`J_LIM` was `{"roll": 0.90, "pitch": 1.30, "knee": 1.85}` with a comment claiming it came
+from the CAD scan. It did not — `3d/out/bom.json` reads ±90° / ±90° / ±110°, and
+`3d/export_sim.py` has always exported exactly those — so the two exporters of the same CAD
+were shipping robots with different mechanical limits, narrower here by 51.6° of roll and
+74.5° of pitch. Same class of defect as the servo mass and the `MJ_*` constants, and it is
+fixed the same way: this file imports `3d/export_sim.py`'s own `joint_rom()`/`limits()`
+rather than re-deriving them, so the two cannot drift again.
+
+The scan is not a guess about the geometry: `mini_dog.rom_scan_all()` sweeps real solids
+with the fork screws, the thrust bolts, the bolted cradle, the camera module and the GPS
+mast all in the static set, and `3d/CLAUDE.md` treats a range that *reaches* its scan
+window as "the end of the scan, not a mechanical limit" — which roll and pitch both do at
+90°. So ±90° is where the sweep stopped looking, not where the leg fouls.
+
+`robot_params.json` keeps **one magnitude per kind** in `joint_limits_rad` and
+`joint_soft_limits_rad`, because every consumer reads it that way — `gait.py`'s `_clamp`,
+`rl/model.py`'s action scaling, `robot/runtime/calib.py`'s servo clamp and
+`smalldog_walker`'s own test. The signed per-leg pairs the URDF and MJCF are written from
+are carried alongside in `joint_limits_rad_signed`. The generator **asserts** the scan is
+symmetric before writing that shape: taking a `min()` of two different magnitudes would
+silently clip one direction on the real robot.
+
+**This widens the real robot, not just the sim.** `robot/runtime/calib.py` clamps the
+actual servos with `joint_soft_limits_rad`, so the runtime roll clamp goes 0.78 → 1.45 rad.
+A policy or gait tuned against the old band saw a different action space and has to be
+re-tuned, not carried over.
 | nominal stance | base 181 mm above ground, gait default 158 mm |
 | meshes | 13 link meshes + 12 ST3215 bodies (visual only — their mass is already in each link's `<inertial>`, so they are drawn, never weighed twice) |
 | links | `base_link` + `{leg}_hip` / `{leg}_thigh` / `{leg}_shin` (foot fused into shin), plus the fixed `imu_link`, `lidar_link` and `gps_link` frames |
@@ -634,8 +711,12 @@ requirement that the foot lands in the thigh/shin plane (`py·cos q1 + pz·sin q
 then a plain 2-link solve inside that plane. FK/IK round-trip is tested to 1e-6.
 
 ```bash
-python -m pytest smalldog_walker/test -q     # 7 passed
+PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest smalldog_walker/test -q   # 11 passed
 ```
+
+The prefix is not optional in this pixi env: `launch_testing`'s pytest entry point
+registers a hook against an older pluggy and pytest refuses to start at all. It has
+nothing to do with these tests.
 
 ### The foot's contact patch, and why growing it changed nothing
 
@@ -812,6 +893,12 @@ look stale on the sim clock.
 - Nothing throttles the sim to real time; see the real-time factor note above.
 - Stale nodes from a killed launch (`robot_state_publisher` especially) block the next
   `controller_manager` from coming up. `pkill -f robot_state_publisher` before relaunching.
-- `mujoco_ros2_control` gains in `smalldog-mujoco.urdf.xacro` (kp 120 / kd 3) are a
-  starting point; the fork drives MuJoCo's own position actuators
-  (`defaults.xml`: kp 25, dampratio 1), so tune there first.
+- **The 90° roll and pitch limits are where the ROM *scan window* stopped, not where the
+  leg fouls.** `mini_dog.rom_scan_all()` sweeps roll and pitch over ±90° and both come
+  back free at both ends, which `3d/CLAUDE.md` is explicit about reading as "the end of
+  the scan, not an interference limit" — `3d/export_sim.py --check` even prints that
+  caveat next to the number. Since 2026-09-11 those are the limits this workspace ships
+  and the band `robot/runtime/calib.py` clamps the real servos to, so the honest statement
+  is that the mechanism has been *shown* to reach ±90° and has never been asked whether it
+  reaches further. Widening the scan window in `3d/mini_dog.py` is the way to find out;
+  nothing here should assume 90° is a hard stop.

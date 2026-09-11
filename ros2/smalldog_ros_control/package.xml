@@ -11,11 +11,14 @@
 
   <exec_depend>controller_manager</exec_depend>
   <exec_depend>joint_state_broadcaster</exec_depend>
+  <exec_depend>imu_sensor_broadcaster</exec_depend>
   <exec_depend>joint_trajectory_controller</exec_depend>
   <exec_depend>robot_state_publisher</exec_depend>
   <exec_depend>mujoco_ros2_control</exec_depend>
   <exec_depend>smalldog_description</exec_depend>
   <exec_depend>smalldog_walker</exec_depend>
+  <exec_depend>smalldog_teleop</exec_depend>
+  <exec_depend>foxglove_bridge</exec_depend>
   <exec_depend>xacro</exec_depend>
 
   <export>

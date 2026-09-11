@@ -65,6 +65,7 @@ class SmallDogWalker(Node):
         self.contact_threshold = self.get_parameter('contact_threshold').value
         self.contact = None
         self.imu_seen = 0
+        self._load_no_imu = False     # said once, in on_foot_load
 
         self.cmd = (0.0, 0.0, 0.0)
         self.enabled = True
@@ -125,6 +126,15 @@ class SmallDogWalker(Node):
         if len(msg.data) >= len(self.gait.legs):
             self.contact = {l: msg.data[i] > self.contact_threshold
                             for i, l in enumerate(self.gait.legs)}
+            # ... and it is HELD, so with no IMU it never reaches gait.feedback() at all.
+            # That is a silently open loop, which is exactly the failure this node should
+            # not keep to itself.  Once is enough; the IMU handler announces its own
+            # arrival the same way.
+            if self.imu_seen == 0 and not self._load_no_imu:
+                self._load_no_imu = True
+                self.get_logger().warn(
+                    'foot load is arriving but no IMU yet - contact feedback is held and '
+                    'never applied until one does, i.e. the gait is open loop')
 
     def tick(self):
         stale = (self._wall.now() - self.last_cmd).nanoseconds * 1e-9 > self.timeout

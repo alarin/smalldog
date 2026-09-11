@@ -77,7 +77,8 @@ def draw_cloud(scn, frames, r=0.006):
     """Put the accumulated cloud into the viewer's own scene, coloured by height.
 
     World coordinates, several frames deep, and subsampled to CLOUD_MAX - the viewer redraws
-    every one of these at 60 Hz, and a full 10 Hz frame is 2160 points before accumulation.
+    every one of these at 60 Hz, and a full frame is ~5200 points before accumulation
+    (the measured 62340 /s at 12 Hz; it read 2160 when 21600 /s at 10 Hz was believed).
     """
     pts = np.concatenate(frames) if frames else np.zeros((0, 3))
     if len(pts) > CLOUD_MAX:
@@ -130,8 +131,27 @@ def feed(gait, data, sens, blind=False):
                   contact={l: data.sensordata[a] > 1e-6
                            for l, a in sens["contact"].items() if a >= 0})
 
+SETTLE_DT = 1.0     # see settle(): big enough that the gait's rate limiter does not bite
+
 def settle(model, data, gait, act, seconds=1.0, sens=None, blind=False):
-    q = gait.joint_targets(0.0, 0.0, 0.0, 0.0)
+    """let the robot come to rest AT THE STANCE, holding one command while physics settles.
+
+    The command is taken ONCE, with dt = SETTLE_DT.  It used to be taken once with dt = 0,
+    and the gait rate-limits its output to max_joint_rate * max(dt, 1e-4) from _q_prev's
+    zeros - so a dt of 0 bought 3e-4 rad and the robot "settled" with its legs STRAIGHT.
+    The self-test's `stand` line then read the straight-leg height (199.4 mm against a
+    181 mm nominal stance) and the `hold 1s` drop after it was not a drop at all: it was
+    the gait finally ramping to the stance it should already have been standing at.
+
+    A dt of one second seeds _q_prev from the stance in one step, which is what is wanted
+    here.  CLOCKING the gait through the settle instead - joint_targets() every step - was
+    tried and is worse, not better: standing still with the feet down satisfies _ground()'s
+    landing test, so each leg latches a _gz offset during the settle and carries it into
+    the first stride.  On flat that is harmless (_lift is ~0); on the heightfield it put
+    the robot on its back inside 5 s.  This is the settle, not a run - the gait should be
+    holding a pose, not integrating terrain feedback against one.
+    """
+    q = gait.joint_targets(SETTLE_DT, 0.0, 0.0, 0.0)
     for i, a in enumerate(act):
         data.ctrl[a] = q[i]
     for _ in range(int(seconds / model.opt.timestep)):
@@ -162,7 +182,7 @@ def headless(terrain=False, blind=False, lidar=False):
     sc = scanner(model) if lidar else None
     print(f"scene: {os.path.basename(scene(terrain))}"
           f"   gait: {'open loop (blind)' if blind else 'IMU + foot contact'}")
-    print(f"model ok: {model.nq} dof, {model.nu} actuators, "
+    print(f"model ok: {model.nv} dof, {model.nu} actuators, "
           f"mass {sum(model.body_mass):.3f} kg")
     mujoco.mj_resetData(model, data)
     settle(model, data, gait, act, 1.5, sens, blind)
@@ -188,6 +208,14 @@ def headless(terrain=False, blind=False, lidar=False):
     print("RESULT:", "OK — stands and trots forward" if ok else "FAIL")
     return 0 if ok else 1
 
+# The body-height band the R/F keys walk over.  It is stated three times in this
+# workspace - here, in smalldog_teleop/keyboard_teleop.py and in README.md - and the three
+# disagreed: 0.09..0.20 by 0.005 here, 0.11..0.19 by 0.004 there, and the README quoting
+# this one while the docstring above claims "same bindings as the ROS 2 teleop node".
+# This is the band; the other two now match it.  (The gait clamps to its own reachable
+# band on top of this, see TrotGait.body_height's setter - these are only the UI stops.)
+H_MIN, H_MAX, H_STEP = 0.09, 0.20, 0.005
+
 KEYMAP = {
     ord('W'): ("vx", +1), ord('S'): ("vx", -1),
     ord('A'): ("vy", +1), ord('D'): ("vy", -1),
@@ -207,7 +235,7 @@ def interactive(terrain=False, blind=False, lidar=False):
     st = {"scale": 0.20, "wscale": 1.2, "enabled": True}
 
     def on_key(keycode):
-        k = KEYMAP.get(keycode if keycode < 128 else keycode)
+        k = KEYMAP.get(keycode)
         if k is None:
             return
         what, sign = k
@@ -216,7 +244,8 @@ def interactive(terrain=False, blind=False, lidar=False):
         elif what == "vx":  cmd["vx"] = sign * st["scale"]
         elif what == "vy":  cmd["vy"] = sign * st["scale"]
         elif what == "wz":  cmd["wz"] = sign * st["wscale"]
-        elif what == "h":   gait.body_height = min(0.20, max(0.09, gait.body_height + sign*0.005))
+        elif what == "h":   gait.body_height = min(H_MAX, max(H_MIN, gait.body_height
+                                                              + sign*H_STEP))
         elif what == "scale":
             st["scale"] = min(0.45, max(0.05, st["scale"] + sign * 0.05))
             print(f"speed {st['scale']:.2f} m/s")

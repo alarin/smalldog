@@ -15,7 +15,7 @@ Keys arrive from either source, and both may be live at once:
   the focused TTY, so it only works when the node is started by hand
   (`ros2 run smalldog_teleop keyboard`), not from a launch file.
 """
-import sys, os, select, termios, tty, threading
+import sys, select, termios, tty, threading
 import rclpy
 import rclpy.executors
 from rclpy.node import Node
@@ -42,6 +42,13 @@ MOVE = {
     'a': ('y', +1), 'd': ('y', -1),
     'q': ('z', +1), 'e': ('z', -1),
 }
+
+# The body-height band the R/F keys walk over.  Kept identical to
+# ../../tools/standalone_sim.py's H_MIN/H_MAX/H_STEP and to README.md - this node said
+# 0.11..0.19 by 0.004 while the other two said 0.09..0.20 by 0.005, and standalone_sim's
+# docstring claimed the bindings were the same.  This package has no dependency on
+# smalldog_walker, so the band is stated twice on purpose; change both together.
+H_MIN, H_MAX, H_STEP = 0.09, 0.20, 0.005
 
 
 class KeyboardTeleop(Node):
@@ -93,8 +100,9 @@ class KeyboardTeleop(Node):
             self.cmd[axis] = sign * scale
         elif key == ' ':
             self.cmd = {'x': 0.0, 'y': 0.0, 'z': 0.0}
-        elif key in 'rf':
-            self.height = max(0.11, min(0.19, self.height + (0.004 if key == 'r' else -0.004)))
+        elif key in ('r', 'f'):
+            self.height = max(H_MIN, min(H_MAX, self.height
+                                         + (H_STEP if key == 'r' else -H_STEP)))
             self.pub_h.publish(Float64(data=self.height))
         elif key in ',.':
             self.speed = max(0.05, min(0.45, self.speed + (0.05 if key == '.' else -0.05)))
@@ -139,7 +147,10 @@ def main(args=None):
                 continue
             if select.select([sys.stdin], [], [], 0.1)[0]:
                 key = sys.stdin.read(1)
-                if key == '\x03':
+                # '' is EOF, not a keystroke, and select() keeps reporting the fd ready
+                # forever after it - so this used to spin at full speed, and since
+                # `'' in 'rf'` is True it walked body_height to its floor while doing it.
+                if not key or key == '\x03':
                     break
                 node.on_key(key.lower())
     except KeyboardInterrupt:

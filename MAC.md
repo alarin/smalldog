@@ -560,3 +560,79 @@ label are both correct, and there is no pre-assembly electrical check owed on th
 The general lesson is the one worth keeping — a vendor listing's photo is not the part,
 and this repo's own rule about measured-beats-catalogue applies to what is printed on a
 board as much as to its outline.
+
+## Open CAD defects found 2026-09-11
+
+A read-only review of `3d/` turned up three defects that are **geometry** — fixing any of
+them moves printed material, so a review pass that was otherwise confined to code and
+comments deliberately did not touch them. Everything below is measured on the real solids
+of the current tree, not argued. They are recorded here rather than only in the source
+because this file is the mac's queue, and these three are the queue.
+
+The reason all three survived is the same one, and it is worth reading before adding a
+part: **every check in `3d/` is blind to a feature that does not share volume with
+something else.** `interference()` pairs the static body parts, so a part cannot interfere
+with itself; `rom_scan()` only covers what moves; `isValid()` and `Volume() > 0` pass
+happily on a body that fell off; and `PART_SOLIDS` only checks the count against a number
+a human typed. Two of the three below are *permitted* by that `PART_SOLIDS` entry.
+
+### 1. The GPS mast's feet no longer land on the deck screws — 3 mm out
+
+`GPS_X, GPS_Y = -52.0, 38.0`, so `gps_mount()` cuts its two `M3_CLR` feet at (−52, ±38).
+`DECK_SCREWS` puts **all four** pairs at |y| = **41** — they moved from 38 when the
+battery module went in, because at 38 the bosses took a 1.9 mm bite out of the module's
+corners. `chassis_top()` therefore drills (−52, ±41). The feet and the boss screws are
+**3 mm apart**, so the M3 × 24 that `README.md` and the BOM describe as replacing the rear
+two deck screws cannot go through both parts.
+
+No check can see this: the two parts share zero solid, so `interference()` reads clear.
+
+**The fix is not free.** `GPS_PAD_R` = 4.8, so a pad moved out to y = 41 reaches 45.8,
+into the stiffening lip at 43. Moving the mast means either shrinking the pad, moving the
+lip, or giving the mast its own two screws and dropping the "it drills nothing" property
+that is the whole argument for where it sits. That is a design decision, not an edit.
+
+### 2. `camera_mount`'s front retaining wall comes off as two loose pieces
+
+The board-pocket cut in `camera_mount()` runs the full length of the part and severs the
+front wall from the skirt. Measured on the solid: three bodies, **2896.3 mm³** (the
+channel), **529.3 mm³** (x 66.37…68.00, y −73…−9, z 25.53…31.96) and **104.9 mm³**
+(same x and z, y 9…31). The two small ones are the wall.
+
+`PART_SOLIDS["camera_mount"] = 3` allowed it, and its comment said the extras were "the
+channel plus its two rails", which they are not. So the count check saw the number it had
+been told to expect. The consequence is real: the wall is the one feature that stops the
+IMX415 board falling out forward, `camera_mount()`'s docstring describes it as retention,
+and on the printed part it is two chips of plastic on the plate.
+
+### 3. The Orange Pi's rear standoff pair floats 0.2 mm off the deck
+
+`OPI_HOLES` = (92, 54) at `OPI_X` = −22 puts the rear pair at x = −68 on a deck that ends
+at x = −63. With `OPI_STAND_R` = 4.8 the standoffs' nearest material is at **−63.2**, so
+the clearance is **0.2 mm** — not the 0.8 `3d/README.md` stated (that number was never
+measured; the README has been corrected). `chassis_top` comes back as three solids: the
+deck at 42575.3 mm³ and two standoffs of **383.8 mm³** each, x −72.80…−63.20, y ±22.20…
+±31.80, z 29…36, attached to nothing.
+
+This is the hole pattern being wrong and not the deck — `OPI_HOLES` is marked **verify**
+in `README.md` and has never met a real board. It is the cheapest of the three to fix and
+the one that should wait longest: measure a Pi first.
+
+### What was fixed in the same pass
+
+Everything else the review found was code or comments and is done: `PRINT_ORIENT`
+["lidar_mount"] (it was printing upside down on zero bed area), `fea.robot_mass()` (it
+omitted the GPS, camera and IMU, so every ground load case ran 1.3 % light), the ROM scan
+that existed twice with two different static sets, the clearance probes that read a failed
+boolean as a pass, `render.py`'s hand-written scene list (the cradles and the whole
+battery module were in none of the three PNGs), and the battery-to-deck gap, which six
+comments still called 1.4 mm against a measured 0.60.
+
+Two of those reached outside `3d/` and are worth knowing about from here, because both
+were the same "two exporters of one CAD disagree" defect this repository keeps finding.
+`../ros2/.../generate_model.py` had a hand-typed `J_LIM` claiming to come from the ROM
+scan while `3d/out/bom.json` said ±90 / ±90 / ±110 — it reads `3d/export_sim.py`'s own
+`joint_rom()`/`limits()` now, which also widens the REAL robot's runtime clamp. And
+`3d/export_sim.py` was writing the URDF's joint `velocity` as the raw no-load speed while
+the ROS 2 generator took `min()` with the achievable ceiling; both are 3.15 rad/s now.
+Full numbers in `3d/CLAUDE.md` step 6 and `ros2/README.md`, "Joint limits".

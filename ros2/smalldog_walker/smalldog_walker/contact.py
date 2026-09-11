@@ -33,7 +33,6 @@ and commanded speed all shape the in-air load curve — so `Baseline` stamps tho
 `mismatch()` reports what has drifted since.
 """
 import json
-import math
 
 LEGS = ("fl", "fr", "rl", "rr")
 NBIN = 60                      # phase bins over one gait cycle; 60 is ~7.5 ms at 0.45 s

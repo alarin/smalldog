@@ -49,9 +49,11 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 WS   = os.path.dirname(HERE)
 sys.path.insert(0, os.path.join(WS, "smalldog_walker"))
 sys.path.insert(0, HERE)
+sys.path.insert(0, os.path.abspath(os.path.join(WS, "..", "3d")))
 
 import numpy as np
 import mujoco
+import mini_dog as md               # for MJ_FOOT_CONDIM: the arms' labels are derived
 from smalldog_walker.gait import TrotGait
 import standalone_sim as ss
 
@@ -125,13 +127,17 @@ GRIP_FRICTION = (1.2, 0.002, 0.001)
 
 def apply(spec, kind, rake):
     """mutate the compiled-model spec in place.  Returns a one-line description."""
+    # Built from md.MJ_FOOT_CONDIM rather than typed.  These said "condim 3 (as shipped)"
+    # long after the shipped value became 4 on 2026-09-08, i.e. the control arm's own label
+    # named the thing the control was there to be compared against.
     if kind == "base":
-        return "@26 sphere, condim 3 (as shipped)"
+        return f"@26 sphere, condim {md.MJ_FOOT_CONDIM} (as shipped)"
 
     if kind == "site":
         for leg in LEGS:
             spec.site(f"{leg}_foot_site").size = [SITE_R, 0, 0]
-        return f"@26 sphere, condim 3, touch site grown to r={SITE_R*1000:.0f} mm (control)"
+        return (f"@26 sphere, condim {md.MJ_FOOT_CONDIM}, touch site grown to"
+                f" r={SITE_R*1000:.0f} mm (control)")
 
     if kind == "condim3":
         # The `grip` arm, run backwards.  It went in on 2026-09-08 (mini_dog.py's
@@ -144,7 +150,8 @@ def apply(spec, kind, rake):
             g = spec.geom(f"{leg}_foot")
             g.condim = 3
             g.friction = [1.2, 0.02, 0.001]
-        return "@26 sphere, condim 3 + the old torsion (the fix, undone)"
+        return ("@26 sphere, condim 3 + the old torsion (the fix, undone - and the one"
+                " arm that sets condim explicitly, because that IS what it is for)")
 
     if kind == "ankle":
         return _ankle(spec)
@@ -166,7 +173,10 @@ def apply(spec, kind, rake):
             g.size = [rp, h, 0.0]
             g.pos  = c - (r - h) * u
             g.quat = quat_z_to(u)
-            g.condim = 3
+            # condim is deliberately NOT set here: these two arms exist to measure a SHAPE
+            # against `base`, and setting it to 3 made them differ from the control in
+            # contact dimensionality as well, which is two changes in one arm.  They now
+            # inherit md.MJ_FOOT_CONDIM from the model, exactly as base does.
             site.size = [SITE_R, 0, 0]      # site.pos stays at the ankle
         elif kind == "tripod":
             # Three lobes on the same raked plane, on a @16 ring inside the same @26
@@ -185,8 +195,6 @@ def apply(spec, kind, rake):
                 nb.type = mujoco.mjtGeom.mjGEOM_SPHERE
                 nb.size = [LOBE_R, 0.0, 0.0]
                 nb.pos = base + LOBE_RING * (math.cos(a) * e1 + math.sin(a) * e2)
-                nb.condim = 3
-            g.condim = 3
             site.size = [SITE_R, 0, 0]      # site.pos stays at the ankle
         else:
             raise SystemExit(f"unknown variant {kind}")
@@ -485,7 +493,8 @@ def scene_for(terrain, seed):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--variant", action="append", choices=VARIANTS,
-                    help="default: all four, base first (it is the control)")
+                    help=f"default: all {len(VARIANTS)} ({', '.join(VARIANTS)}),"
+                         f" base first (it is the control)")
     ap.add_argument("--terrain", action="store_true")
     ap.add_argument("--seeds", type=int, nargs="*", default=[None])
     ap.add_argument("--blind", action="store_true")
@@ -536,6 +545,12 @@ def main():
     print("\n" + "-" * 78)
     print(f"{'arm':8} {'travel mm':>16} {'pts/foot':>9} {'spread':>8} {'skid':>8}"
           f" {'twist':>8} {'@limit':>7}")
+    if len(seeds) > 1:
+        # travel is a mean +- sd over the seeds; the contact columns are the LAST seed's
+        # report, not an average.  Said out loud because the two sat side by side and read
+        # as if they were the same kind of number.
+        print(f"{'':8} {'(mean +- sd over ' + str(len(seeds)) + ' seeds)':>16}"
+              f"   <- contact columns are the LAST seed only")
     for k, (mu, sd, r) in summary.items():
         t = f"{mu:7.1f}" + (f" +-{sd:.0f}" if len(seeds) > 1 else "       ")
         print(f"{k:8} {t:>16} {r['points']:9.2f} {r['spread']:7.1f} {r['slip']:7.1f}"

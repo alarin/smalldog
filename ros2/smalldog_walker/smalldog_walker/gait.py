@@ -302,7 +302,8 @@ class TrotGait:
         self._moving += (target_moving - self._moving) * k
         period = self.period_for(speed)
         if self._moving > 1e-3:
-            self.t += dt
+            self.t += dt              # wall-ish gait clock, for callers/logging only:
+                                      # the stride runs off _phase below, not off this
             # integrate the phase, not the clock: `period` changes with the command, and
             # s = t / period would jump the whole gait mid-stride every time it did
             self._phase = (self._phase + dt / max(period, 1e-3)) % 1.0

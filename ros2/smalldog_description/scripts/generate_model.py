@@ -256,7 +256,55 @@ for k, v in links.items():
     print(f"  {k:10s} {v['body'].m*1000:7.1f} g   com {c[0]:7.1f} {c[1]:7.1f} {c[2]:7.1f} mm")
 
 # ---------------------------------------------------------------- joint table
-J_LIM  = {"roll": 0.90, "pitch": 1.30, "knee": 1.85}     # rad, from the CAD ROM scan
+# THE MECHANICAL LIMITS COME FROM THE CAD ROM SCAN, and they are read out of it here
+# rather than typed.  Until 2026-09-11 this was a hand-written
+# {"roll": 0.90, "pitch": 1.30, "knee": 1.85} with a comment claiming it came from the
+# scan.  It did not: 3d/out/bom.json's rom_deg is +-90 / +-90 / +-110 deg, so this file
+# and 3d/export_sim.py were shipping robots with DIFFERENT mechanical limits - roll 51.6
+# deg here against 90, pitch 74.5 against 90, knee 106 against 110 - which is the same
+# class of defect as the servo mass and the MJ_* constants, and the reason everything else
+# in this file is read from mini_dog rather than copied.
+#
+# It is read through 3d/export_sim.py's OWN joint_rom()/limits(), not re-derived: that is
+# the function that already knows how to read bom.json and how a leg's sign flips, so the
+# two exporters cannot drift again.  The scan itself is md.rom_scan_all(), swept booleans
+# against the real solids with the fork screws, the thrust bolts, the cradle, the camera
+# and the GPS mast all in the static set - so the 90 deg roll stop is a geometric fact
+# about this robot, not a guess.
+#
+# WIDENING THIS WIDENS THE REAL ROBOT.  joint_soft_limits_rad below is derived from it and
+# robot/runtime/calib.py clamps the actual servos with that (roll 0.78 -> 1.45 rad here).
+# That is deliberate as of 2026-09-11; see ros2/README.md, "Joint limits".
+import export_sim as es                                              # noqa: E402
+
+_KIND = {"hip_roll": "roll", "hip_pitch": "pitch", "knee": "knee"}
+# rom_deg in mini_dog's own front-left convention, straight off bom.json
+_ROM_DEG = {_KIND[k]: v for k, v in es.joint_rom(None).items() if k in _KIND}
+# roll mirrors in y and pitch/knee mirror in x, the same convention export_sim's LEGS
+# table carries as roll=/pitch=; here that is exactly SY and SX.
+_SIGN = {"roll": SY, "pitch": SX, "knee": SX}
+
+#: {leg: {kind: (lo_rad, hi_rad)}} - signed, per leg, because a mirrored leg's limits swap
+J_LIM_SIGNED = {leg: {k: es.limits(_ROM_DEG[k], _SIGN[k][leg]) for k in _ROM_DEG}
+                for leg in LEGS}
+
+# The scan is SYMMETRIC today (+-90 / +-90 / +-110), and robot_params.json's consumers all
+# assume that: gait.py's _clamp, rl/model.py's action scaling, robot/runtime/calib.py's
+# clamp and the walker's own test each read one number per kind.  So the file keeps that
+# shape - one magnitude per kind - and carries the signed pairs alongside in
+# joint_limits_rad_signed for anything that wants them.  If the scan ever comes back
+# asymmetric, taking the min() of the two magnitudes would silently clip one direction on
+# the real robot, so it asserts here instead of quietly narrowing.
+def _sym(kind):
+    lo, hi = _ROM_DEG[kind]
+    assert abs(abs(lo) - abs(hi)) < 1e-6, (
+        f"the {kind} ROM scan came back asymmetric ({lo:+.1f} .. {hi:+.1f} deg). "
+        "robot_params.json's joint_limits_rad is one magnitude per kind and every "
+        "consumer assumes that, so this needs the signed shape plumbed through "
+        "gait.py, rl/model.py and robot/runtime/calib.py before it can ship.")
+    return round(min(abs(math.radians(lo)), abs(math.radians(hi))), 4)
+
+J_LIM = {k: _sym(k) for k in _ROM_DEG}
 MJ_MARGIN = 0.03    # MuJoCo hard stops sit INSIDE the URDF limits, so the measured
                     # position can never trip ros2_control's joint limiter
 SOFT_MARGIN = 0.12  # the gait must stay this far inside the mechanical limit
@@ -284,17 +332,27 @@ J_RATE = min((md.SERVO_STALL_NM - md.MJ_FRICTIONLOSS) / md.MJ_DAMPING,
 #                   duplicates of the same two vendor numbers mini_dog.py already
 #                   held - which is the servo-mass and the MJ_* divergence a third
 #                   time.  The rounding was worth 2 % of servo torque.
+print("  joint limits, from the CAD ROM scan: "
+      + ", ".join(f"{k} +-{v:.3f} rad ({math.degrees(v):.0f} deg)"
+                  for k, v in J_LIM.items()))
+
 STANCE = {"pitch": -0.42, "knee": 1.05}                  # nominal standing angles
 
 def joints_of(leg):
+    """the leg's three joints; the last field is the SIGNED (lo, hi) limit pair in rad.
+
+    It used to be one magnitude, which hard-coded a symmetry the ROM scan does not
+    promise.  It is still symmetric today, but the pair is what the URDF and the MJCF
+    actually want and it is what a mirrored leg needs if it ever stops being."""
     sy = SY[leg]
+    lim = J_LIM_SIGNED[leg]
     return [
         (f"{leg}_roll",  "base_link",      f"{leg}_hip",   (0, 0, 0),
-         (SX[leg]*R.ROLL_X*MM, sy*R.ROLL_Y*MM, R.ROLL_Z*MM), (1, 0, 0), J_LIM["roll"]),
+         (SX[leg]*R.ROLL_X*MM, sy*R.ROLL_Y*MM, R.ROLL_Z*MM), (1, 0, 0), lim["roll"]),
         (f"{leg}_pitch", f"{leg}_hip",     f"{leg}_thigh", (0, 0, 0),
-         (0.0, sy*(R.LEG_Y-R.ROLL_Y)*MM, (R.PITCH_Z-R.ROLL_Z)*MM), (0, 1, 0), J_LIM["pitch"]),
+         (0.0, sy*(R.LEG_Y-R.ROLL_Y)*MM, (R.PITCH_Z-R.ROLL_Z)*MM), (0, 1, 0), lim["pitch"]),
         (f"{leg}_knee",  f"{leg}_thigh",   f"{leg}_shin",  (0, 0, 0),
-         (0.0, 0.0, -R.L_THIGH*MM), (0, 1, 0), J_LIM["knee"]),
+         (0.0, 0.0, -R.L_THIGH*MM), (0, 1, 0), lim["knee"]),
     ]
 
 JOINTS = [j for leg in LEGS for j in joints_of(leg)]
@@ -313,7 +371,12 @@ def collisions(name, leg=None):
     if name == "base_link":
         return [("box", (R.BODY_L/2, R.BODY_W/2, (R.BODY_Z1+R.DECK_T-R.BODY_Z0)/2),
                  (0, 0, (R.BODY_Z1+R.DECK_T+R.BODY_Z0)/2), None),
-                ("box", (R.ROLL_X+R.SLEEVE_LEN/2, R.ROLL_Y+13.11, 15.36), (0, 0, 0), None)]
+                # the two bolted hip-roll cradles, as one box across both ends.  The z
+                # half-extent is R.CRADLE_Z1 exactly - the cradle is symmetric about z = 0
+                # and its own solid measures +-15.36 - so read it rather than typing it;
+                # 13.11 is still a literal, because nothing in the CAD is named for it.
+                ("box", (R.ROLL_X+R.SLEEVE_LEN/2, R.ROLL_Y+13.11, R.CRADLE_Z1),
+                 (0, 0, 0), None)]
     if name.endswith("_hip"):
         sy = SY[leg]
         return [("box", (R.S_W/2+R.SLEEVE_W, R.SLEEVE_LEN/2, 25.6),
@@ -369,17 +432,26 @@ def write_urdf():
             elif kind == "sphere":
                 g = f'<sphere radius="{size[0]*MM:.4f}"/>'
             else:
-                g = f'<cylinder radius="{size[0]*MM:.4f}" length="{(R.L_SHIN-21)*MM:.4f}"/>'
+                # URDF has no capsule, so the shin becomes a cylinder - but it has to be
+                # the SAME cylinder the MJCF capsule's fromto describes, not one built from
+                # `pos` and a length of its own.  It was the latter: the capsule spans
+                # z -81..+4 mm and the cylinder spanned -71.5..-10.5, so the two files
+                # described different shins and only one of them ever met the ground.
+                # Derived from `extra` here, which is the fromto pair itself.
+                x0, y0, z0, x1, y1, z1 = extra
+                p = ((x0+x1)/2*MM, (y0+y1)/2*MM, (z0+z1)/2*MM)
+                L = math.dist((x0, y0, z0), (x1, y1, z1))
+                g = f'<cylinder radius="{size[0]*MM:.4f}" length="{L*MM:.4f}"/>'
             out.append(f'    <collision><origin xyz="{p[0]:.4f} {p[1]:.4f} {p[2]:.4f}"'
                        f' rpy="0 0 0"/><geometry>{g}</geometry></collision>')
         out.append('  </link>')
-    for jn, parent, child, rpy, xyz, axis, lim in JOINTS:
+    for jn, parent, child, rpy, xyz, axis, (jlo, jhi) in JOINTS:
         out.append(f'  <joint name="{jn}" type="revolute">\n'
                    f'    <parent link="{parent}"/>\n'
                    f'    <child link="{child}"/>\n'
                    f'    <origin xyz="{xyz[0]:.5f} {xyz[1]:.5f} {xyz[2]:.5f}" rpy="0 0 0"/>\n'
                    f'    <axis xyz="{axis[0]} {axis[1]} {axis[2]}"/>\n'
-                   f'    <limit lower="{-lim:.4f}" upper="{lim:.4f}"'
+                   f'    <limit lower="{jlo:.4f}" upper="{jhi:.4f}"'
                    f' effort="{J_EFF}" velocity="{J_VEL}"/>\n'
                    f'  </joint>')
     # the L2's optical centre and its own frame - the TF a point cloud hangs off.  Pose
@@ -468,17 +540,17 @@ def write_mjcf():
         jr, jp, jk = joints_of(leg)
         o.append(f'      <body name="{leg}_hip" pos="{jr[4][0]:.5f} {jr[4][1]:.5f} {jr[4][2]:.5f}">')
         o.append(f'        <joint name="{jr[0]}" axis="1 0 0"'
-                 f' range="{-jr[6]+MJ_MARGIN:.4f} {jr[6]-MJ_MARGIN:.4f}"/>')
+                 f' range="{jr[6][0]+MJ_MARGIN:.4f} {jr[6][1]-MJ_MARGIN:.4f}"/>')
         o.append(mj_inertial(links[f"{leg}_hip"]["body"], 8))
         o += mj_geoms(f"{leg}_hip", leg, 8)
         o.append(f'        <body name="{leg}_thigh" pos="{jp[4][0]:.5f} {jp[4][1]:.5f} {jp[4][2]:.5f}">')
         o.append(f'          <joint name="{jp[0]}" axis="0 1 0"'
-                 f' range="{-jp[6]+MJ_MARGIN:.4f} {jp[6]-MJ_MARGIN:.4f}"/>')
+                 f' range="{jp[6][0]+MJ_MARGIN:.4f} {jp[6][1]-MJ_MARGIN:.4f}"/>')
         o.append(mj_inertial(links[f"{leg}_thigh"]["body"], 10))
         o += mj_geoms(f"{leg}_thigh", leg, 10)
         o.append(f'          <body name="{leg}_shin" pos="{jk[4][0]:.5f} {jk[4][1]:.5f} {jk[4][2]:.5f}">')
         o.append(f'            <joint name="{jk[0]}" axis="0 1 0"'
-                 f' range="{-jk[6]+MJ_MARGIN:.4f} {jk[6]-MJ_MARGIN:.4f}"/>')
+                 f' range="{jk[6][0]+MJ_MARGIN:.4f} {jk[6][1]-MJ_MARGIN:.4f}"/>')
         o.append(mj_inertial(links[f"{leg}_shin"]["body"], 12))
         o += mj_geoms(f"{leg}_shin", leg, 12)
         # the touch sensor sums the contacts that fall *inside* this site's volume, and
@@ -540,7 +612,12 @@ DEFAULTS = f'''<mujoco>
 </mujoco>
 '''
 
-SCENE = '''<mujoco model="smalldog_scene">
+# The offscreen buffer has to be at least the camera's own resolution.  MujocoCameras
+# sets the viewport from the camera and mjr_readPixels then fills a CAM_PIX-sized image out
+# of it, so a buffer smaller than the camera silently reads short - it was 1400x1000
+# against a 3840x2160 camera.  Derived, never typed, for the same reason every other
+# number here is.
+SCENE = f'''<mujoco model="smalldog_scene">
   <option timestep="0.001" integrator="implicitfast" solver="Newton" tolerance="1e-8"/>
   <size memory="64M"/>
 
@@ -550,7 +627,7 @@ SCENE = '''<mujoco model="smalldog_scene">
   <visual>
     <headlight diffuse="0.6 0.6 0.6" ambient="0.35 0.35 0.35" specular="0 0 0"/>
     <rgba haze="0.15 0.25 0.35 1"/>
-    <global azimuth="140" elevation="-20" offwidth="1400" offheight="1000"/>
+    <global azimuth="140" elevation="-20" offwidth="{md.CAM_PIX[0]}" offheight="{md.CAM_PIX[1]}"/>
   </visual>
 
   <asset>
@@ -620,7 +697,17 @@ with open(os.path.join(PKG, "robot_params.json"), "w") as f:
         "hip_to_pitch_mm": {l: [0.0, float(SY[l]*(R.LEG_Y-R.ROLL_Y)), float(R.PITCH_Z-R.ROLL_Z)]
                             for l in LEGS},
         "l_thigh_mm": R.L_THIGH, "l_shin_mm": R.L_SHIN, "foot_r_mm": R.FOOT_D/2,
+        # One MAGNITUDE per kind, straight off the CAD ROM scan, because every consumer
+        # of this file reads it that way - gait.py's _clamp, rl/model.py's action scaling,
+        # robot/runtime/calib.py's servo clamp and smalldog_walker's own test.  The
+        # generator asserts the scan is symmetric before writing this shape.
         "joint_limits_rad": J_LIM,
+        # ... and the same limits SIGNED and per leg, which is what the URDF and the MJCF
+        # are written from.  Here for anything that wants the real pair rather than the
+        # magnitude; nothing clamps against it today.
+        "joint_limits_rad_signed": {leg: {k: [round(a, 4), round(b, 4)]
+                                          for k, (a, b) in J_LIM_SIGNED[leg].items()}
+                                    for leg in LEGS},
         "joint_soft_limits_rad": {k: round(v - SOFT_MARGIN, 4) for k, v in J_LIM.items()},
         "joint_velocity_limit": J_VEL,
         "joint_rate_ceiling_rad_s": round(J_RATE, 4),

@@ -203,9 +203,9 @@ scan (`3d/out/bom.json`, ±90° / ±90° / ±110°) — so the runtime band went
 **0.78 → 1.4508 rad** and knee **1.73 → 1.7999**. At this servo's 4096 counts per turn
 that is ±946 counts of roll where it used to be ±508, so the encoder-wrap problem this
 step is about is nearly twice as easy to hit: re-run `--capture` and check every joint
-still has the counts it needs before trusting an old `calib.json`. See `ros2/README.md`, "Joint limits", for why the
-numbers changed and for the caveat that ±90° is where the CAD's scan window stopped, not
-a measured mechanical stop.
+still has the counts it needs before trusting an old `calib.json`. See `ros2/README.md`,
+"Joint limits", for why the numbers changed, and for the caveat that ±90° is where the
+CAD's scan window stopped rather than a measured mechanical stop.
 
 ### What the loop does not do yet
 
