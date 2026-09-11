@@ -95,6 +95,13 @@ def one_run(bus, servo, a, span_counts, direction):
     goal = int(np.clip(start + direction * span_counts, 40, COUNTS - 40))
     if abs(goal - start) < span_counts * 0.5:
         return None                                     # too close to a stop
+    # Goal first, torque second — `runtime/loop.py:engage` says why in full. Here it
+    # is not a nicety: the slews ALTERNATE direction, so the goal left in the
+    # register is the far end of the previous one, and enabling torque before
+    # writing the new goal flung a free hub back the other way at full duty before
+    # the measurement had started. Parking it on `start` means nothing moves until
+    # the goal below is written, which is also what makes the slew start from rest.
+    bus.write(a.id, R.GOAL_POSITION, start)
     servo.torque(True)
     bus.write(a.id, R.GOAL_POSITION, goal)
     t0 = time.perf_counter()
@@ -142,12 +149,20 @@ def pwm_spin(bus, servo, a, duty):
     return float(sm[i]), float(np.median(np.abs(np.asarray(ws)[i:i + k])))
 
 
-def pwm_ladder(bus, servo, a):
+def pwm_ladder(bus, servo, a, volts):
     """The discriminating run: the same duty rungs with no position loop between
-    the duty and the bridge.  Restores MODE 0 whatever happens."""
+    the duty and the bridge.  Restores MODE 0 and the TORQUE_LIMIT whatever happens.
+
+    The cap matters as much as the mode. This raises TORQUE_LIMIT to 1000 because a
+    capped duty caps the speed and the answer would be the cap — and the servo it is
+    run on is the one the torque rig leaves at 350. Putting it back is not tidiness:
+    the next thing to touch this servo is a rig with a 170 mm arm on it, and 1000 is
+    the difference between a push and a throw.
+    """
     print("  MODE 2 (open-loop PWM).  The hub will turn CONTINUOUSLY.\n")
     print(f"  {'duty':>5} {'d*U':>6} {'w_pos':>8} {'w_reg':>8}")
     rows = []
+    cap0 = bus.read(a.id, R.TORQUE_LIMIT)
     try:
         servo.torque(False)
         bus.write(a.id, R.TORQUE_LIMIT, 1000)
@@ -159,14 +174,16 @@ def pwm_ladder(bus, servo, a):
         for d in (400, 600, 800, 1000, -1000, -800):
             w, wr = pwm_spin(bus, servo, a, d)
             time.sleep(0.3)
-            print(f"  {d:>5} {abs(d) / 1000 * a.volts:6.2f} {w:8.3f} {wr:8.3f}")
-            rows.append((abs(d) / 1000 * a.volts, w))
+            print(f"  {d:>5} {abs(d) / 1000 * volts:6.2f} {w:8.3f} {wr:8.3f}")
+            rows.append((abs(d) / 1000 * volts, w))
     finally:
         bus.write(a.id, R.GOAL_TIME, 0)
         time.sleep(0.3)
         servo.torque(False)
         bus.write(a.id, R.MODE, 0)
-        print(f"\n  restored MODE = {bus.read(a.id, R.MODE)}")
+        bus.write(a.id, R.TORQUE_LIMIT, cap0)
+        print(f"\n  restored MODE = {bus.read(a.id, R.MODE)}, "
+              f"TORQUE_LIMIT = {bus.read(a.id, R.TORQUE_LIMIT)} (was {cap0})")
     return rows
 
 
@@ -192,7 +209,9 @@ def main():
                          "between the duty and the bridge. Decides whether the "
                          "plateau is the profile's (A) or the PWM's (B). UNTESTED "
                          "on hardware as of 2026-09-11.")
-    ap.add_argument("--volts", type=float, default=12.0)
+    ap.add_argument("--volts", type=float, default=12.0,
+                    help="the PSU's dial, as a CROSS-CHECK. Every d*U below is "
+                         "computed from what the servo actually reports")
     a = ap.parse_args()
 
     bus = Bus(a.port, a.baud)
@@ -220,9 +239,19 @@ def main():
     span = int(round(a.span_deg * COUNTS / 360.0))
     fb = servo.feedback()
     print(f"  {fb['volt']:.1f} V, {fb['temp']:.0f} C, span {a.span_deg:.0f} deg\n")
+    # d*U is the x-axis of the whole ladder and the slope through it IS 1/k_e, so it
+    # is taken from the supply the servo REPORTS, not from the dial the operator
+    # typed. Reading the voltage and then regressing against a nominal 12.0 is how a
+    # bench at 12.4 V reports k_e 3 % low and nobody can see it in the output.
+    volts = fb["volt"]
+    if abs(volts - a.volts) > 0.3:
+        print(f"  !! the servo reads {volts:.1f} V against --volts {a.volts:g}. The "
+              f"ladder below uses {volts:.1f}; check the supply if that is wrong.\n")
     if a.pwm:
-        rows = pwm_ladder(bus, servo, a)
-        report(rows, a, pwm=True)
+        rows = pwm_ladder(bus, servo, a, volts)
+        report(rows, volts, pwm=True)
+        print("\n  Remember to cap TORQUE_LIMIT again before anything with a load "
+              "on it.")
         return 0
     print(f"  {'cap':>5} {'d*U':>6} {'w_pos':>8} {'w_reg':>8} {'ratio':>7}  "
           f"(w from position | from PRESENT_SPEED)")
@@ -243,25 +272,25 @@ def main():
                 print(f"  {cap:>5}  no usable slew — too close to an end stop?")
                 continue
             w_pos, w_reg = float(np.median(vs)), float(np.median(rs))
-            du = cap / 1000.0 * a.volts
+            du = cap / 1000.0 * volts
             rows.append((du, w_pos))
             ratio = w_pos / w_reg if w_reg else float("nan")
             print(f"  {cap:>5} {du:6.2f} {w_pos:8.3f} {w_reg:8.3f} {ratio:7.3f}")
     finally:
         servo.torque(False)
 
-    report(rows, a)
+    report(rows, volts)
     print("\n  Remember to cap TORQUE_LIMIT again before anything with a load on it.")
     return 0
 
 
-def report(rows, a, pwm=False):
+def report(rows, volts, pwm=False):
     if not rows:
         return
     rows = sorted(rows)
     du = np.array([r[0] for r in rows]); w = np.array([r[1] for r in rows])
     top = float(w[-1])
-    print(f"\n  {'open-loop' if pwm else 'no-load'} speed at {a.volts:g} V: "
+    print(f"\n  {'open-loop' if pwm else 'no-load'} speed at {volts:.1f} V: "
           f"{top:.3f} rad/s   (measured 3.86 in position mode; vendor 4.71)")
     if len(rows) < 2:
         return
@@ -274,8 +303,12 @@ def report(rows, a, pwm=False):
         print(f"  plateau: {len(rows) - n + 1} rungs from d*U = {du[n - 1]:.2f} V up "
               f"all read {top:.2f} rad/s - the duty stopped mattering there, "
               f"{'so it is NOT the position loop (B)' if pwm else 'A or B, see --pwm'}")
-    # rows[n-1] is the lowest plateau rung; the ones below it are the slope
-    lo_du, lo_w = du[:n - 1], w[:n - 1]
+    # rows[n-1] is the lowest plateau rung, so the slope is fitted over everything
+    # BELOW it. With no plateau there is no rung to drop, and dropping one anyway
+    # threw away the top of the ladder — the point with the most leverage on a
+    # through-the-origin slope — on exactly the runs where every rung is honest.
+    cut = n - 1 if n < len(rows) else n
+    lo_du, lo_w = du[:cut], w[:cut]
     n = len(lo_du)
     if n >= 1:
         # through the origin: a free output at duty d sits at d*U/k_e, nothing

@@ -83,7 +83,7 @@ def main():
     if not bus.ping(a.id):
         raise SystemExit(f"servo {a.id} does not answer on {a.port}")
 
-    before = show(servo, "  — before")
+    show(servo, "  — before")            # for the printing; nothing reads it back
     if a.set is None:
         return 0
 

@@ -23,6 +23,14 @@ import time
 COLUMNS = ["t", "target_rad", "q_rad", "w_rad_s", "current_a",
            "volt_v", "temp_c", "load_raw", "counts"]
 
+#: Standard gravity, the third factor of the `m*g*r` this file already carries the
+#: other two of. Here because every reader of these csv files converts the same way
+#: and they had drifted apart — `fit_bam.py` wrote 9.80665 in four places and
+#: `hysteresis.py` 9.81, so the same hold ladder produced two slightly different
+#: friction numbers depending on which tool read it. It must also equal
+#: `rl/actuator.pendulum_load`'s, which is the model side of the same arithmetic.
+G = 9.80665
+
 
 def write(path: str, meta: dict, rows: list[dict]) -> None:
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)

@@ -54,9 +54,11 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
 sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(ROOT, "rl"))
+sys.path.insert(0, os.path.join(ROOT, "robot"))
 
 import runlog                                                        # noqa: E402
 import actuator as A                                                 # noqa: E402
+from feetech import registers as R                                   # noqa: E402
 
 #: The fit does NOT run in Params' own coordinates, and this is the single
 #: thing that makes it converge.
@@ -91,19 +93,61 @@ FIT = [("kt_eff", 0.05, 20.0), ("g_kp", 0.05, 500.0), ("g_ke", 0.005, 10.0),
        ("mu_load", 0.0, 0.9),
        ("deadband", 1e-5, 0.05), ("punch", 0.0, 0.5), ("theta_bl", 0.0, 0.05)]
 
+#: FIT by name, for the passes that fit a SUBSET of it — the free swing fits three
+#: of these and used to restate their bounds, with two of the four numbers already
+#: different from the ones here.
+BOUNDS = {n: (lo, hi) for n, lo, hi in FIT}
+
 W_POS = math.radians(0.3)     # rad of position error worth one unit of residual
 #: Smallest duty at which PRESENT_CURRENT / duty is worth believing.  0.02 is two
 #: PRESENT_LOAD counts; the supply current there is 0.0011 A, well under the
 #: register's 0.0065 A LSB.  See the note in Run.__init__.
 DUTY_MIN = 0.02
 
-#: PRESENT_CURRENT's own LSB, 6.5 mA.  Here only so the selftest can quantise its
-#: synthetic current the way the hardware does; the live path reads it from
-#: feetech.registers.CURRENT_LSB_A.
-CURRENT_LSB = 0.0065
+#: PRESENT_CURRENT's own LSB, 6.5 mA, IMPORTED and not restated.  Used here only so
+#: the selftest can quantise its synthetic current the way the hardware does; the
+#: live path reads the same constant through feetech.bus.Servo.decode.  It was a
+#: literal until 2026-09-11, which is a second copy of a number whose whole point is
+#: that the register was never told it (see registers.py, CURRENT_LSB_A).
+CURRENT_LSB = R.CURRENT_LSB_A
+#: Standard gravity, from runlog beside the mass and radius it multiplies.  It was
+#: four separate literals here and a fifth, different one in hysteresis.py.
+G = runlog.G
 
 W_CUR = 0.03                  # A of current error worth the same
 SMOOTH = 5                    # samples of moving average before comparing
+
+#: WHAT THE SERVO IS COMPARED AGAINST, and which half of it is a measurement.
+#:
+#: 2.94 N*m and 4.71 rad/s are the DATASHEET's, and this file used to print them as
+#: "spec" with nothing beside them - so a fit that came out at 4.2 read as 43 % over
+#: a number that is itself 35 % under what a scale says.  Both have since been put
+#: on a bench:
+#:
+#:   stall   4.50 N*m at 12 V - `3d/torque_rig.py` and a kitchen scale, 2026-09-10.
+#:           `robot/README.md`, "The stall torque, in newton-metres", and
+#:           ST3215_STS3215_measured_parameters.md ("Do not size a joint off the
+#:           7.4 - or off the vendor's 2.94.  Use 4.50").  It is a 2.2x
+#:           extrapolation from rungs under the duty knee, which that write-up
+#:           flags; it is still a measurement and the 2.94 is still not.
+#:   no load 3.86 rad/s - `bench/noload_speed.py`, free hub, 2026-09-11.  Read out
+#:           of robot_params.json rather than typed, because the model generator
+#:           writes it there from the same measurement and `runtime/walk.py`
+#:           already reads that file.  There is NO stall figure in robot_params
+#:           (the sim carries the joint's rate ceiling, not its torque), so the
+#:           4.50 above is a constant here and has to be edited if it is re-measured.
+VENDOR_STALL_NM, VENDOR_NOLOAD_RADS = 2.94, 4.71
+MEASURED_STALL_NM = 4.50
+PARAMS_JSON = os.path.join(ROOT, "ros2", "smalldog_description", "robot_params.json")
+
+
+def measured_noload_rads(path=PARAMS_JSON, fallback=3.86) -> float:
+    """The measured no-load speed, from the file the sim and the runtime both read."""
+    try:
+        with open(path) as f:
+            return float(json.load(f)["joint_velocity_limit"])
+    except (OSError, KeyError, TypeError, ValueError):
+        return fallback            # a bench with no checkout of ros2/ still runs
 
 
 def _smooth(x, n=SMOOTH):
@@ -359,7 +403,7 @@ def seed_from_freeswing(runs, p: A.Params) -> A.Params:
         q = r.q[~r.on]
         if len(q) < 50:
             continue
-        mgr = r.mass * 9.80665 * r.radius
+        mgr = r.mass * G * r.radius
         rest = float(np.mean(q[-len(q) // 4:]))
         sgn = np.sign(q - rest)
         cross = np.flatnonzero((sgn[:-1] < 0) & (sgn[1:] >= 0))
@@ -418,7 +462,9 @@ def seed_from_holdbi(runs, p: A.Params) -> A.Params:
     Anchored to GRAVITY, not to k_u, and that is the whole point of doing it this
     way. m*g*r*sin(q) is known exactly; k_u is the parameter that absorbs missing
     friction and is inflated by a factor nobody has pinned down (the fit's
-    implied stall is 4.23 N*m against a spec 2.94). Seeding a friction term off
+    implied stall is 4.23 N*m against a datasheet 2.94 — and a scale has since put
+    the real one at 4.50, so the size of that inflation is not settled either, which
+    is exactly why nothing here is anchored to it). Seeding a friction term off
     k_u would be circular. So both friction and gravity are measured in the same
     duty*volt units within one run, and the ratio between them converts to N*m
     with no electrical parameter involved.
@@ -434,7 +480,7 @@ def seed_from_holdbi(runs, p: A.Params) -> A.Params:
         if r.duty is None:
             continue
         du = r.duty_signed * r.u_bat
-        mgr = r.mass * 9.80665 * r.radius
+        mgr = r.mass * G * r.radius
         step = np.flatnonzero(np.abs(np.diff(r.target)) > 1e-6)
         edges = np.concatenate(([0], step + 1, [len(r.target)]))
         seg = []
@@ -474,8 +520,12 @@ def seed_from_holdbi(runs, p: A.Params) -> A.Params:
         return p
     a = np.array(per_run)
     tc, mu = float(np.median(a[:, 0])), float(np.median(a[:, 1]))
+    # .1f, not .0f: the bench's own voltage points are 8 / 9.9 / 10 / 12, and at
+    # .0f two of those print as "10 V" and the reader cannot tell which ladder is
+    # which — on a file whose whole argument is that the rows must agree ACROSS
+    # voltage.
     print(f"  hold ladder, both approaches ({len(per_run)} runs at "
-          f"{', '.join(f'{v:.0f} V' for v in a[:, 3])}):")
+          f"{', '.join(f'{v:.1f} V' for v in a[:, 3])}):")
     print(f"    tau_c {tc:.4f} N*m   mu_load {mu:.4f} N*m per N*m carried   "
           f"(spread {np.ptp(a[:, 0]):.4f} / {np.ptp(a[:, 1]):.4f})")
 
@@ -492,7 +542,6 @@ def seed_from_holdbi(runs, p: A.Params) -> A.Params:
     # data, which has no static friction by construction, that pushed J_m from
     # 0.017 to 0.023 and tau_c to a third of the truth. A seed that can be wrong
     # in that direction has to be able to say no.
-    quantum = float(np.median(a[:, 4]))          # median friction, duty*volts
     biggest = float(np.median(a[:, 5]))          # median max load, N*m
     if tc <= 0.0 or mu <= 0.0 or tc + mu * biggest < 0.05 * biggest:
         print(f"    !! that is under 5 % of the {biggest:.2f} N*m this ladder "
@@ -513,10 +562,6 @@ def seed_from_holdbi(runs, p: A.Params) -> A.Params:
         # law as it was before this term existed, which actuator._selftest()
         # asserts explicitly.
         return A.Params(**{**p.__dict__, "mu_load": 0.0})
-    if mu <= 0.0:
-        print("    mu_load came out non-positive — friction is not growing with "
-              "load in this data. Left at its prior rather than clamped to zero.")
-        return A.Params(**{**p.__dict__, "tau_c": max(1e-4, tc)})
     # Friction that meets or exceeds the torque carried is a gearbox that cannot
     # transmit anything, and the bound in FIT says so; a value near it means the
     # ladder was measuring something other than friction.
@@ -542,7 +587,7 @@ def seed_from_holds(runs, p: A.Params) -> A.Params:
                 continue
             sl = slice(a_ + int(0.6 * n), b_)
             q = float(np.mean(r.q[sl]))
-            tau.append(abs(r.mass * 9.80665 * r.radius * math.sin(q)))
+            tau.append(abs(r.mass * G * r.radius * math.sin(q)))
             cur.append(float(np.mean(np.abs(r.i[sl]))))
             err.append(abs(float(np.mean(r.target[sl] - r.q[sl]))))
             iu.append(cur[-1] / max(1e-6, float(np.mean(r.u_bat[sl]))))
@@ -558,22 +603,28 @@ def seed_from_holds(runs, p: A.Params) -> A.Params:
     #
     # Test it on the answer rather than on tau_c, which is still its prior this
     # early in the seeding: kt_eff times the stall current U/R is the implied
-    # stall torque, and if that is far past the datasheet the holds are measuring
-    # friction. Measured on the ST3215 bench: m*g*r = 0.380 N*m against tau_s in
-    # 0.352..0.380, kt_eff = 10.3 N*m/A, implied stall 32 N*m against a spec 2.94.
+    # stall torque, and if that is far past what a scale says the servo makes, the
+    # holds are measuring friction. Measured on the ST3215 bench: m*g*r = 0.380 N*m
+    # against tau_s in 0.352..0.380, kt_eff = 10.3 N*m/A, implied stall 32 N*m
+    # against a measured 4.50 (the vendor's 2.94 is not the number to judge on).
     # Decline to seed and leave k_u at its prior, exactly as the reversal leaves
     # the dead zone when its threshold is never bracketed.
     good0 = np.asarray(cur) > 1e-3
     if good0.sum() >= 4:
         M0 = np.column_stack([np.asarray(cur)[good0], np.ones(int(good0.sum()))])
         kt0 = float(np.linalg.lstsq(M0, np.asarray(tau)[good0], rcond=None)[0][0])
-        spec_stall = A.Params().k_u * 12.0
+        # Judged against the MEASURED stall, not `A.Params().k_u * 12` — which is
+        # the vendor's 2.94 reached the long way round, and this test was calibrated
+        # on it. The bar moves 8.8 -> 13.5 N*m, and the failure it was written for
+        # read 32, so it still catches that by 2.4x. Using the vendor figure would
+        # mean declining to seed k_u on a servo whose real stall is half the bar.
         implied = kt0 * 12.0 / p.R
-        if implied > 3.0 * spec_stall:
-            mgr_max = max((r.mass * 9.80665 * r.radius for r in runs
+        if implied > 3.0 * MEASURED_STALL_NM:
+            mgr_max = max((r.mass * G * r.radius for r in runs
                            if r.trajectory == "hold"), default=0.0)
             print(f"  holds: torque per amp comes out {kt0:.2f} N*m/A, an implied "
-                  f"stall of {implied:.1f} N*m against a spec {spec_stall:.2f} — "
+                  f"stall of {implied:.1f} N*m against a measured "
+                  f"{MEASURED_STALL_NM:.2f} (vendor {VENDOR_STALL_NM:.2f}) — "
                   f"friction, not the motor, is holding this arm\n"
                   f"         (m*g*r = {mgr_max:.3f} N*m). The torque constant is "
                   f"not identifiable from these holds; leaving it at its prior. "
@@ -921,11 +972,18 @@ def fit(runs, holdout=None, dt_int=1e-4, max_nfev=200, base=None,
         print(f"  free swing: the arm {'oscillates' if osc else 'does not oscillate'}"
               f", fitting {n_free} parameter{'s' if n_free > 1 else ''}"
               + ("" if osc else " (b_v left to the driven runs)"))
+        # The bounds are FIT's own, looked up by name. Restating them here was two
+        # numbers that had already drifted — tau_c's floor was 1e-5 against FIT's
+        # 1e-4 and b_v's 1e-6 against 1e-5 — so the same parameter had a different
+        # feasible set depending on which pass was fitting it, and the free swing
+        # is precisely the pass that likes to drive tau_c into its floor.
+        names = ("J_m", "tau_c", "b_v")[:n_free]
+        lo = [BOUNDS[n][0] for n in names]
+        hi = [BOUNDS[n][1] for n in names]
         for it in range(2):        # one refinement: the analytic J_m seed used a
             x0f = [base.J_m, base.tau_c, base.b_v][:n_free]   # prior tau_c
             sol = least_squares(
-                residual_free, x0f,
-                bounds=([1e-4, 1e-5, 1e-6][:n_free], [0.2, 1.0, 1.0][:n_free]),
+                residual_free, x0f, bounds=(lo, hi),
                 x_scale=[0.005, 0.05, 0.02][:n_free], diff_step=1e-2,
                 loss="soft_l1", f_scale=3.0, ftol=1e-12, xtol=1e-12,
                 max_nfev=150, args=(base, free, dt_int))
@@ -1186,7 +1244,7 @@ def _selftest(dt_int=1e-4) -> int:
     def get(o, n):
         return o.k_u * o.R if n == "k_u*R" else getattr(o, n)
 
-    print(f"\nidentified — each of these has an experiment that isolates it")
+    print("\nidentified — each of these has an experiment that isolates it")
     print(f"{'parameter':<12}{'truth':>10}{'fitted':>10}{'error':>9}")
     for n, t in identified.items():
         t_, f_ = get(truth, n), get(p, n)
@@ -1195,7 +1253,7 @@ def _selftest(dt_int=1e-4) -> int:
         ok &= good
         print(f"{n:<12}{t_:10.4f}{f_:10.4f}{e*100:8.1f}%"
               + ("" if good else f"   FAIL (>{t*100:.0f}%)"))
-    print(f"\nnot identified by this trajectory set — reported, not asserted")
+    print("\nnot identified by this trajectory set — reported, not asserted")
     for n, why in weak.items():
         t_, f_ = get(truth, n), get(p, n)
         e = abs(f_ - t_) / max(abs(t_), 1e-9)
@@ -1246,7 +1304,10 @@ def main():
                          n_refine=a.n_refine, refine_pass=a.refine)
 
     print(f"\n{'run':<34}{'pos RMS deg':>12}{'current RMS A':>15}")
-    for name, rp, ri in rms(p, train, a.dt_int):
+    # Kept, not recomputed: `rms` re-integrates every training run, which on the
+    # real corpus is the most expensive thing in this function after the fit itself.
+    fitted = rms(p, train, a.dt_int)
+    for name, rp, ri in fitted:
         print(f"  fit  {name:<28}{rp:11.3f}{ri:15.4f}")
     held = rms(p, test, a.dt_int)
     for name, rp, ri in held:
@@ -1254,12 +1315,12 @@ def main():
     if held:
         p.rms_pos_deg = float(np.mean([r[1] for r in held]))
         p.rms_current_a = float(np.mean([r[2] for r in held]))
-        fit_pos = float(np.mean([r[1] for r in rms(p, train, a.dt_int)]))
+        fit_pos = float(np.mean([r[1] for r in fitted]))
         if p.rms_pos_deg > 2.5 * max(fit_pos, 1e-6):
             print("\n!! the held-out run is much worse than the fitted ones: the fit "
                   "has absorbed noise or the trajectory set is too narrow.")
 
-    print(f"\nfitted:")
+    print("\nfitted:")
     # FIT names the fit-space coordinates (kt_eff, g_kp, g_ke, g_R); `p` is a
     # Params, which carries the physical ones. Report both: the physical values
     # are what ships, and the combinations are what the bench actually measured,
@@ -1274,8 +1335,11 @@ def main():
     print(f"  {'g_R':<12} {1.0 / p.R:.5f}   (= 1/R, from the saturated steps)")
     print(f"  {'k_w':<12} {p.k_w:.5f}   (derived, = k_u*k_e)")
     print(f"  stall  {p.stall_torque(12.0):.2f} N*m @ 12 V, "
-          f"{p.stall_torque(9.9):.2f} @ 9.9 V   (spec 2.94 @ 12)")
-    print(f"  no load {p.no_load_speed(12.0):.2f} rad/s @ 12 V   (spec 4.71)")
+          f"{p.stall_torque(9.9):.2f} @ 9.9 V   "
+          f"(vendor {VENDOR_STALL_NM:.2f}, MEASURED {MEASURED_STALL_NM:.2f} @ 12)")
+    print(f"  no load {p.no_load_speed(12.0):.2f} rad/s @ 12 V   "
+          f"(vendor {VENDOR_NOLOAD_RADS:.2f}, MEASURED "
+          f"{measured_noload_rads():.2f})")
     print(f"  backlash {math.degrees(p.theta_bl):.2f} deg   (spec <= 0.5)")
     print(f"  J_m {p.J_m:.5f} kg m^2 — this is MuJoCo's `armature`, and it was "
           f"{A.Params().J_m:.5f} as a guess")

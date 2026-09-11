@@ -17,7 +17,8 @@ a loop that does not have one.
   **Current.** The fast one. A stalled ST3215 draws 2.7 A (`robot/README.md`), and
   a leg that lands on the edge of a table gets there in one tick. But so does a
   hard footfall, briefly, which is the gait working — so this one is held: over
-  the limit for `current_hold_s` continuously, not once.
+  the limit for `current_hold_s` continuously, not once. Read `Limits.current_a`
+  before setting it: the register is the *supply* current, d²·U/R, not the motor's.
 
   **Voltage.** Two different faults at two different speeds. Over `volt_max` is a
   supply set wrong and is tripped at once, before anything is asked to move.
@@ -89,6 +90,14 @@ class Limits:
     #: costs 0.18 s of lag on a quantity that moves over tens of seconds.
     temp_median_n: int = 9
     temp_spike_c: float = 8.0       # raw minus median above this is counted, not acted on
+    #: SUPPLY amps, not motor amps. `PRESENT_CURRENT` reports what the H-bridge
+    #: draws, d^2*U/R, while the motor carries d*U/R (registers.py, CURRENT_LSB_A).
+    #: So at R ~ 4.35 ohm and 12 V this 2.0 can only be reached at d ~ 0.85, where
+    #: the motor is at 2.35 A, against a locked-rotor 2.76 at d = 1 — which is the
+    #: number this limit is sized against and is still the right one. What it does
+    #: NOT do is bound a joint working hard at partial duty: the register is
+    #: quadratic in d, so 1 A through the motor at 36 % duty reads 0.36 A here.
+    #: This trip is for a stall, not for thermal load.
     current_a: float = 2.0          # stall is 2.7 A at 12 V
     current_hold_s: float = 0.30
     volt_min: float = 9.5           # 3S nearly empty; the bench's lowest point is 9.9
@@ -171,8 +180,18 @@ class Guard:
 
     # ---------------------------------------------------------------- update
     def update(self, dt, feedback: dict, goal: dict | None = None):
-        """One tick. `feedback` is {joint: decoded dict or None}, `goal` {joint: rad}."""
-        lim, live = self.lim, 0
+        """One tick. `feedback` is {joint: decoded dict or None}, `goal` {joint: rad}.
+
+        The FIRST trip wins, but it is raised after every joint has been read, not
+        the instant it is found. Raising out of the middle of the loop left the
+        joints after the offending one with no peak recorded for the tick that
+        mattered — so the run's report said 0.44 rad on `fl_pitch` and nothing at
+        all about the other three legs, which is the one tick anybody reading that
+        report wants. Nothing acts on a peak, so finishing the tick costs a few
+        microseconds and cannot make the robot any less safe; what it cannot do is
+        keep DRIVING, and it does not — the raise still leaves by the same door.
+        """
+        lim, live, trip = self.lim, 0, None
         for n in self.joints:
             fb = feedback.get(n)
             if fb is None:
@@ -197,31 +216,32 @@ class Guard:
                     self.temp_spikes += 1
                 self.peak["temp"] = max(self.peak["temp"], t)
                 self._hot_t[n] = self._hot_t[n] + dt if t >= lim.temp_c else 0.0
-                if self._hot_t[n] >= lim.temp_hold_s:
-                    raise Tripped(f"over temperature for {self._hot_t[n]:.2f} s",
-                                  n, t, lim.temp_c)
+                if self._hot_t[n] >= lim.temp_hold_s and trip is None:
+                    trip = Tripped(f"over temperature for {self._hot_t[n]:.2f} s",
+                                   n, t, lim.temp_c)
                 if t >= lim.temp_warn_c:
                     self._warn(f"hot:{n}", f"{n} is at {t:.0f} C, {lim.temp_c:.0f} trips")
 
             i = fb["current"]
             self.peak["current"] = max(self.peak["current"], i)
             self._hot[n] = self._hot[n] + dt if i >= lim.current_a else 0.0
-            if self._hot[n] >= lim.current_hold_s:
-                raise Tripped(f"over current for {self._hot[n]:.2f} s", n, i, lim.current_a)
+            if self._hot[n] >= lim.current_hold_s and trip is None:
+                trip = Tripped(f"over current for {self._hot[n]:.2f} s",
+                               n, i, lim.current_a)
 
             v = fb["volt"]
             self.peak["volt_min"] = min(self.peak["volt_min"], v)
             self.peak["volt_max"] = max(self.peak["volt_max"], v)
-            if v >= lim.volt_max:
-                raise Tripped("over voltage", n, v, lim.volt_max)
+            if v >= lim.volt_max and trip is None:
+                trip = Tripped("over voltage", n, v, lim.volt_max)
 
             if goal is not None and n in goal:
                 e = abs(goal[n] - fb["q"])
                 self.peak["q_err"] = max(self.peak["q_err"], e)
                 self._err[n] = self._err[n] + dt if e >= lim.q_err_rad else 0.0
-                if self._err[n] >= lim.q_err_hold_s:
-                    raise Tripped(f"not tracking for {self._err[n]:.2f} s — jammed, or a "
-                                  f"sign is wrong in calib.json", n, e, lim.q_err_rad)
+                if self._err[n] >= lim.q_err_hold_s and trip is None:
+                    trip = Tripped(f"not tracking for {self._err[n]:.2f} s — jammed, or a "
+                                   f"sign is wrong in calib.json", n, e, lim.q_err_rad)
 
         # Undervoltage is a property of the pack, not of one servo: hold it on the
         # lowest reading of the tick so a single noisy frame does not start the clock.
@@ -229,17 +249,19 @@ class Guard:
         if volts:
             lo = min(volts)
             self._low_v = self._low_v + dt if lo <= lim.volt_min else 0.0
-            if self._low_v >= lim.volt_hold_s:
-                raise Tripped(f"under voltage for {self._low_v:.2f} s — the pack is done",
-                              None, lo, lim.volt_min)
+            if self._low_v >= lim.volt_hold_s and trip is None:
+                trip = Tripped(f"under voltage for {self._low_v:.2f} s — the pack is done",
+                               None, lo, lim.volt_min)
 
         self._miss = 0 if live else self._miss + 1
-        if self._miss >= lim.bus_fail:
-            raise Tripped(f"no feedback from any servo for {self._miss} ticks — "
-                          f"check the bus, the adapter and the power")
+        if self._miss >= lim.bus_fail and trip is None:
+            trip = Tripped(f"no feedback from any servo for {self._miss} ticks — "
+                           f"check the bus, the adapter and the power")
         if live and live < len(self.joints):
             self._warn(f"partial:{len(self.joints) - live}",
                        f"only {live} of {len(self.joints)} servos answered")
+        if trip is not None:
+            raise trip
 
     # ---------------------------------------------------------------- report
     def summary(self) -> dict:
@@ -401,6 +423,22 @@ def _selftest() -> int:
     p = g.summary()
     chk("peaks are recorded", p["temp"] == 40.0 and abs(p["current"] - 1.0) < 1e-9
         and abs(p["volt_min"] - 11.5) < 1e-9 and abs(p["q_err"] - 0.05) < 1e-9)
+
+    # ... on the TRIP tick as well, for the joints after the one that tripped.
+    # `update` used to raise from inside the per-joint loop, so the one tick anybody
+    # reads a post-mortem for — the one that stopped the robot — recorded nothing at
+    # all about the joints later in the order. Here "a" trips on current while "b"
+    # is drawing more of it; the report has to say so.
+    g = Guard(joints, log=quiet)
+    for _ in range(20):
+        try:
+            g.update(0.02, {"a": frame(current=2.5), "b": frame(current=3.5)})
+        except Tripped as e:
+            trip = e
+            break
+    chk("the first joint over the line is the one named", trip.joint == "a")
+    chk("... and the joints after it still record their peak",
+        abs(g.summary()["current"] - 3.5) < 1e-9)
 
     print("safety:", "ok" if ok else "FAILED")
     return 0 if ok else 1

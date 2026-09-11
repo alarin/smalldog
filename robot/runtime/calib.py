@@ -192,12 +192,42 @@ class Calibration:
 
 
 # ------------------------------------------------------------------ procedures
-def capture(bus, calib, joints=None, settle=0.2):
+def headroom(calib, joints=None) -> dict:
+    """{joint: (have, need)} in counts — how far the centre is from the 0/4095 wrap.
+
+    `have` is the nearer of the two ends, `need` is what that joint's own soft limit
+    asks for. A joint with less than it needs cannot reach its own limit, and
+    NOTHING ELSE IN THIS TREE CAN SEE THAT: `Servo.to_counts` clamps at 0 and 4095
+    without complaint, so the joint simply stops mid-command and reports the count
+    it stopped at as if it had arrived. Wrapping in software is worse — with
+    MIN/MAX_ANGLE_LIMIT at 0/4095 the servo drives to the absolute count, so a
+    wrapped goal sends the leg the long way round through its whole ROM.
+
+    The first assembly is why this exists: six of the twelve joints sat within 330
+    counts of the wrap and `fr_knee` needed +-1128 and had 16. The cure is the
+    servo's own middle-position calibration (write 128 to TORQUE_ENABLE at
+    mechanical zero, `robot/README.md` bring-up step 3), then capture again.
+    """
+    out = {}
+    for n in list(joints or calib.joints):
+        soft = calib.soft.get(n)
+        if soft is None:                  # no limit on file: nothing to be short of
+            continue
+        need = int(math.ceil(abs(soft) * R.COUNTS_PER_TURN / (2.0 * math.pi)))
+        c = calib.centre[n]
+        out[n] = (min(c, R.COUNTS_PER_TURN - 1 - c), need)
+    return out
+
+
+def capture(bus, calib, joints=None, settle=0.2, out=print):
     """Torque off, read where the joints actually are, call that zero.
 
     The pose is the model's mechanical zero — legs straight down — because that is
     what every downstream number is referenced to: `stance_rad`, the soft limits,
     the gait's IK and the policy's observation. Assembly order step 6.
+
+    A capture is also the only moment the encoder headroom can be checked, so it is
+    checked here — see `headroom()` for the failure it catches.
     """
     names = list(joints or calib.joints)
     servos = calib.attach(bus)
@@ -211,6 +241,20 @@ def capture(bus, calib, joints=None, settle=0.2):
         calib.centre[n] = got[n]
     calib.measured = True
     calib.captured = time.strftime("%Y-%m-%dT%H:%M:%S")
+
+    short = {n: v for n, v in headroom(calib, names).items() if v[0] < v[1]}
+    for n in names:
+        if n in short:
+            have, need = short[n]
+            out(f"!! {n} has {have} counts of headroom, needs {need} — it cannot "
+                f"reach its own soft limit and will stop mid-command")
+    if short:
+        out(f"!! {len(short)} of {len(names)} joints are too close to the encoder's "
+            f"0/4095 wrap.\n"
+            f"!! Hold each at mechanical zero, park its GOAL_POSITION on its present\n"
+            f"!! position, then write 128 to TORQUE_ENABLE so the servo computes its\n"
+            f"!! own OFFSET. Verify by reading back — the write gets no reply — and\n"
+            f"!! --capture again. robot/README.md, bring-up step 3.")
     return got
 
 
@@ -336,6 +380,30 @@ def _selftest() -> int:
     # torque must be off after a capture: the pose is set by hand
     chk("capture leaves torque off", bus.io.get(c.id["fl_roll"], R.TORQUE_ENABLE), 0)
 
+    # THE ENCODER HEADROOM. 1900 is mid-scale, so every joint can reach its limit;
+    # a centre at 100 cannot reach any of them, and that is the first assembly's
+    # actual failure — six joints inside 330 counts of the wrap, fr_knee needing
+    # 1128 and having 16. Nothing else in the tree sees it: to_counts() clamps
+    # silently, so the leg stops mid-command and reports arriving.
+    knee = int(math.ceil(c.soft["fl_knee"] * R.COUNTS_PER_TURN / (2.0 * math.pi)))
+    chk("a knee needs 1128 counts either side", headroom(c)["fl_knee"][1], knee)
+    chk("mid-scale has room for every joint",
+        [n for n, (have, need) in headroom(c).items() if have < need], [])
+    for i in c.ids:
+        bus.io.set(i, R.PRESENT_POSITION, 100)
+    said = []
+    capture(bus, c, settle=0.0, out=said.append)
+    chk("a centre near the wrap has none",
+        [n for n, (have, need) in headroom(c).items() if have < need], c.joints)
+    chk("... and capture says so, per joint",
+        sum(1 for s in said if "counts of headroom" in s), 12)
+    chk("... naming the counts it has and the counts it needs",
+        any(f"fl_knee has 100 counts of headroom, needs {knee}" in s for s in said),
+        True)
+    for i in c.ids:                       # put it back for the round trip below
+        bus.io.set(i, R.PRESENT_POSITION, 1900)
+    capture(bus, c, settle=0.0, out=lambda *_: None)
+
     # probe_sign: "n" flips, "y" keeps, and torque is off either way
     was = c.sign["fl_pitch"]
     chk("no flips on yes", probe_sign(bus, c, "fl_pitch", dwell=0.0,
@@ -418,6 +486,14 @@ def main():
                 continue
             print(f"  {n}: sign is now {probe_sign(bus, calib, n):+d}")
         print("saved:", calib.save(a.file))
+        # `measured` is deliberately NOT set here. It is what `walk.py` and the
+        # bench scripts check before they put torque into twelve servos, and it
+        # means "the centres are this robot's", which only --capture can make true.
+        # Signs on top of a default 2048 centre is a robot that knows which way its
+        # knees fold and not where they are.
+        if not getattr(calib, "measured", False):
+            print("!! the centres are still defaults — run --capture. Torque stays "
+                  "off until it has been.")
 
     return 0
 

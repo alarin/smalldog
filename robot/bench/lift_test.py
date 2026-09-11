@@ -89,7 +89,7 @@ sys.path.insert(0, os.path.join(REPO, "ros2", "smalldog_walker"))
 from feetech.bus import Bus                                          # noqa: E402
 from runtime.calib import Calibration, load_params                   # noqa: E402
 from runtime.loop import Runtime                                     # noqa: E402
-from runtime.safety import Limits                                    # noqa: E402
+from runtime.safety import Limits, Tripped                           # noqa: E402
 from runtime.walk import build_gait, stance_pose                     # noqa: E402
 
 #: (t, what to do). The trace is timestamped, so missing a cue by a second
@@ -126,6 +126,13 @@ def main():
     ap.add_argument("--ramp", type=float, default=2.0)
     ap.add_argument("--speak", action="store_true",
                     help="speak the cues (macOS `say`), for a run you are not watching")
+    # Settable for the same reason walk.py's is: this run holds a stance with the
+    # legs pushed into a table, which is the loaded case the trip level was measured
+    # on, and a limit nobody can set is a limit nobody can measure.
+    ap.add_argument("--track-rad", type=float, default=Limits.q_err_rad,
+                    help="tracking-error trip, rad (default %(default)s)")
+    ap.add_argument("--current-a", type=float, default=Limits.current_a,
+                    help="current trip, A of PRESENT_CURRENT (default %(default)s)")
     a = ap.parse_args()
     a.speed, a.turn, a.period, a.swing, a.max_step, a.hz = 0.20, 1.2, 0.45, 0.022, 0.060, 50.0
 
@@ -139,38 +146,65 @@ def main():
 
     # The temperature limit is lifted because this run is stationary and long, and
     # PRESENT_TEMPERATURE spikes while the motors hold — see Limits.temp_hold_s.
-    # Every other limit is left where it is.
+    # Every other limit is left where it is, and that is now true: this loop used
+    # to be hand-rolled around rt.read()/rt.send() and never called the guard at
+    # all, so for the 24 s a loaded robot stood on the table nothing was watching
+    # the current, the voltage, the tracking error or the bus. It runs through
+    # `Runtime.run` now, which does the read, the guard and the write in the order
+    # the runtime defines, and hands the timing report back at the end.
     rt = Runtime(Bus(a.port, a.baud), calib, hz=a.hz,
-                 limits=Limits(temp_c=200.0, temp_warn_c=199.0), log=lambda *_: None)
+                 limits=Limits(temp_c=200.0, temp_warn_c=199.0,
+                               q_err_rad=a.track_rad, current_a=a.current_a),
+                 log=lambda *_: None)
 
     trace = []
     print("\ntorque comes on and it ramps to the standing pose over "
           f"{a.ramp:.0f} s. Ctrl-C is safe throughout.\n")
+    cue = {"next": 0, "warned": -1, "t0": None}
+
+    def source(dt, fb):
+        """One tick: print or speak the cue that is due, record the loads, hold `q`."""
+        if cue["t0"] is None:
+            cue["t0"] = time.time()
+        t = time.time() - cue["t0"]
+        nxt = cue["next"]
+        if (a.speak and cue["warned"] < nxt and CUES[nxt][0] > WARN_S
+                and t >= CUES[nxt][0] - WARN_S):
+            cue["warned"] = nxt
+            _say("ready to " + SPOKEN[nxt])
+        if t >= CUES[nxt][0]:
+            if a.speak:
+                _say("done, torque off" if CUES[nxt][1] is None else SPOKEN[nxt])
+            if CUES[nxt][1] is None:
+                raise StopIteration              # the last cue ends the run
+            print(f"\n>>> [{CUES[nxt][0]:>2}s] {CUES[nxt][1]}\n")
+            cue["next"] = nxt + 1
+        else:
+            print(f"\r    {CUES[nxt][0] - t:4.1f} s to the next cue ", end="", flush=True)
+        trace.append([round(t, 3),
+                      {n: (fb[n]["load"] if fb[n] else None) for n in calib.joints}])
+        return q
+
+    tripped = None
     with rt:
-        rt.engage(q, ramp_s=a.ramp)
-        if a.speak:
-            _say("torque on, ramping to the stance")
-        t0, nxt, warned = time.time(), 0, -1
-        while nxt < len(CUES):
-            t = time.time() - t0
-            if (a.speak and warned < nxt and CUES[nxt][0] > WARN_S
-                    and t >= CUES[nxt][0] - WARN_S):
-                warned = nxt
-                _say("ready to " + SPOKEN[nxt])
-            if t >= CUES[nxt][0]:
-                if a.speak:
-                    _say("done, torque off" if CUES[nxt][1] is None else SPOKEN[nxt])
-                if CUES[nxt][1] is None:
-                    break
-                print(f"\n>>> [{CUES[nxt][0]:>2}s] {CUES[nxt][1]}\n")
-                nxt += 1
-            else:
-                print(f"\r    {CUES[nxt][0] - t:4.1f} s to the next cue ", end="", flush=True)
-            fb = rt.read()
-            trace.append([round(t, 3),
-                          {n: (fb[n]["load"] if fb[n] else None) for n in calib.joints}])
-            rt.send(q)
-            time.sleep(1.0 / a.hz)
+        try:
+            rt.engage(q, ramp_s=a.ramp)
+            if a.speak:
+                _say("torque on, ramping to the stance")
+            # A backstop on top of the cue that ends it: `seconds` is what stops this
+            # if a cue is ever removed from CUES without its `None` sentinel.
+            rt.run(source, seconds=CUES[-1][0] + 2.0)
+        except Tripped as e:
+            tripped = e                 # `with rt` has already cut torque
+
+    if tripped is not None:
+        # Torque is already off — `with rt` saw to that. The windows are still
+        # printed below from whatever was recorded, because a trip at 20 s has two
+        # of the three windows in it and the numbers are the point of the run.
+        print(f"\n!! TRIPPED: {tripped}")
+        print(f"!! after {trace[-1][0] if trace else 0.0:.1f} s of {CUES[-1][0]} — "
+              f"the table below is whatever windows that reached.")
+    print(rt.report_lines())
 
     def med(lo, hi, j):
         v = [s[1][j] for s in trace if lo <= s[0] < hi and s[1][j] is not None]
@@ -191,7 +225,7 @@ def main():
     if a.out:
         json.dump({"cues": CUES, "trace": trace}, open(a.out, "w"))
         print("saved:", a.out)
-    return 0
+    return 1 if tripped is not None else 0
 
 
 if __name__ == "__main__":

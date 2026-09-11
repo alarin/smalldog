@@ -50,7 +50,15 @@ def main():
                          "must be the direction that presses into the scale")
     ap.add_argument("--limit-max", type=int, default=500,
                     help="refuse to run if TORQUE_LIMIT is above this")
-    ap.add_argument("--current-limit", type=float, default=1.5)
+    # SUPPLY amps, like every other current limit here: PRESENT_CURRENT is d^2*U/R
+    # (feetech/registers.py, CURRENT_LSB_A). At the TORQUE_LIMIT 350 this tool
+    # insists on, the duty cannot exceed 0.35 and the register cannot exceed
+    # 0.35^2*12/4.35 = 0.34 A, so this abort is dark by construction while the cap
+    # holds — which is the point: it is the backstop for a cap that was raised, and
+    # there 1.5 A of supply is d ~ 0.74 and ~2.0 A through the motor.
+    ap.add_argument("--current-limit", type=float, default=1.5,
+                    help="abort above this many amps of PRESENT_CURRENT, which is "
+                         "SUPPLY current (default %(default)s)")
     ap.add_argument("--temp-limit", type=float, default=55.0)
     ap.add_argument("--rate", type=float, default=50.0)
     a = ap.parse_args()
@@ -85,6 +93,12 @@ def main():
     hot = 0
     try:
         time.sleep(a.lead_in)
+        # Goal first, torque second — `runtime/loop.py:engage` has the argument in
+        # full. `contact` is where the arm already is, read above, so nothing moves
+        # when torque arrives; without this the servo drove to whatever
+        # GOAL_POSITION it was last left holding, which after a `sweep.py` run is
+        # the end of a trajectory and is pressed against a scale.
+        bus.write(a.id, R.GOAL_POSITION, contact)
         servo.torque(True)
         for i in range(a.reps):
             for phase, goal, dur in (("push", target, a.seconds),

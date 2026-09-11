@@ -2,7 +2,7 @@
 sweep.py — drive one servo through the trajectories the fit needs, log everything.
 
     python bench/sweep.py --check                        # preflight, no motion
-    python bench/sweep.py --traj rock                    # the 30-second question
+    python bench/sweep.py --traj rock                    # the ten-second question
     python bench/sweep.py --traj hold --mass 0.25 --radius 0.10 --volts 12.6
     python bench/sweep.py --traj all  --mass 0.50 --radius 0.15 --volts 11.1
     python bench/sweep.py --dry-run --traj all           # no hardware
@@ -116,7 +116,9 @@ def traj_holdbi(qmax, dwell=2.0):
     cancelled. That is the quantity step 2 needs: `actuator.py`'s friction law is
     `tau_c*sign(w) + b_v*w`, both independent of load, so a friction that grows
     with load has nowhere to go in the present fit except k_u — which is why the
-    stall it implies is 4.23 N*m against a spec 2.94.
+    stall it implies is 4.23 N*m against a datasheet 2.94. (A scale has since put
+    the real stall at 4.50, so how much of that gap is the missing friction term is
+    open; the argument for measuring friction directly is unchanged either way.)
 
     Each pass starts one rung OUTSIDE the ladder so the first measured angle is
     approached from the same side as every other one, and the ladder crosses zero
@@ -274,6 +276,15 @@ def run_one(servo, name, T, fn, torque_all, a, meta):
     rows, released, late, glitches = [], False, 0, 0
     trip = {"temp": 0, "current": 0, "range": 0}
     period = 1.0 / a.rate
+    # THE ORDER IS THE POINT, and it is the one `runtime/loop.py:engage` documents.
+    # Enabling torque first hands the servo whatever GOAL_POSITION it has been
+    # holding since it was last powered — on the second trajectory of a run that is
+    # the END of the first one, so an arm that finished a triangle at -0.5 rad was
+    # thrown to +0.5 the instant torque came back, at full duty, with a 1 kg mass on
+    # a 170 mm lever. Parking the goal on the present position with torque OFF means
+    # nothing moves when it comes on, and the move to the trajectory's start is then
+    # a commanded one that the settle below covers.
+    servo.goal(servo.feedback()["q"])
     servo.torque(True)
     servo.goal(fn(0.0))
     time.sleep(1.0)                                   # get to the start quietly
@@ -351,7 +362,10 @@ def run_one(servo, name, T, fn, torque_all, a, meta):
 
 
 def rock_test(servo, a):
-    """The 30-second question, before anything else is worth doing.
+    """The ten-second question, before anything else is worth doing.
+
+    Ten, because that is how long the loop below actually gives you to rock the
+    horn; it used to say thirty, which is the whole errand and not the window.
 
     Torque off, then rock the output by hand. If Present Position moves, the
     encoder is after the gearbox and reads the true joint angle — the backlash is
@@ -392,7 +406,12 @@ def main():
     ap.add_argument("--baud", type=int, default=1_000_000)
     ap.add_argument("--id", type=int, default=1)
     ap.add_argument("--traj", default="all",
-                    help="all, rock, or one of: " + ", ".join(ORDER))
+                    # `stall` is deliberately NOT in ORDER and so not in `all`: it
+                    # pushes against a mechanically blocked output, which a human
+                    # has to arrange and an unattended `all` would not have. Named
+                    # here so that leaving it out of `all` reads as a decision.
+                    help="all, rock, or one of: " + ", ".join(ORDER)
+                         + ", stall (blocked output, run it on its own; not in `all`)")
     ap.add_argument("--mass", type=float, default=0.0, help="arm tip mass, kg")
     ap.add_argument("--radius", type=float, default=0.0, help="its radius, m")
     ap.add_argument("--arm-inertia", type=float, default=0.0,
@@ -406,7 +425,14 @@ def main():
     ap.add_argument("--qmax", type=float, default=1.4, help="bench travel limit, rad")
     ap.add_argument("--rate", type=float, default=200.0, help="logging rate, Hz")
     ap.add_argument("--temp-limit", type=float, default=60.0)
-    ap.add_argument("--current-limit", type=float, default=2.5)
+    # SUPPLY amps: PRESENT_CURRENT is d^2*U/R, not the motor's d*U/R (see
+    # feetech/registers.py, CURRENT_LSB_A). At R ~ 4.35 ohm and 12 V, 2.5 here is
+    # d ~ 0.95 and 2.63 A through the motor, just under the locked-rotor 2.76 —
+    # which is the right place for an abort on a rig whose trajectories are meant
+    # to saturate. It bounds a stall, not a joint working hard at partial duty.
+    ap.add_argument("--current-limit", type=float, default=2.5,
+                    help="abort above this many amps of PRESENT_CURRENT, which is "
+                         "SUPPLY current (default %(default)s)")
     ap.add_argument("--out", default=None,
                     help="default bench/data, or bench/data-dryrun under --dry-run")
     ap.add_argument("--check", action="store_true", help="preflight only, no motion")

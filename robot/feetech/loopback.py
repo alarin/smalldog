@@ -53,7 +53,7 @@ class LoopbackBus:
             if data[i:i + 2] != b"\xff\xff":
                 i += 1
                 continue
-            dev, ln = data[i + 2], data[i + 3]
+            ln = data[i + 3]             # the id is read again in _handle
             frame = data[i:i + 4 + ln]
             self._handle(frame)
             i += 4 + ln

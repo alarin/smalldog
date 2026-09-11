@@ -51,14 +51,20 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
 import runlog                                                        # noqa: E402
+import sweep                                                         # noqa: E402
 
-G = 9.81
+#: Standard gravity and the trajectory set both come from elsewhere in this
+#: directory, so that this file and `fit_bam.py` cannot read the same csv and
+#: disagree about what is in it. `G` was 9.81 here against 9.80665 there.
+G = runlog.G
 #: Dwell of one rung of traj_holdbi, and how much of it to discard as transient.
 DWELL, SETTLE = 2.0, 1.2
-#: The speed ladder's fast rung does not track the command (the loop runs out of
-#: authority long before the duty pins), so it is not a steady speed and is left
-#: out of the regression. It is still in the data as the velocity ceiling.
-SPEED_PERIODS = (20, 10, 5, 2)
+#: The speed ladder's periods, taken from `sweep.py` because it is the thing that
+#: WROTE them, minus the fast rung: at 1 s the joint does not track the command
+#: (the loop runs out of authority long before the duty pins), so it is not a
+#: steady speed and is left out of the regression. It is still in the data as the
+#: velocity ceiling.
+SPEED_PERIODS = tuple(T for T in sweep.SPEED_PERIODS if T > 1.0)
 
 
 def duty(load_raw):
@@ -179,8 +185,16 @@ def main():
     print(f"\n{'mean':>5} {'':>10} " + " ".join(f"{x:8.3f}" for x in r[:, 2:].mean(0)))
     print(f"{'spread':>5} {'':>10} " +
           " ".join(f"{100 * np.ptp(x) / abs(x.mean()):7.0f}%" for x in r[:, 2:].T))
+    # The SLOPE of stiffness against supply, fitted — not the ratio of the two
+    # column means, which is what this printed until 2026-09-11. A ratio of means
+    # is the line through the ORIGIN, and this line does not go through the origin:
+    # over 8/10/12 V the fit is 3.20 N*m/rad per volt with a -0.5 intercept, while
+    # the ratio read 3.44. It is a description of the servo either way, but only one
+    # of them is the thing the sentence claims to be printing.
+    per_volt = float(np.polyfit(r[:, 0], r[:, 1], 1)[0])
     print("\nstiffness is DELIBERATELY not averaged: it scales with supply "
-          f"({r[:, 1].mean() / r[:, 0].mean():.2f} N*m/rad per volt), which is the "
+          f"({per_volt:.2f} N*m/rad per volt, fitted over "
+          f"{', '.join(f'{v:g}' for v in r[:, 0])} V), which is the "
           "one\nnumber here that is allowed to move with voltage. Everything right "
           "of it is a\nfriction or a torque constant and must not — a spread over "
           "~15 % there is a\nmeasurement problem, not a property of the servo.")

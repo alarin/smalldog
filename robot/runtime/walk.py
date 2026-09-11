@@ -82,9 +82,11 @@ def build_gait(params, args) -> TrotGait:
 # ------------------------------------------------------- what the servos can deliver
 #
 # The trot as tuned asks for more joint speed than these servos have, and the way that
-# fails on hardware is not a limp - it is a DRAG.  `gait.py` rate-limits its own output
-# to `joint_velocity_limit * 0.85` = 4.0 rad/s, so a demand over that is clipped before a
-# servo ever sees it and the commanded foot path is simply not the path that is flown.
+# fails on hardware is not a limp - it is a DRAG.  `gait.py` rate-limits its own output,
+# so a demand over that is clipped before a servo ever sees it and the commanded foot
+# path is simply not the path that is flown.  The limiter was `joint_velocity_limit *
+# 0.85` = 4.0 rad/s when this was written; since 2026-09-11 it is the achievable ceiling
+# `joint_rate_ceiling_rad_s` = 3.15 - a fifth lower, which only sharpens what follows.
 # Measured 2026-09-08 at 2.55 kg: at 0.20 m/s the demand is 7.55 rad/s, 89 % over, and the
 # robot travelled 0.067 m/s - a third of what it was told - with the knee-load residual
 # peaking in the half the gait calls SWING on all four legs, which is a foot that never
@@ -103,12 +105,17 @@ def build_gait(params, args) -> TrotGait:
 RATE_MARGIN = 0.95          # of the gait's own limiter; 1.0 exactly is not a place to sit
 
 
-def joint_rate_demand(params, speed, period, swing, max_step, height):
+def joint_rate_demand(params, speed, period, swing, max_step, height, wz=0.0):
     """Peak commanded joint rate over one cycle, rad/s, with the gait's own rate limiter
     lifted so the number is the DEMAND rather than what survives the clip.
 
     Ticks a throwaway gait, at 200 Hz for resolution rather than the control rate, and
     discards the first cycle so the answer is the steady state and not the start-up ramp.
+
+    `wz` because a turn is not free: the gait gives the outer legs a longer stride, so
+    the same forward speed costs more joint rate while turning than in a straight line.
+    This took an argument only from 2026-09-11 — before that every turning command in
+    this file went out unchecked against the ceiling the straight line was fitted to.
     """
     g = TrotGait(params)
     g.period, g.swing_height, g.max_step, g.body_height = period, swing, max_step, height
@@ -116,7 +123,7 @@ def joint_rate_demand(params, speed, period, swing, max_step, height):
     g.stride_max = 1e3                      # so period_for cannot pin the period here
     dt, prev, peak = 1.0 / 200.0, None, 0.0
     for i in range(int(period * 200) * 3):
-        q = g.joint_targets(dt, speed, 0.0, 0.0)
+        q = g.joint_targets(dt, speed, 0.0, wz)
         if prev is not None and i > int(period * 200):
             peak = max(peak, max(abs(x - y) / dt for x, y in zip(q, prev)))
         prev = q
@@ -171,6 +178,41 @@ def feasible_gait(params, args, limit=None):
         "!! no feasible period found; running as commanded, expect the feet to drag")
 
 
+def feasible_turn(params, args, period, limit=None, step=0.05):
+    """The largest |wz| that fits under the limiter, for a turn ON THE SPOT.
+
+    `feasible_gait` above asks only about forward motion, so until 2026-09-11 every
+    turning command in this file went out unchecked: the profile's 0.6 rad/s and the
+    teleop's `--turn` 1.2, against a limiter the straight line had been fitted to sit
+    0.2 rad/s under. A turn is not free — it lengthens the outer legs' stride — and
+    the cost is steep: at this period a spin at 1.2 rad/s demands 4.13 rad/s of joint,
+    a third over the 3.15 ceiling, which is the drag that made 0.20 m/s useless.
+
+    ON THE SPOT and not "while walking", because that is the only turn either caller
+    ever commands: `Teleop.key` zeroes the whole command vector before setting one
+    axis, and every turning step in `PROFILE` has vx = vy = 0. Fitting the combined
+    case instead would disable turning outright — at 0.11 m/s the straight line
+    already uses 2.98 of the 2.99 available — and would be answering a question
+    nothing in this file asks.
+
+    Searches down from what was asked for, so a turn that already fits comes back
+    unchanged and nothing is slowed for the sake of it.
+    """
+    if limit is None:
+        limit = TrotGait(params).max_joint_rate
+    target = limit * RATE_MARGIN
+    wz = abs(args.turn)
+    while wz > 1e-9:
+        if joint_rate_demand(params, 0.0, period, args.swing, args.max_step,
+                             args.height, wz=wz) <= target:
+            return wz, ("" if abs(wz - abs(args.turn)) < 1e-9 else
+                        f"turn {abs(args.turn):.2f} -> {wz:.2f} rad/s to stay under "
+                        f"{target:.1f} rad/s")
+        wz = round(wz - step, 3)
+    return 0.0, (f"!! no turn rate fits under {target:.1f} rad/s at period "
+                 f"{period:.2f} s; turning is disabled. Lengthen --period first.")
+
+
 def stance_pose(gait, dt, seconds=1.5):
     """Where the gait wants the joints with no command — the pose to stand up into.
 
@@ -196,9 +238,15 @@ class Teleop:
     MOVE = {"w": ("x", +1), "s": ("x", -1), "a": ("y", +1),
             "d": ("y", -1), "q": ("z", +1), "e": ("z", -1)}
 
-    def __init__(self, gait, speed=0.20, turn=1.2, log=print):
-        self.gait, self.log = gait, log
+    def __init__(self, gait, speed=0.20, turn=1.2):
+        self.gait = gait
         self.speed, self.turn = speed, turn
+        #: `,`/`.` may not climb past what `feasible_gait` fitted. They used to run
+        #: to a hard-coded 0.45 m/s, four times the current ceiling, which made the
+        #: keyboard the one way into this file that walked straight past the whole
+        #: feasibility fit — two keypresses and the feet are dragging again, with
+        #: nothing printed to say so. The caller passes the FITTED speed in.
+        self.speed_max = speed
         self.cmd = {"x": 0.0, "y": 0.0, "z": 0.0}
         self.enabled = True
         self._fd = None
@@ -242,7 +290,8 @@ class Teleop:
         elif k in "rf":
             g.body_height = g.body_height + (0.004 if k == "r" else -0.004)
         elif k in ",.":
-            self.speed = max(0.05, min(0.45, self.speed + (0.05 if k == "." else -0.05)))
+            self.speed = max(0.02, min(self.speed_max,
+                                       self.speed + (0.01 if k == "." else -0.01)))
         elif k == "t":
             self.enabled = not self.enabled
             self.cmd = {"x": 0.0, "y": 0.0, "z": 0.0}
@@ -251,7 +300,8 @@ class Teleop:
     def status(self):
         sys.stdout.write(
             f"\rvx {self.cmd['x']:+.2f}  vy {self.cmd['y']:+.2f}  wz {self.cmd['z']:+.2f}"
-            f"   speed {self.speed:.2f}  height {self.gait.body_height*1000:3.0f} mm"
+            f"   speed {self.speed:.2f}/{self.speed_max:.2f}"
+            f"  height {self.gait.body_height*1000:3.0f} mm"
             f"   gait {'on ' if self.enabled else 'OFF'}   ")
         sys.stdout.flush()
 
@@ -262,17 +312,22 @@ class Teleop:
         return (self.cmd["x"], self.cmd["y"], self.cmd["z"])
 
 
-def clamp_profile(steps, vmax):
-    """The scripted demo, with every commanded speed brought inside `vmax`.
+def clamp_profile(steps, vmax, wzmax=None):
+    """The scripted demo, with every commanded velocity brought inside the fit.
 
     `PROFILE` carries its own velocities, so the feasibility fit on `--speed` does not
     reach it: without this the demo would still command 0.20 m/s and drag its feet on the
     one run that is meant to be shown to people.  Direction and timing are untouched; only
     the magnitude is capped, so the shape of the demo survives.
+
+    `wzmax` because the profile's fourth step is a 0.6 rad/s turn on the spot and it was
+    the half `feasible_gait` never looked at — see `feasible_turn`.
     """
     out = []
     for secs, vx, vy, wz in steps:
         sc = min(1.0, vmax / max(abs(vx), abs(vy), 1e-9))
+        if wzmax is not None:
+            wz = max(-wzmax, min(wzmax, wz))
         out.append((secs, vx * sc, vy * sc, wz))
     return out
 
@@ -329,7 +384,18 @@ def record_baseline(rt, gait, args, out_path):
     cov = b.coverage()
     print("phase coverage: " + ", ".join(f"{l} {100*v:.0f} %" for l, v in cov.items()))
     if min(cov.values()) < 0.9:
-        print("!! thin coverage — run it longer, or the curve has bins it invented")
+        # NOT "run it longer". The phase advances dt/period per tick, so the bin
+        # index steps by nbin*dt/period — one bin or more at any period under about
+        # 1.2 s at 50 Hz — and a bin the phase never lands in is never filled
+        # however long the run is. It is aliasing, and the only two cures are a
+        # longer period (a smaller step) or fewer bins. robot/README.md, "Two bins
+        # in sixty".
+        per_tick = (1.0 / args.hz) / max(gait.period, 1e-9) * b.nbin
+        print(f"!! thin coverage: the phase advances {per_tick:.2f} bins per tick at "
+              f"period {gait.period:.2f} s, {args.hz:.0f} Hz, {b.nbin} bins.")
+        print("!! This is ALIASING, not a short run — a bin the phase never lands in "
+              "stays empty however\n!! long you record. Lengthen --period, or record "
+              "against fewer bins.")
     print("saved:", b.save(out_path))
 
 
@@ -397,6 +463,10 @@ def main():
         a.speed, a.period = speed, period
         if note:
             print(note)
+        turn, tnote = feasible_turn(params, a, a.period)
+        a.turn = turn
+        if tnote:
+            print(tnote)
     gait = build_gait(params, a)
     if not a.as_commanded:
         # period_for() only ever SHORTENS the period, pinning it at 2*stride_max/speed, so
@@ -419,6 +489,15 @@ def main():
     print(f"  {a.speed:.2f} m/s demands {dem:.2f} rad/s of "
           f"{gait.max_joint_rate:.2f} available"
           + ("" if dem <= gait.max_joint_rate else "  !! CLIPPED — the feet will drag"))
+    if a.turn:
+        # A turn on the spot, which is the only turn either caller commands — see
+        # `feasible_turn`. Printed beside the forward demand because it is usually
+        # the larger of the two and was never shown at all before 2026-09-11.
+        dturn = joint_rate_demand(params, 0.0, gait.period, gait.swing_height,
+                                  gait.max_step, gait.body_height, wz=a.turn)
+        print(f"  {a.turn:.2f} rad/s of turn on the spot demands {dturn:.2f} rad/s"
+              + ("" if dturn <= gait.max_joint_rate
+                 else "  !! CLIPPED — the feet will drag in the turn"))
 
     if a.dry_run:
         bus = Bus(transport=FollowingLoopback(calib.ids), discard_echo=False)
@@ -444,6 +523,22 @@ def main():
                                    body_height=gait.body_height, speed=a.speed))
         for k, (was, now) in drift.items():
             print(f"!! baseline was recorded at {k}={was}, running at {now}")
+        if drift:
+            # The curve is the load of ONE trajectory; at another period or speed it
+            # is measuring something else and every residual is off by the
+            # difference. There is no hardware fix from here — a baseline is a
+            # 30 s recording of the robot HANGING — so say the two ways out rather
+            # than just the complaint. This fires by default today: the baselines on
+            # file were recorded before the rate ceiling became the measured 3.15
+            # rad/s, and `feasible_gait` now picks a different operating point.
+            recorded = {k: v[0] for k, v in drift.items()}
+            flags = " ".join(f"--{k} {v:g}" for k, v in recorded.items()
+                             if k in ("speed", "period"))
+            print("!! The residual it produces is not this gait's. Either re-record "
+                  "the baseline at\n"
+                  "!! the operating point you are about to walk at "
+                  f"(--baseline FILE), or run at the\n"
+                  f"!! point it was recorded at: --as-commanded {flags}".rstrip())
         if str(a.contact_sign) == "auto":
             sign = {l: calib.sign[f"{l}_knee"] for l in gait.legs}
             shown = " ".join(f"{l}{v:+d}" for l, v in sign.items())
@@ -481,7 +576,7 @@ def main():
                 if not a.profile:
                     print("no TTY for the keyboard; running the scripted profile")
                 cmd = profile_source(PROFILE if a.as_commanded
-                                     else clamp_profile(PROFILE, a.speed))
+                                     else clamp_profile(PROFILE, a.speed, a.turn))
 
                 def source(dt_, fb):
                     if contact:

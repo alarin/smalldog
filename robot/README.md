@@ -28,6 +28,7 @@ python -m feetech.bus --selftest      # packets, checksums, sign-magnitude, Sync
 python bench/bus_probe.py --dry-run   # the timing harness
 python bench/sweep.py --dry-run --traj all
 python bench/fit_bam.py --selftest    # generate a known servo, then find it again
+python bench/torque_limit.py --selftest   # the cap's arithmetic and its read-back
 python runtime/calib.py --selftest    # ids, centres, signs, the clamp, the round trip
 python runtime/safety.py --selftest   # every limit trips, and only when it should
 python runtime/loop.py --selftest     # 2 s of the real loop against a loopback bus
@@ -195,6 +196,17 @@ what retires those.
 `calib.json` is a measurement of one physical robot and belongs in git — the Pi and
 the mac have no other way to agree about which servo is `fl_knee`.
 
+**The soft clamp widened on 2026-09-11 and step 3 above gets harder because of it.**
+`calib.py` clamps every joint to `robot_params.json`'s `joint_soft_limits_rad`, and
+`ros2/.../generate_model.py` stopped hand-typing those and started reading the CAD ROM
+scan (`3d/out/bom.json`, ±90° / ±90° / ±110°) — so the runtime band went roll and pitch
+**0.78 → 1.4508 rad** and knee **1.73 → 1.7999**. At this servo's 4096 counts per turn
+that is ±946 counts of roll where it used to be ±508, so the encoder-wrap problem this
+step is about is nearly twice as easy to hit: re-run `--capture` and check every joint
+still has the counts it needs before trusting an old `calib.json`. See `ros2/README.md`, "Joint limits", for why the
+numbers changed and for the caveat that ±90° is where the CAD's scan window stopped, not
+a measured mechanical stop.
+
 ### What the loop does not do yet
 
 - **No IMU**, so `TrotGait.feedback()` is not called and this is the blind
@@ -306,9 +318,11 @@ the mac have no other way to agree about which servo is `fl_knee`.
   that baseline; `bench/contact_2p55kg.json` is all three curves and the residual.
 
   **It had to be measured at a slow gait, and that is a finding about the demo gait,
-  not a limitation of the method.** `gait.py` rate-limits its own output to
-  `joint_velocity_limit × 0.85` = 4.0 rad/s. At 0.20 m/s the trot demands **7.55
-  rad/s — 89 % over the limiter** — so the commanded foot path is clipped before a
+  not a limitation of the method.** `gait.py` rate-limits its own output; when this
+  was measured that limit was `joint_velocity_limit × 0.85` = 4.0 rad/s, and it is
+  `joint_rate_ceiling_rad_s` = 3.15 now, which only makes the case below stronger.
+  At 0.20 m/s the trot demands **7.55 rad/s — 89 % over the limiter of the day** —
+  so the commanded foot path is clipped before a
   servo ever sees it, and `--period` cannot help because `period_for()` pins the
   period to 0.45 s at that speed whatever is passed. The robot then drags: the
   residual peaked in the half the gait calls *swing*, on all four legs, in two
@@ -327,12 +341,20 @@ the mac have no other way to agree about which servo is `fl_knee`.
 
   **There is now a baseline for the gait the robot actually walks at**, which the
   measurement gait is not — `runtime/contact_baseline_walk.json`, recorded at the
-  fitted 0.14 m/s / 1.20 s. Two independent 30 s hangs correlate at **r = 1.000**
+  then-fitted 0.14 m/s / 1.20 s. Two independent 30 s hangs correlate at **r = 1.000**
   with a noise floor of 1.8–2.3 units on a 719–756 unit range, the same statistics
   as the slow gait, and `bench/contact_walk_air_b.json` is the repeat that says so.
-  Run it with `--contact runtime/contact_baseline_walk.json` and `mismatch()` stays
-  quiet; point `--contact` at the *slow* baseline while walking and it will tell you
-  the period and speed are wrong, which is the mechanism working.
+
+  **That baseline is now at the wrong operating point, and `mismatch()` says so on
+  every run.** The rate ceiling became the measured 3.15 rad/s on 2026-09-11, so
+  `feasible_gait` picks 0.11 m/s / 1.50 s and the recording's 0.14 / 1.20 is 25 %
+  and 20 % away — both well past `mismatch()`'s 2 % band. That is the mechanism
+  working, not a bug, and there is no fix from a keyboard: a baseline is 30 s of the
+  robot *hanging*, so re-recording needs the hardware. Until then either
+  `walk.py --baseline FILE` at the new point, or run at the recorded one —
+  `--as-commanded --period 1.2 --speed 0.14`, which is what `walk.py` now prints
+  underneath the mismatch lines. Pointing `--contact` at the *slow* baseline while
+  walking trips the same check for the same reason.
 
   **Its threshold of 50 is provisional, and the bench is why.** The number was
   measured at the slow gait; carrying it over is an argument from the ranges being
@@ -347,8 +369,10 @@ the mac have no other way to agree about which servo is `fl_knee`.
 
   Two bins in sixty is also the limit of the recorder: the phase advances `dt/period`
   per tick, so a period under about 1.2 s at 50 Hz skips bins outright and
-  `Baseline.coverage()` reports 75 % or worse. It says "run it longer", which is
-  wrong — that is aliasing, and longer does not fill a bin the phase never lands in.
+  `Baseline.coverage()` reports 75 % or worse. It used to say "run it longer", which
+  was wrong — that is aliasing, and longer does not fill a bin the phase never lands
+  in. Since 2026-09-11 it prints the bins-per-tick it is actually stepping and names
+  the two cures, a longer `--period` or fewer bins.
 
   **The sign is per leg, and a scalar could never have worked.** `ServoContact` took
   one `sign` for all four legs, which is right in MuJoCo where the "load" is a clean
@@ -403,13 +427,29 @@ the mac have no other way to agree about which servo is `fl_knee`.
   current, not the sag, not the tracking error, and not the contact threshold.
 
   Standing at 1.55 kg the whole robot draws **0.4 A at 12 V** at the bench supply,
-  while the twelve reported motor currents sum to about 0.07 A. The ~0.33 A
-  difference is quiescent — roughly **27 mA per servo** — which says
-  `PRESENT_CURRENT` is motor current only and does not see the servo's own
-  electronics. Useful for the power budget, and a first sanity check on
-  `CURRENT_LSB_A`; it is not a calibration of it, which wants the supply's reading
-  against a known load. The holding current being this small is the friction again,
-  not an error: the gearbox holds the stance, the motors barely work.
+  while the twelve reported currents sum to about 0.07 A. The ~0.33 A difference is
+  quiescent — roughly **27 mA per servo** — which says `PRESENT_CURRENT` sees only
+  what goes through the H-bridge and not the servo's own electronics. It is *not*
+  the motor current: the register reports the **supply** current behind the bridge,
+  `d²·U/R`, where the motor itself carries `d·U/R`
+  (`feetech/registers.py`, `CURRENT_LSB_A`, and
+  `ST3215_STS3215_measured_parameters.md`, "the one that will cost you a day").
+  Useful for the power budget, and a first sanity check on `CURRENT_LSB_A`; it is
+  not a calibration of it, which wants the supply's reading against a known load.
+  The holding current being this small is the friction *and* the squaring: at a
+  standing duty of a few per cent the register reads a few per cent of an already
+  small motor current.
+
+  **Every current limit in this tree is therefore in supply amps, and the motor's
+  is higher.** `safety.Limits.current_a` = 2.0, `sweep.py --current-limit` 2.5 and
+  `torque_hold.py --current-limit` 1.5 all compare against `fb["current"]` = d²·U/R,
+  so with R ≈ 4.35 Ω at 12 V they can only be reached near full duty: 2.0 A of
+  supply is d ≈ 0.85 and **2.35 A through the motor**, 1.5 A is d ≈ 0.74 and 2.03 A,
+  against a locked-rotor 2.76 A at d = 1. The direction that matters is the other
+  one — at low duty the register is *quadratically* insensitive, so a joint pulling
+  1 A through its motor at 36 % duty reports 0.36 A and no limit here notices.
+  These trips catch a stalled or nearly-stalled servo, which is what they are for;
+  they are not a thermal limit on a joint working hard at partial duty.
 
   **`PRESENT_TEMPERATURE` is unusable while the motor drives, and the guard now says
   so.** Still, it is good to ±1 °C — thousands of samples on a stationary ST3215
@@ -437,8 +477,9 @@ the mac have no other way to agree about which servo is `fl_knee`.
   free air: peak error **26.3°** against a 0.35 rad (20.1°) limit, so it already
   exceeds the threshold and survives only on the 0.3 s hold. Driven at the gait's own
   joint rate the servo lags a median 21.7° and a peak 67°, because ±0.5 rad in a
-  0.45 s period asks for 6.98 rad/s against a 4.71 rad/s no-load speed — it
-  saturates. Position itself is trustworthy while driving, unlike temperature: 0
+  0.45 s period asks for 6.98 rad/s against a no-load speed taken as 4.71 at the time
+  and **measured at 3.86 on 2026-09-11** — it saturates, and by more than this
+  paragraph said. Position itself is trustworthy while driving, unlike temperature: 0
   impossible jumps in 321 samples. So the number is real and the limit is the thing
   that is wrong. **It is now 0.70 rad, and that came from the loaded run, not from
   the estimate.** The first 3 s trot on the bench at 2.55 kg tripped after one second
@@ -464,30 +505,50 @@ the mac have no other way to agree about which servo is `fl_knee`.
 ### The gait is fitted to the servo, and it doubled the robot's real speed
 
 `walk.py` now refuses to command a trot these servos cannot fly. `gait.py` rate-limits
-its own output to 4.0 rad/s; at 0.20 m/s the trot demands **7.55**, so the commanded
-foot path is clipped before a servo sees it and the robot **drags**. Measured at
-2.55 kg: 0.067 m/s achieved against 0.20 commanded, 0.86 A peaks, and the knee-load
-residual peaking in the half the gait calls *swing* on all four legs, in two
-independent runs — a foot that never leaves the ground.
+its own output; at 0.20 m/s the trot demands **7.55 rad/s**, so the commanded foot path
+is clipped before a servo sees it and the robot **drags**. Measured at 2.55 kg:
+0.067 m/s achieved against 0.20 commanded, 0.86 A peaks, and the knee-load residual
+peaking in the half the gait calls *swing* on all four legs, in two independent runs —
+a foot that never leaves the ground.
 
 `feasible_gait()` searches for the shortest period whose demand fits under the limiter
 with the stride still under `max_step`, and caps the speed if none does. It prints what
-it changed; `--as-commanded` restores the old behaviour and names the defect. What that
-picks, and the two constraints together:
+it changed; `--as-commanded` restores the old behaviour and names the defect.
+
+**The table below moved on 2026-09-11 and the cause is not in this tree.** `gait.py`
+used to limit itself against the vendor no-load speed × 0.85 = 4.00 rad/s; it now limits
+against the achievable ceiling `(forcerange − frictionloss)/damping`, emitted by the
+model generator as `joint_rate_ceiling_rad_s` = **3.15**, and `walk.py` reads that same
+number out of `robot_params.json`. A fifth of the ceiling went away, so the fit lands
+somewhere slower. These are the current numbers, straight out of
+`walk.py --dry-run --profile`, against a target of 3.15 × 0.95 = **2.99**:
 
 | commanded | best period | stride | demand | |
 |---|---|---|---|---|
-| 0.10 | 2.00 | 50 mm | 2.64 | comfortable |
-| 0.12 | 1.65 | 50 mm | 3.16 | |
-| **0.14** | **1.20** | **42 mm** | **3.77** | **what 0.20 is capped to** |
-| 0.15 | 1.30 | 49 mm | 3.95 | at the limit |
-| 0.20 | 1.00 | 50 mm | 5.24 | drags — infeasible at any period |
+| 0.08 | 1.20 | 24 mm | 2.91 | comfortable |
+| 0.10 | 1.30 | 32 mm | 2.99 | |
+| **0.11** | **1.50** | **41 mm** | **2.98** | **what anything faster is capped to** |
+| 0.12 and up | — | — | — | infeasible at any period |
+
+The superseded set, fitted against the 4.00 ceiling: 0.10 / 2.00 s / 50 mm / 2.64;
+0.12 / 1.65 / 50 / 3.16; **0.14 / 1.20 / 42 / 3.77**; 0.15 / 1.30 / 49 / 3.95;
+0.20 / 1.00 / 50 / 5.24.
 
 **0.20 m/s is not achievable by these servos at this mass**, at any period; cutting
 swing to 15 mm only reaches 4.14 and costs the clearance that makes contact readable.
-So the cap is not a slower robot, it is a faster one: **350–450 mm in 3 s = 0.12–0.15
-m/s against 0.067**, better than 2×, and it lands on the commanded speed, which says
-the slip went with the drag — feet that clear and land do not scuff.
+The 2.55 kg ground runs that measured **350–450 mm in 3 s = 0.12–0.15 m/s against
+0.067** were taken at the old 0.14 / 1.20 s operating point, so they say the cap is a
+*faster* robot than the drag was — they do not say what 0.11 / 1.50 s does on the
+ground, and nothing has measured that yet.
+
+**Turning is fitted too, since 2026-09-11.** `feasible_gait` only ever asked about
+forward motion, so the profile's 0.6 rad/s spin and the teleop's `--turn` 1.2 went out
+unchecked — and a turn is not free, because the outer legs stride further.
+`feasible_turn()` fits the turn on the spot, which is the only turn either caller
+commands: **1.2 rad/s demands 4.13 and is capped to 0.65, which demands 2.95.** The
+profile's 0.6 survives unchanged. The teleop's `,`/`.` keys are clamped to the fitted
+speed as well; they used to run to a hard-coded 0.45 m/s, four times today's ceiling,
+which was the one way into this file that walked past the whole fit.
 
 Two things this deliberately does not do. It does not touch `gait.py`: **the sim does
 not have this bug**, because MuJoCo's feet run at μ ≈ 1.2 and grip, so the sim robot
@@ -606,7 +667,7 @@ you can *set* and two different arms.
 
 1. **`--check`** — preflight. Prints every control register. Nothing moves.
 
-2. **`--traj rock`** — 30 seconds, and it settles a modelling question rather
+2. **`--traj rock`** — ten seconds of rocking, and it settles a modelling question rather
    than fitting a number. Torque off, rock the horn against the play, watch
    Present Position. If it moves by ~0.5°, the encoder is after the gearbox: it
    reads the true joint angle, and the backlash is a hole in the *torque* path,
@@ -931,8 +992,10 @@ Measured 2026-09-09, 1.066 kg on the 90 mm arm, at 8 / 10 / 12 V.
 **The fit was never going to find friction, because it has three other places to put
 it.** `rl/actuator.py`'s law is `tau_c*sign(w) + b_v*w`, both independent of load, so a
 friction that grows with the torque carried has nowhere to go except `k_u` — which is
-why the fitted stall is 4.23 N·m against a spec 2.94, and why `b_v` sits pinned on its
-lower bound however much data it is given. Neither symptom is a shortage of runs.
+why the fitted stall is 4.23 N·m against a datasheet 2.94, and why `b_v` sits pinned on
+its lower bound however much data it is given. (A scale has since put the real stall at
+**4.50**, so how much of that 4.23 is inflation is no longer obvious — the argument for
+measuring friction directly stands either way, but do not read 4.23 as damning now.) Neither symptom is a shortage of runs.
 
 So both new ladders are **differential**: they measure friction as a difference between
 two runs of the same trajectory rather than asking an optimiser to infer it.
@@ -985,7 +1048,7 @@ in the directory that no analytic pass reads, and says exactly that.
 
 And with `--refine` on, the enlarged set does not converge, it *diverges*: `kp` pinned at
 2017, `k_e` at 11.8, `punch` on its bound, an implied no-load speed of 1.02 rad/s against
-a spec 4.71.
+a measured 3.86.
 
 **That was read as missing friction, and it is not.** Step 2 added the load-dependent
 term the same day and re-ran it: `kp` still pinned (1887), `k_e` still 11.3, no-load still

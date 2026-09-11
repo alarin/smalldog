@@ -35,6 +35,11 @@ needed because a single scheduler hiccup would otherwise ask the gait to advance
 half a stride in one step, and half a stride in one step is a leg thrown at the
 floor. An overrun is counted and reported rather than hidden.
 
+And it is charged in TICKS. The tick schedule is re-based whenever a deadline is
+missed, so a 500 ms stall loses 25 ticks rather than running 25 of them back to
+back at the `dt` floor — which would have handed the gait 250 ms of phase for no
+world time at all, defeating the clamp above by the back door.
+
 Torque has exactly one owner
 ----------------------------
 This file, and within it `__exit__`. `safety.Guard` raises, `Runtime` cuts torque,
@@ -123,11 +128,16 @@ class Runtime:
         a failed bulk read falls back to reading each servo on its own, which costs
         a tick's deadline but localises the fault to the joint that actually has it.
         The overrun is counted; going blind is not an option worth the microseconds.
+
+        `bus_errors` counts TICKS THAT CAME BACK SHORT, not exceptions. `sync_read`
+        already returns a partial dict in two cases it handles itself — a frame
+        whose re-read also failed, and a firmware with no SYNC_READ where one id is
+        silent — so counting only the exception undercounted a servo that has
+        stopped answering, which is precisely the thing this number is read for.
         """
         try:
             raw = self.bus.sync_read(R.FEEDBACK_START, R.FEEDBACK_LEN, self.calib.ids)
         except BusError:
-            self.bus_errors += 1
             raw = {}
             for n in self.calib.joints:
                 try:
@@ -135,6 +145,8 @@ class Runtime:
                         self.calib.id[n], R.FEEDBACK_START, R.FEEDBACK_LEN)
                 except BusError:
                     pass
+        if len(raw) < len(self.calib.ids):
+            self.bus_errors += 1
         out = {}
         for n in self.calib.joints:
             r = raw.get(self.calib.id[n])
@@ -188,7 +200,12 @@ class Runtime:
         regs, odd = {}, []
         for n in self.calib.joints:
             try:
-                regs[n] = {k: self.servos[n].registers().get(k)
+                # ONE read of the control table per joint. `registers()` walks all
+                # eighteen of R.CONTROL_REGISTERS over the bus, so evaluating it
+                # inside the comprehension read seventy-two registers per joint to
+                # keep four — 864 round trips for a preflight that wants 48.
+                r = self.servos[n].registers()
+                regs[n] = {k: r.get(k)
                            for k in ("ACCELERATION", "GOAL_SPEED", "MODE", "P_COEF")}
             except BusError as e:
                 regs[n] = {"error": str(e)}
@@ -255,7 +272,12 @@ class Runtime:
             q_prev = [p + max(-step, min(step, v - p)) for v, p in zip(want, q_prev)]
             self.send(q_prev)
             self.guard.update(self.dt, self.read(), self.goal)
-            self._sleep_until(t0 + k * self.dt)
+            # Re-based on an overrun for the same reason `run` is: the step limit
+            # here is `rate * self.dt` PER ITERATION, so iterations that run back
+            # to back are a ramp moving faster than `rate` in the world — while
+            # taking up 2.5 kg, which is the moment it matters most.
+            if self._sleep_until(t0 + k * self.dt) < 0:
+                t0 = time.perf_counter() - k * self.dt
         return q_prev
 
     def relax(self, q=None, ramp_s=1.5):
@@ -281,17 +303,19 @@ class Runtime:
             step = rate * self.dt
             q_prev = [p + max(-step, min(step, v - p)) for v, p in zip(want, q_prev)]
             self.send(q_prev)
-            self._sleep_until(t0 + k * self.dt)
+            if self._sleep_until(t0 + k * self.dt) < 0:
+                t0 = time.perf_counter() - k * self.dt
         return q_prev
 
     # -------------------------------------------------------------- the loop
     def run(self, source, seconds=None, on_tick=None) -> dict:
         """Tick `source` at `hz` until `seconds` elapse, it raises StopIteration, or
         something trips. Returns the timing report."""
-        t0 = time.perf_counter()
-        prev = t0
+        t_start = time.perf_counter()
+        t0 = t_start                   # the SCHEDULE's base; re-based on an overrun
+        prev = t_start
         k = 0
-        while seconds is None or (time.perf_counter() - t0) < seconds:
+        while seconds is None or (time.perf_counter() - t_start) < seconds:
             now = time.perf_counter()
             dt = min(2.0 * self.dt, max(0.5 * self.dt, now - prev))
             prev = now
@@ -307,16 +331,29 @@ class Runtime:
                 on_tick(k, dt, fb)
 
             self.ticks = k = k + 1
-            self._sleep_until(t0 + k * self.dt)
+            # A late tick costs a TICK, not a burst. Anchored on a fixed `t0`, every
+            # deadline after an overrun is already in the past, so the loop runs
+            # back to back until the schedule catches up — and `dt` is floor-clamped
+            # to half the nominal, so 500 ms of stall becomes ~25 instant ticks and
+            # the source's phase advances at 2.5x real time. That is the same "half
+            # a stride in one step" the clamp at the top of this loop exists to
+            # prevent, arrived at the long way round: a leg thrown at the floor
+            # because the bus hiccupped. Re-basing puts the next deadline one dt
+            # from NOW and the missed ticks are simply gone, which is what a real
+            # time control loop is supposed to do with time it did not have.
+            if self._sleep_until(t0 + k * self.dt) < 0:
+                t0 = time.perf_counter() - k * self.dt
         return self.report()
 
-    def _sleep_until(self, when):
+    def _sleep_until(self, when) -> float:
+        """Hold until `when`. Returns the slack; negative means the tick was late."""
         slack = when - time.perf_counter()
         if slack > 0:
             time.sleep(slack)
         else:
             self.overruns += 1
             self._late.append(-slack)
+        return slack
 
     def report(self) -> dict:
         late = sorted(self._late)
@@ -413,6 +450,39 @@ def _selftest(seconds=2.0) -> int:
     chk("the guard saw no tracking error", r["q_err"] < 0.05, f" ({r['q_err']:.3f} rad)")
     chk("late ticks are rare", r["overruns"] <= max(2, 0.05 * r["ticks"]),
         f" ({r['overruns']} of {r['ticks']})")
+
+    # A STALL MUST COST TICKS, NOT PRODUCE A BURST. With the schedule anchored on a
+    # fixed t0, every deadline after an overrun is already past, so the loop ran
+    # back to back until it caught up — and because `dt` is floor-clamped to half
+    # the nominal tick, the source was handed 10 ms of phase for ~0 ms of world,
+    # over and over. A gait integrating that fast-forwards at up to 2.5x real time
+    # after a bus hiccup, which is a leg thrown at the floor. So: block one tick for
+    # 0.3 s and count the ticks whose commanded dt outruns the wall clock.
+    rt5 = Runtime(Bus(transport=FollowingLoopback(calib.ids), discard_echo=False),
+                  calib, log=lambda *_: None)
+    st = {"prev": None, "n": 0, "ahead": 0, "phase": 0.0}
+
+    def stalling(dt, fb):
+        now = time.perf_counter()
+        st["phase"] += dt
+        if st["prev"] is not None and dt > 1.5 * (now - st["prev"]):
+            st["ahead"] += 1
+        st["prev"], st["n"] = now, st["n"] + 1
+        if st["n"] == 5:
+            time.sleep(0.30)                   # the bus, or the scheduler, blocks
+        return [0.0] * 12
+
+    with rt5:
+        rt5.engage([0.0] * 12, ramp_s=0.0)
+        wall = time.perf_counter()
+        rt5.run(stalling, seconds=1.0)
+        wall = time.perf_counter() - wall
+    chk("a 0.3 s stall does not fast-forward the source's phase", st["ahead"] <= 1,
+        f" ({st['ahead']} compressed ticks, {st['phase']:.2f} s of phase "
+        f"in {wall:.2f} s of wall clock)")
+    chk("... and the stall is reported as one late tick, not fifteen",
+        rt5.overruns <= 2, f" ({rt5.overruns} of {rt5.ticks})")
+    chk("... and the run still stops after `seconds`", wall < 1.4, f" ({wall:.2f} s)")
 
     # the clamp is the last line: a source that asks for the moon gets the soft limit
     rt2 = Runtime(Bus(transport=FollowingLoopback(calib.ids), discard_echo=False),

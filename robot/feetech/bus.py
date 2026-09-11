@@ -79,6 +79,18 @@ class Bus:
         self._times: list[float] = []
         self._sync_read_ok: bool | None = None
 
+    def close(self) -> None:
+        """Let the port go. Safe on a duck-typed transport that has no `close`.
+
+        Nothing in the runtime needs this — `Runtime.__exit__` cuts torque and the
+        process then ends, which closes the port anyway — but a bench script that
+        opens a second `Bus` on the same adapter (`torque_limit.py` after
+        `sweep.py`, in one shell) otherwise waits for the garbage collector.
+        """
+        closer = getattr(self.io, "close", None)
+        if closer is not None:
+            closer()
+
     # ------------------------------------------------------------ encoding
     def _u16(self, v: int) -> bytes:
         return struct.pack("<H" if self.endian == "little" else ">H", v & 0xFFFF)
@@ -203,31 +215,68 @@ class Bus:
         The re-read is a re-read, never a repair. The checksum's job is to say the
         bytes are untrustworthy; masking the two bits back off would be believing a
         frame precisely because it is corrupt.
+
+        **Falling back is a one-way door, so it takes two failures.** Once
+        `_sync_read_ok` is False every later call goes sequential — twelve round
+        trips instead of one — for the life of the object, which on the runtime is
+        the life of the robot. A firmware without SYNC_READ fails every time and
+        still gets there on the retry; one bad frame on the first call no longer
+        costs 2 ms a tick forever.
         """
         if self._sync_read_ok is not False:
+            for attempt in (0, 1):
+                try:
+                    out, bad = self._sync_read(addr, n, ids)
+                except BusError:
+                    if self._sync_read_ok:
+                        raise                  # it worked before: a real failure
+                    # Never seen it work, so this may be a firmware without
+                    # SYNC_READ — or it may be one bad frame on the very first
+                    # call, and latching on that condemns the runtime to twelve
+                    # sequential reads for the rest of its life. One retry costs
+                    # 3.3 ms once; getting it wrong costs 2 ms every tick.
+                    if attempt == 0:
+                        continue
+                    self._sync_read_ok = False
+                else:
+                    self._sync_read_ok = True
+                    for i in bad:
+                        try:
+                            out[i] = self.read(i, addr, n)
+                            self.n_repaired += 1
+                        except BusError:
+                            pass               # leave it missing; caller sees None
+                    return out
+        # The sequential path is per-id tolerant for the same reason `sync_read`
+        # re-reads one frame instead of raising: one servo that will not answer is
+        # not a dead bus, and the caller decodes a missing id as None. Everything
+        # failing still raises, because that IS a dead bus.
+        out, last = {}, None
+        for i in ids:
             try:
-                out, bad = self._sync_read(addr, n, ids)
-            except BusError:
-                if self._sync_read_ok:
-                    raise                      # it worked before: a real failure
-                self._sync_read_ok = False
-            else:
-                self._sync_read_ok = True
-                for i in bad:
-                    try:
-                        out[i] = self.read(i, addr, n)
-                        self.n_repaired += 1
-                    except BusError:
-                        pass                   # leave it missing; the caller sees None
-                return out
-        return {i: self.read(i, addr, n) for i in ids}
+                out[i] = self.read(i, addr, n)
+            except BusError as e:
+                last = e
+        if last is not None and not out:
+            raise last
+        return out
 
     def _sync_read(self, addr, n, ids):
         params = bytes([addr, n]) + bytes(ids)
+        packet = pack(R.BROADCAST_ID, R.SYNC_READ, params)
         self.io.reset_input_buffer()
         t0 = time.perf_counter()
-        self.io.write(pack(R.BROADCAST_ID, R.SYNC_READ, params))
+        self.io.write(packet)
         need = (6 + n) * len(ids)
+        # An echoing adapter puts the broadcast back in front of the replies, and
+        # this used to be the one path that did not know it: the first frame then
+        # failed its header check, `sync_read` latched SYNC_READ as absent, and the
+        # runtime fell back to twelve sequential reads FOREVER on an adapter that
+        # supports it perfectly well. `_txrx` has always stripped it; the flag is
+        # shared, so by the time the runtime gets here the first ping has usually
+        # set it, and `None` (not yet known) is handled the same way `_txrx` does.
+        if self.discard_echo is not False:
+            need += len(packet)
         buf = b""
         while len(buf) < need:
             chunk = self.io.read(need - len(buf))
@@ -236,6 +285,17 @@ class Bus:
             buf += chunk
         self._times.append(time.perf_counter() - t0)
         self.n_tx += 1
+        if buf.startswith(packet):
+            if self.discard_echo is None:
+                self.discard_echo = True
+            buf = buf[len(packet):]
+            need -= len(packet)
+        elif self.discard_echo is not False:
+            # Nothing was echoed after all: we over-read by `len(packet)`, which
+            # only means the loop above waited for bytes that were never coming.
+            if self.discard_echo is None:
+                self.discard_echo = False
+            need -= len(packet)
         if len(buf) < need:
             self.n_timeout += 1
             raise Timeout(f"sync_read: {len(buf)} of {need} bytes")
@@ -406,6 +466,43 @@ def _selftest() -> int:
           bus.value(R.PRESENT_POSITION, got[2]), 1234)
     check("... and the re-read was counted", bus.stats()["repaired"], 1)
     check("... and so was the checksum error", bus.stats()["checksum_errors"], 1)
+
+    # An adapter that echoes the transmitted bytes back. Real ones exist — it is
+    # why `discard_echo` exists at all — and `_sync_read` was the one path that
+    # did not strip the echo: the first frame failed its header check, `sync_read`
+    # latched SYNC_READ as absent, and the runtime then read twelve servos one at
+    # a time for the rest of the robot's life, on an adapter that supports it.
+    class EchoingLoopback(LoopbackBus):
+        def write(self, data):
+            self._out += data                  # the echo arrives before the replies
+            super().write(data)
+
+    echo = Bus(transport=EchoingLoopback({1: {}, 2: {}}))   # discard_echo auto
+    echo.io.set(1, R.PRESENT_POSITION, 2148)
+    echo.io.set(2, R.PRESENT_POSITION, 1234)
+    got = echo.sync_read(R.PRESENT_POSITION, 2, [1, 2])
+    check("sync_read strips an adapter's echo",
+          echo.value(R.PRESENT_POSITION, got[1]), 2148)
+    check("... on every frame, not just the first",
+          echo.value(R.PRESENT_POSITION, got[2]), 1234)
+    check("... so SYNC_READ is not latched off", echo.stats()["sync_read"], True)
+
+    # Firmware with no SYNC_READ at all: the broadcast is never answered. Two
+    # tries, then the sequential path — and that path keeps the ids that DO
+    # answer instead of failing all twelve because of one.
+    class NoSyncRead(LoopbackBus):
+        def _handle(self, frame):
+            if frame[4] != R.SYNC_READ:
+                super()._handle(frame)
+
+    seq = Bus(transport=NoSyncRead({1: {}, 2: {}}), discard_echo=False)
+    seq.io.set(1, R.PRESENT_POSITION, 2148)
+    got = seq.sync_read(R.PRESENT_POSITION, 2, [1, 2])
+    check("no SYNC_READ falls back to sequential reads",
+          seq.value(R.PRESENT_POSITION, got[1]), 2148)
+    check("... and says which path it took", seq.stats()["sync_read"], False)
+    got = seq.sync_read(R.PRESENT_POSITION, 2, [1, 9])
+    check("... and one silent id does not lose the others", sorted(got), [1])
 
     # A corrupted reply must raise, not return plausible nonsense.
     bus.io.corrupt_next = True
