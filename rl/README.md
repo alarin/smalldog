@@ -21,12 +21,15 @@ crosses between them.
 
 ```bash
 uv sync --extra cpu      # mac: same code on CPU JAX, for smoke tests
-uv sync --extra cuda     # WSL2 + RTX 3070: training
+uv sync --extra cuda     # WSL2 + RTX 3070 or 5070 Ti: training
 uv sync --extra fit      # scipy + matplotlib, for the bench fit
 ```
 
-The training box is an **RTX 3070 — Ampere, `sm_86`, 8 GB**, under WSL2 (`../WSL.md` is
-that machine's runbook). Check the card is actually visible before blaming anything else:
+There are two training boxes, both WSL2: an **RTX 3070 — Ampere, `sm_86`, 8 GB**
+(`../WSL.md`) and an **RTX 5070 Ti — Blackwell, `sm_120`, 16 GB** (`../GPU.md`, which
+also has the pause-for-games script, since that box is the gaming PC). The 8 GB numbers
+below are the binding ones on the 3070; the 16 GB box takes 2048 envs with boxes. Check
+the card is actually visible before blaming anything else:
 
 ```bash
 python -c "import jax; print(jax.devices())"      # must list a CudaDevice

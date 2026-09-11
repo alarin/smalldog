@@ -33,6 +33,7 @@ change workflow (rebuild → FEA → re-export sim → regenerate the ROS 2 desc
 |---|---|---|
 | a mac | CAD, FEA, both sim exporters, the ROS 2 workspace | [`3d/CLAUDE.md`](3d/CLAUDE.md) |
 | Windows/WSL2, RTX 3070 | RL training, the pure-Python sim regressions | [`WSL.md`](WSL.md) |
+| Windows/WSL2, RTX 5070 Ti | RL training with the procedural boxes at full batch | [`GPU.md`](GPU.md) |
 | Orange Pi 5 Pro | the runtime on the robot | [`robot/README.md`](robot/README.md) |
 
 No shared filesystem between them: the git repository is the only thing that crosses.

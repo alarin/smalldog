@@ -18,22 +18,18 @@ repository: anything under `ros2/smalldog_description/` or `3d/out/` is output â
 
 ## Machines
 
-Three machines, no shared filesystem, no scp: **the git repository is the only thing that
+Four machines, no shared filesystem, no scp: **the git repository is the only thing that
 crosses**, so a result that has to reach another machine gets committed.
 
 | machine | does | runbook |
 |---|---|---|
 | a mac | CAD, FEA, both sim exporters, the ROS 2 workspace | `3d/CLAUDE.md` |
 | Windows/WSL2, RTX 3070 (8 GB) | RL training, the pure-Python sim regressions | `WSL.md` |
+| Windows/WSL2, RTX 5070 Ti (16 GB) | RL training â€” the box-terrain run 8 GB never allowed; also the gaming PC | `GPU.md` |
 | Orange Pi 5 Pro | `robot/runtime` on the robot | `robot/README.md` |
 
-Work out which one you are on before running anything; `WSL.md` has the check.
-
-A fourth box (RTX 5070 Ti, 16 GB VRAM, 35 GB RAM) exists with no checkout and no runbook.
-It matters because 8 GB is the reason `rl/` has never launched the box-terrain run. Before
-planning anything around it: confirm an `sm_120` jax actually executes a jit on that GPU
-(CUDA 12.8+; a mismatch is a silent CPU fallback, not an import error), and measure the
-VRAM of the 2048-env model with boxes. It gets its own runbook when it gets a checkout.
+Work out which one you are on before running anything; `WSL.md` has the check, and
+`nvidia-smi` says which of the two training boxes this is.
 
 ## Conventions for these files
 

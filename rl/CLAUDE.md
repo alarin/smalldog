@@ -10,7 +10,7 @@ tree sits downstream of all of them.
 
 ```bash
 uv sync --extra cpu      # mac: CPU JAX, seconds-long smoke tests
-uv sync --extra cuda     # WSL2 + RTX 3070: training (../WSL.md is that machine's runbook)
+uv sync --extra cuda     # WSL2 + a CUDA card: training (../WSL.md, ../GPU.md are the two boxes' runbooks)
 uv sync --extra fit      # scipy + matplotlib, for the bench fit
 uv run python checks/check_model.py
 ```
@@ -69,7 +69,8 @@ versioned deliberately: a pinned resolution is the point when three machines sha
   logs. So the heightfield is a legitimate training surface, the course is `eval.py`-only,
   and the default stays flat plus procedural boxes because only those randomise per
   environment. `mjx.put_model` is the arbiter; never resolve a raise by editing the scene.
-- **8 GB of VRAM sets `num_envs`** (budget 1024–2048) and JAX preallocates 75 % by default:
+- **VRAM sets `num_envs`**: 1024–2048 on the 3070's 8 GB, and 2048 with boxes fits the
+  5070 Ti's 16 GB (`../GPU.md` has the measurement). JAX preallocates 75 % by default:
   set `XLA_PYTHON_CLIENT_MEM_FRACTION`. An OOM surfaces as an XLA allocation error.
 - `runs/` is checkpoints and video — gitignored. A result worth keeping is a number in a
   commit message or a file in `params/`.
