@@ -37,6 +37,50 @@ thing to measure, and to re-measure after running.
 
 ---
 
+## Part 0 — the ratio is a measurement problem, not a catalogue choice
+
+**You cannot choose the gearbox until the motor has been on a scale.** This is
+the first real decision and it is downstream of exactly two numbers from Part 1:
+`k_t` (1.3) and the current the motor will take continuously without cooking
+(1.6). Their product is the continuous torque, and **continuous is the number
+that sizes a leg**, not peak — a standing robot holds torque indefinitely.
+
+The ratio is squeezed from both ends, and the squeeze is the design:
+
+| pushes the ratio UP | pushes it DOWN |
+|---|---|
+| joint torque needed to stand, walk and survive a landing | joint speed the gait needs |
+| gearbox losses (Part 2.4) eat delivered torque | backdrivability (2.5) — high ratio kills it |
+| | backlash and compliance multiply at the output |
+| | reflected inertia goes as ratio², and it already dominated smalldog's leg |
+
+**For scale, from the dog in this repository:** the ST3215 makes **4.50 N·m** at
+the joint through a 1:345 reduction, and its usable ceiling is **3.15 rad/s**.
+Those two numbers are what a working 1.55 kg dog actually used, so they are the
+honest starting target — and both were *measured here*, not taken from a
+datasheet, which is the only reason they can be trusted as a target at all.
+
+A 5010 is a very different starting point. Torque is scarce and speed is
+abundant: a gimbal-wound 5010 makes something like a few tenths of a N·m
+continuously, while its no-load speed at 12 V is hundreds of rad/s. So the
+arithmetic usually runs **torque-first** — pick the ratio that delivers the joint
+torque you need, then check that the speed that survives it still clears the
+gait, which it will by a wide margin. That is the opposite of smalldog, where
+speed was the binding constraint and the gait spent a year asking for more than
+the joint had.
+
+**Reflected inertia is the trap on this axis.** It scales with ratio², and
+`check_model.py` already found the ST3215's rotor inertia to be **151× the knee
+link's own**. At 1:345 that is expected; the point is that a QDD actuator is
+chosen partly to *escape* it, and a ratio picked purely for torque can hand it
+straight back. Compute `J_m * ratio²` against the link inertia for every
+candidate ratio before committing, because it decides how fast the leg can
+reverse — which is what a trot is.
+
+**So the order is: 1.3 and 1.6 first, then this decision, then everything else.**
+Parts 2 and 3 characterise a gearbox that already exists; this is the step that
+decides which one to build.
+
 ## Part 1 — the bare motor, no gearbox
 
 Do these before the gearbox exists. Every one of them is contaminated later by
@@ -52,10 +96,12 @@ phases (not an ohmmeter — lead and contact resistance is the same order as the
 winding). L from the current rise time or an LCR meter. Sets your current-loop
 gains and the thermal model.
 
-**1.3 Torque constant `k_t`, against a scale.** Lock the rotor, command a known
-current, measure force at a known radius. Sweep current, fit the **slope**, not a
-single point. This is the number everything else is checked against, and it is
-the number `smalldog` got wrong.
+**1.3 Torque constant `k_t`, against a scale. THE FIRST TEST, AND THE ONE THE
+GEARBOX CHOICE WAITS ON.** Lock the rotor, command a known current, measure force
+at a known radius. Sweep current, fit the **slope**, not a single point. This is
+the number everything else is checked against, it is the number `smalldog` got
+wrong, and together with 1.6 it is what Part 0 needs to pick a ratio. Do it
+before anything is designed around it.
 
 **1.4 Back-EMF constant `k_e`.** Spin the motor with a drill at a measured speed,
 scope the open-circuit line voltage. **In SI, `k_e` (V·s/rad) and `k_t` (N·m/A)
@@ -69,10 +115,12 @@ A gimbal motor is chosen partly for low cogging; with a reduction it is
 multiplied by the ratio at the output, so measure it before you decide the ratio
 is high enough to ignore.
 
-**1.6 Thermal envelope.** Current against steady-state winding temperature, to
-the limit you are willing to run. This sets *continuous* torque, which is a
-completely different number from peak, and a 5010 has no heatsink but its own
-stator. Note the same effect `smalldog` measured on the ST3215: torque decays
+**1.6 Thermal envelope. The other half of the ratio decision.** Current against
+steady-state winding temperature, to the limit you are willing to run. This sets
+*continuous* torque, which is a completely different number from peak and is the
+one that sizes a leg — a standing robot holds torque indefinitely, and a 5010 has
+no heatsink but its own stator. Quote both: peak for landings, continuous for
+standing, and design the ratio to the continuous one. Note the same effect `smalldog` measured on the ST3215: torque decays
 4–7 % over 8 seconds of holding, because the winding warms and resistance rises.
 On a current-controlled drive that decay **disappears** — the loop holds current
 regardless of R — which is a real advantage, but it moves the limit from torque
@@ -203,11 +251,16 @@ Each of these cost real time there. They are cheap to avoid here.
 
 ## Order
 
-1. Part 1 entire, before the gearbox exists.
-2. Reconcile 1.3 against 1.4. Do not proceed until `k_t == k_e`.
-3. Part 2 on the first printed gearbox, and again on a second print of the same
+1. **1.3 and 1.6 first of all** — `k_t` on a scale and the thermal limit. Their
+   product is continuous torque, and nothing about the gearbox can be chosen
+   without it (Part 0).
+2. The rest of Part 1, before the gearbox exists.
+3. Reconcile 1.3 against 1.4. Do not proceed until `k_t == k_e`.
+4. **Choose the ratio** (Part 0), and check `J_m * ratio²` against the link
+   inertia while you do.
+5. Part 2 on the first printed gearbox, and again on a second print of the same
    design — print-to-print spread is a real axis here.
-4. Part 3.
-5. 2.7 and 2.8 on a schedule, forever. They are the only tests here whose answer
+6. Part 3.
+7. 2.7 and 2.8 on a schedule, forever. They are the only tests here whose answer
    changes with time, which makes them the only ones that can invalidate a design
    after it looks finished.
