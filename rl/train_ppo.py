@@ -77,6 +77,10 @@ def parse():
                     help="only keep the final weights. The row-per-checkpoint "
                          "video needs the intermediate ones and they cannot be "
                          "recovered afterwards.")
+    ap.add_argument("--tracking-sigma", type=float, default=None,
+                    help="override rewards.Weights.tracking_sigma, the width of the "
+                         "linear-velocity tracking term. Every other weight stays "
+                         "at its default. Recorded in run.json like every arg.")
     ap.add_argument("--name", default=None)
     ap.add_argument("--smoke", action="store_true",
                     help="a two-minute run that proves the loop closes and "
@@ -101,7 +105,7 @@ def main():
     from brax.training.agents.ppo import networks as ppo_networks
 
     import actuator
-    from env import Walk, domain_randomize
+    from env import Walk, Weights, domain_randomize
 
     name = a.name or datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     out = os.path.join(os.path.dirname(os.path.abspath(__file__)), "runs", name)
@@ -113,8 +117,9 @@ def main():
     print(f"run         {out}")
     print(f"cache       {jaxenv.cache_line(cache)}")
 
-    env = Walk(terrain=a.terrain, n_boxes=a.boxes)
-    eval_env = Walk(terrain=a.terrain, n_boxes=a.boxes)
+    weights = Weights(tracking_sigma=a.tracking_sigma) if a.tracking_sigma else None
+    env = Walk(terrain=a.terrain, n_boxes=a.boxes, weights=weights)
+    eval_env = Walk(terrain=a.terrain, n_boxes=a.boxes, weights=weights)
     for n in env.build_notes:
         print(f"model       {n}")
     print(f"env         obs {env.observation_size}, act {env.action_size}, "
