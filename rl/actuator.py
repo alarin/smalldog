@@ -446,11 +446,38 @@ def simulate(p: Params, target, dt, q0=0.0, w0=0.0, u_bat=12.0, load_torque=None
                 tau_t = k_bl * (delta + half) + c_bl * (w_m - w_l)
             else:
                 tau_t = 0.0
-            tau_m = (k_u * d * volt
-                     - (tau_c + mu_l * abs(tau_t)) * math.tanh(w_m / v_eps)
-                     - b_v * w_m)
+            # KARNOPP, not tanh: below v_eps the joint STICKS.  tanh(w/v_eps)
+            # is exactly zero at w = 0, so the old law had a servo that could
+            # not hold anything at rest while the real one breaks away at
+            # 0.23-0.35 N*m (ST3215_STS3215_measured_parameters.md).  The
+            # consequence was not cosmetic: a hold approached from below and
+            # from above settled at the SAME duty, half-difference 0.00-0.03 V
+            # against the real servo's 0.29, and `mu_load` was therefore not
+            # recoverable from this model's own output (fit_bam --selftest
+            # said so, about the model rather than the experiment).
+            #
+            # The law is unchanged above the stick band - it is the same
+            # (tau_c + mu_load*|tau_t|) ceiling, and b_v*w is outside it
+            # because viscous drag does not stick.  What changes is only what
+            # happens inside |w| < v_eps, where friction now opposes the NET
+            # applied torque up to that ceiling instead of fading to nothing.
+            tau_app = k_u * d * volt - b_v * w_m - tau_t
             if driven:
-                tau_m -= k_w * w_m
+                tau_app -= k_w * w_m
+            f_max = tau_c + mu_l * abs(tau_t)
+            if abs(w_m) < v_eps and abs(tau_app) <= f_max:
+                # stuck: friction takes up exactly the applied torque, and the
+                # motor is held.  Setting w_m rather than integrating it is the
+                # point of Karnopp - an ODE cannot express "does not move".
+                w_m = 0.0
+                tau_m = tau_t                      # so tau_m - tau_t == 0 below
+            else:
+                tau_m = (k_u * d * volt
+                         - f_max * (math.tanh(w_m / v_eps) if abs(w_m) < v_eps
+                                    else (1.0 if w_m > 0 else -1.0))
+                         - b_v * w_m)
+                if driven:
+                    tau_m -= k_w * w_m
             w_m += h * (tau_m - tau_t) / J_m
             w_l += h * (tau_t + load_torque(th_l)) / J_l
             th_m += h * w_m
@@ -529,6 +556,32 @@ def _selftest() -> int:
           float(np.sign(friction(p, -1.0, 1.0))), -1.0)
     check("its magnitude ignores the load's sign",
           float(friction(p, 1.0, -0.7) - friction(p, 1.0, 0.7)), 0.0, tol=1e-12)
+
+    # --- static friction: the joint must be able to HOLD -------------------
+    # PLAN.md step 2b.  These are the checks that were missing while
+    # simulate() used tanh(w/v_eps), which is exactly zero at rest: a servo
+    # with no stiction creeps under any load at all, however small, and a hold
+    # approached from two sides settles at one duty instead of two.  Both
+    # probes run with the bridge OFF, where there is no motor torque to hide
+    # behind and the only thing that can hold the shaft is friction.
+    import dataclasses as _dc
+    _ps = _dc.replace(Params(), J_l=1e-3)
+    _n, _dt = 400, 0.002
+
+    def _final_speed(load_nm):
+        """|w| at the end. Position is the WRONG discriminator here: the load
+        swings through the backlash band before the spring engages, so it moves
+        a little whatever friction does. Coming to REST is the question."""
+        r = simulate(_ps, np.zeros(_n), _dt, q0=0.0, w0=0.0,
+                     load_torque=lambda q: load_nm,
+                     torque_on=np.zeros(_n, bool))
+        return abs(float(r["w"][-1]))
+
+    # Breakaway is tau_c + mu_load*|tau_t|, so the load it can hold solves
+    # |tau| <= tau_c + mu_load*|tau| — i.e. tau_c/(1 - mu_load).
+    _break = _ps.tau_c / (1.0 - _ps.mu_load)
+    check("a sub-breakaway load comes to rest", _final_speed(0.5 * _break) < 1e-3)
+    check("a load past breakaway keeps moving", _final_speed(3.0 * _break) > 1e-2)
 
     # mu_load = 0 must reproduce the law exactly as it was before this term
     # existed. A new term that quietly changes the old answer is not an

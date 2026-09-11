@@ -133,7 +133,41 @@ The `tau_c` result is worth more than the number: the bidirectional ladder and
 the free-swing fit are two independent routes that had disagreed by 2×, and they
 now agree at **0.184 vs 0.186**. That is the cross-check this parameter never had.
 
-### 2b. The model has no static friction, and that is the next real defect
+### 2b. HALF DONE 2026-09-11 — the bench model sticks; the training path does not
+
+**Done: `simulate()` uses Karnopp.** Below `v_eps` friction opposes the NET applied
+torque up to `tau_c + mu_load*|tau_t|` and the shaft is held, instead of
+`tanh(w/v_eps)` fading to exactly nothing at rest. Verified against the old law: a
+sub-breakaway load with the bridge off creeps at 0.013 rad/s before and comes to rest
+after, and `actuator.py --selftest` now probes both that and the past-breakaway case.
+A hold approached from two sides settles at two duties instead of one.
+
+**The decision this section asked for, and it turned out to be forced rather than a
+choice.** `simulate()` can do Karnopp because it has every torque as state and can ask
+"is the net torque below breakaway". `friction()`/`motor_torque()` cannot — `rl/env/walk.py`
+and `rl/eval.py` call them with MuJoCo owning the load, so at that moment the net torque
+does not exist yet. No amount of care inside `actuator.py` recovers it. So stick on the
+training path has to be **MuJoCo's own `frictionloss`**, which is a real stick-slip
+constraint solved with everything else.
+
+**Not done, and why.** That swap means `rl/model.py` stops zeroing `frictionloss` and
+sets it to `tau_c`, while `actuator.py` stops applying the same floor on that path or it
+double-counts. It was not done here because this machine has no jax and the change could
+not be run end to end — shipping untested training physics is worse than shipping none.
+Note one honest limit of the plan even when it is done: `frictionloss` is a constant
+per joint, so it can carry the `tau_c` floor but NOT the load-dependent
+`mu_load*|tau_t|` part, which at stance is roughly 0.11 N*m of the ~0.30 total. That
+half keeps the smooth law and keeps lacking stick.
+
+**Two consequences worth carrying.** The magnitude is uncalibrated: on the bench arm at
+0.6 rad the model gives a half-difference of 0.72 V against the real servo's 0.29 — the
+right order, and not strictly comparable, since that figure is "the friction at that
+load" and the holdbi ladder's angles are not this one. Replaying the ladder through the
+model is what would settle it. And `rl/params/st3215.json` was fitted against the OLD
+`simulate()`, so it now predates the model it describes: **a refit is due**, and it is
+the thing most likely to move `mu_load` off the value the old fit could not see.
+
+#### (superseded) The model has no static friction, and that is the next real defect
 
 `actuator._sign()` is `tanh(w/v_eps)`, which is exactly **zero at rest**. So the
 simulated servo has no stiction at all: a hold approached from below and from

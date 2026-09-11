@@ -750,14 +750,33 @@ prior, and a fit that looked fine. A run whose measurement is a DIFFERENCE betwe
 its first half and its second is not shortened by truncation, it is halved.
 `Run.WHOLE_RUN` now names those.
 
-### The model has no static friction, and that is the next defect
+### The model had no static friction — half fixed 2026-09-11
 
-`actuator._sign()` is `tanh(w/v_eps)`, which is exactly **zero at rest** — so the
-simulated servo has no stiction. A hold approached from below and from above
-settles at the same duty: measured on the model, a half-difference of 0.00 and
-0.03 V against the real servo's 0.29. The term is live wherever the joint moves,
-which is where it takes load off the fit; it is the rest case that is absent, and
-it is why `--selftest` cannot recover `mu_load` from the model's own output.
+**`simulate()` sticks now.** It uses Karnopp instead of `tanh(w/v_eps)`: below
+`v_eps`, friction opposes the **net applied torque** up to `tau_c + mu_load*|tau_t|`,
+and the shaft is held rather than integrated. Measured on the model, a sub-breakaway
+load with the bridge off used to creep at 0.013 rad/s and now comes to rest;
+`actuator.py --selftest` probes both directions of that. A hold approached from below
+and from above now settles at two different duties instead of one.
+
+**The magnitude is not yet calibrated.** On the bench arm at 0.6 rad the model gives a
+half-difference of 0.72 V against the real servo's 0.29 — right order, wrong number —
+and the two are not strictly comparable, because the half-difference is "the friction at
+that load" and the holdbi ladder's angles are not the one used here. Matching them needs
+the ladder replayed through the model, not an adjustment to the law.
+
+**What is NOT fixed is the training path**, and the split is forced rather than chosen.
+`simulate()` has every torque in hand, so it can ask "is the net torque below breakaway".
+`friction()`/`motor_torque()` cannot: `rl/env/walk.py` and `rl/eval.py` call them with
+MuJoCo owning the load, so the net torque is not known at that point and no amount of
+care inside `actuator.py` can recover it. Stick there has to be MuJoCo's own
+`frictionloss`, which is a proper stick-slip constraint — and `rl/model.py` currently
+zeroes it on the grounds that `actuator.py` supplies friction. That swap is the
+remaining half of PLAN.md step 2b; it was not done here because this machine has no jax
+and the change could not be run end to end.
+
+**It also re-dates the fit.** `rl/params/st3215.json` was fitted against the old
+`simulate()`, so it predates the model it describes and a refit is due.
 
 This also means the model cannot reproduce something this project already
 documented — that commanded corrections below the breakaway do not move the joint
