@@ -1,661 +1,135 @@
 # PLAN.md — what to build next, and why
 
-Written 2026-09-08, the day the bench produced its first real actuator numbers.
-
 Three things are missing — **a battery, an IMU, and the Orange Pi is not installed** — and
-they gate different work. This plan is ordered so that the missing hardware blocks as
-little as possible: steps 1–6 need nothing that is not already on the desk, and they are
-the ones that make the rest worth doing.
+they gate different work. Steps 4–6 need nothing that is not already on the desk; 7–10
+wait on hardware. Steps 1–3 are done and their results live in the trees, not here.
 
-`rl/README.md` numbers the RL track 1–7 and that numbering is untouched here. These are
-project steps, not RL steps.
-
-## Where things actually stand
+## Where things stand
 
 | tree | state |
 |---|---|
-| `3d/` | **done and verified.** The ladder in `3d/CLAUDE.md` is green on the current tree; `MAC.md` has the record |
+| `3d/` | done and verified; the ladder in `3d/CLAUDE.md` is green on the current tree |
 | `ros2/` | generated from the CAD, trots in sim, terrain and course regressions baselined |
-| `rl/` | code complete, **never trained in earnest** — `params/st3215.json` is still vendor priors and `train_ppo.py` says so on every run |
-| `robot/` | the robot walks, tethered, on the bench at 2.55 kg with a 1 kg plate for ballast |
-| `robot/bench` | three-voltage identification set captured, **plus the two differential ladders of step 1 (2026-09-09)**; friction is now measured rather than fitted, and the electrical half is one model term short — step 2 |
+| `rl/` | code complete, checks green, **never trained in earnest** |
+| `robot/` | walks tethered on the bench at 2.55 kg (1 kg plate as ballast); every servo number below is measured on one unit |
+
+## Done — where the result lives
+
+| step | result | write-up |
+|---|---|---|
+| 1 servo identification | friction 0.19 N·m + 0.28 per N·m carried; stiffness 40.9 N·m/rad at 12 V; total speed-proportional 1.37 N·m·s/rad (`b_v` is not separable from back-EMF on this bench — use the total) | `robot/README.md`, "Two things the fit cannot find" |
+| 2 `mu_load` in `actuator.py` | `tau_c` 0.184, `J_m` 0.0165, `mu_load` 0.286 | `robot/README.md`, "The load-dependent friction term" |
+| 2b static friction | `simulate()` is Karnopp; the training path gets stick from MuJoCo `frictionloss` = `tau_c`; the refit that followed was **not** adopted (mixed result) | `rl/CLAUDE.md`, "Re-baselines" |
+| 2c stall torque | **4.50 N·m at 12 V** on a scale; both the register route (7.4) and the datasheet (2.94) were wrong | `robot/README.md`, "The stall torque" |
+| 3 fitted constants into the CAD | `MJ_KP` 40.9, `MJ_FRICTIONLOSS` 0.184, `MJ_DAMPING` 1.37, `MJ_ARMATURE` 0.0165 | `3d/mini_dog.py` section 4; `3d/CLAUDE.md` baseline |
+| 3b gait rate limit | limits against the achievable 3.15 rad/s ceiling, not the no-load speed | `ros2/README.md`, "Gait" |
+| 3c no-load speed | **3.86 rad/s**, and a plateau above cap ~740 (open question below) | `robot/README.md`, "The no-load speed" |
 
 ## What each missing part gates
 
-**The battery is not just runtime.** Two things hang off it that are easy to miss:
-
-- **Mass, and where it sits.** The design mass is 2.499 kg; the robot is 1.55 kg and gets
-  to 2.55 with a cast-iron plate. `3d/CLAUDE.md` measures the flat trot as hypersensitive
-  to mass *and* to where the mass sits — 11 g moved the sim trot 778 → 597 mm, and the same
-  11 g at the nose gave 547. A plate resting on the deck is not a pack bolted into the
-  cradle, so every gait number tuned today is tuned against a stand-in.
-- **Voltage, which we now know changes the servo.** The bench measured position-loop
-  stiffness at **28.8 N·m/rad at 12.1 V and 24.5 at 10.1 V** — linear in supply. A 3S pack
-  runs 12.6 → 9.9 V, so the robot gets ~25 % softer as it discharges. That is a gait
-  variable, not a housekeeping detail, and it belongs in domain randomisation.
+**The battery is not just runtime.** The sim trot is hypersensitive to mass and to where it
+sits (`3d/CLAUDE.md`), so every gait number tuned with a plate is tuned against a stand-in.
+And supply voltage changes the servo: stiffness is 3.44 N·m/rad per volt, so a 3S pack
+(12.6 → 9.9 V) costs 21 % of it over a discharge. That is a gait variable and belongs in
+domain randomisation.
 
 **The IMU gates the feedback half of everything.** The walker levels the body and holds
-heading on it; in sim that feedback took the obstacle course from 1 obstacle cleared to 5.
-None of it has ever run on hardware. And `rl/`'s observation vector includes the IMU — so a
-policy trained now cannot be deployed at all until one exists. `rl/checks/imu_placement.py`
-has already done the analysis and it is not marginal: ω × (ω × r) + α × r reaches **9.0 m/s²
-— 42° of apparent tilt** — for a board out by the Pi, against 25° on the centreline. The
-mounting point is a model constant (`IMU_*` in `mini_dog.py` section 3) and the slot is
-3.6 mm with the board 2.8 of it, so this is decided, just not populated.
+heading on it; in sim that took the obstacle course from 1 obstacle cleared to 5, and none
+of it has run on hardware. `rl/`'s observation includes the IMU, so no policy is deployable
+until one exists. The mount is decided (`IMU_*` in `mini_dog.py`, checked by
+`rl/checks/imu_placement.py`), just not populated.
 
-**The Pi can wait, and "no battery, so no need" is the right call.** A tethered Pi adds
-nothing over a tethered mac: the 50 Hz loop already closes from the mac over CDC and
-`bus_probe` measured the transaction cost there. What the Pi buys is ROS 2 on the robot,
-the LiDAR, the camera, and running the ONNX policy — all of which are untethered concerns.
-Installing it earlier costs mass in the wrong place and debugging surface for no gain.
+**The Pi can wait.** The 50 Hz loop already closes from the mac over CDC; what the Pi buys
+— ROS 2 on the robot, the LiDAR, the camera, the ONNX policy — is all untethered concerns.
 
 ---
 
-# Steps 1–6 — nothing missing, do these now
-
-## 1. Finish the servo identification — **DONE 2026-09-09**
-
-Both runs are in `bench/data/` at 8 / 10 / 12 V, 1.066 kg on the 90 mm arm:
-`sweep.py --traj holdbi` (the hold ladder up and then down, so every angle is reached
-from both sides) and `--traj speed` (the same triangle at 20 / 10 / 5 / 2 / 1 s, i.e.
-0.1 / 0.2 / 0.4 / 1.0 / 2.0 rad/s). `bench/hysteresis.py` reads them; the full write-up
-is `robot/README.md`, "Two things the fit cannot find", and the numbers are also in
-`ST3215_STS3215_measured_parameters.md`.
-
-**The bidirectional ladder delivered what it promised, and more than was asked.**
-Friction at a hold is **0.19 N·m + 0.28 per N·m of load carried**, voltage-invariant to
-6 % and 16 % across a 1.5× supply range — the load-dependent term, measured directly for
-the first time rather than inferred from a slope ratio. It also caught a 40 % error
-nobody was looking for: the **position-loop stiffness is 40.9 N·m/rad at 12 V, not 28.8**.
-A one-directional ladder bills the friction band to elasticity, so the servo is both
-stiffer and rougher than the old reading said, and the two errors hide each other.
-
-**The speed ladder worked and its premise did not.** It supplies steady speeds, five of
-them, and pins the total speed-proportional torque to 1.37 N·m·s/rad within 5 %. But that
-total is `b_v + k_t·k_e`, back-EMF alone accounts for 1.31 of it, and the remainder is
-0.06 ± 0.07 — consistent with zero. **This bench cannot split them and no further runs
-will.** Back-EMF and viscous friction each cost a motor voltage proportional to ω and
-neither depends on supply, so the voltage sweep that separates every other electrical
-term does nothing here; splitting them needs the motor current, which `PRESENT_CURRENT`
-gives only as `d²U/R` at a 6.5 mA LSB. The paragraph below that says "only steady speeds
-can" supply `b_v` was half right: steady speeds give the sum, and the sum is what a
-simulator needs anyway. **Use the total and stop trying to split it.**
-
-Two things this turned up that were not on anyone's list:
-
-- **A run no pass consumes changes no parameter.** The new data was captured, `fit_bam.py`
-  re-run, and every fitted parameter came back identical to five decimals to a fit on the
-  old data alone — the analytic passes select on `freeswing` and `hold`, so `holdbi` and
-  `speed` were read only under `--refine`, and not at all without it. `check_identifiable`
-  now names every trajectory in the directory that no analytic pass reads. **Do not read
-  an unchanged fit as agreement.**
-- **The servo runs out of authority at ~1.8 rad/s without the duty pinning** — 0.74 rad of
-  position error at a commanded 2.0 rad/s, at all three voltages. So it is not the motor's
-  ceiling. `D_COEF` is 32 and `actuator.py` models `kd = 0`, which would do exactly this,
-  but so would an internal output clamp; this data does not separate them. Worth one small
-  trajectory when someone is next at the bench, and worth knowing now because 1.8 rad/s is
-  inside where the 50 Hz policy commands.
-
-## 2. Give `actuator.py` a load-dependent friction term — **DONE 2026-09-09**
-
-`Params.mu_load`, N·m of friction per N·m crossing the gearbox, applied in
-`actuator.friction()` and in `simulate()`'s integrator; `fit_bam.seed_from_holdbi`
-measures it from the bidirectional ladder and it is now the FIRST analytic pass,
-because the free swing subtracts `tau_c` and had been using half the real value.
-
-**What it moved.** Two numbers, both in the direction the ladder predicted, and
-both because `tau_c` was wrong rather than because the new term is doing work:
-
-| | before | after |
-|---|---|---|
-| `tau_c` | 0.084 | **0.184** |
-| `J_m` | 0.0240 | **0.0165** |
-| `mu_load` | — | **0.286** |
-| position RMS | 8.96° | 8.84° |
-| current RMS | 1.25 A | 1.01 A |
-
-**What it did NOT move, and this refutes a claim in the step-1 write-up.** `--refine`
-still diverges, and identically: `kp` pinned at its bound (1887 against 2017 before),
-`k_e` 11.3 against 11.8, an implied no-load speed of 1.06 rad/s against 1.02. Missing
-friction was not the cause. Nor did `k_u` move — the fitted stall is still 4.23 N·m — see
-2c, where cancelling friction properly makes it *worse*. A fit railing `kp` while `k_e`
-grows to compensate is reaching for torque the electrical model cannot supply, which is
-the same shape as 2c and probably the same cause.
-
-`tau_c` and `J_m` are not independent here: the free swing gets `J_m` from
-`(m·g·r·sinq − tau_c)/acc`, so doubling `tau_c` nearly halves the driving torque
-and `J_m` with it. **`J_m` = 0.0165 is the number step 3 should carry**, not the
-0.024–0.042 this plan quoted before — that range was computed against a `tau_c`
-of 0.08. It is still 2× `MJ_ARMATURE`'s 0.008, so step 3's argument stands, but
-the size of the correction has changed and step 3 should not quote the old range.
-
-The `tau_c` result is worth more than the number: the bidirectional ladder and
-the free-swing fit are two independent routes that had disagreed by 2×, and they
-now agree at **0.184 vs 0.186**. That is the cross-check this parameter never had.
-
-### 2b. DONE 2026-09-11 — both halves stick now, by two different mechanisms
-
-**Done: `simulate()` uses Karnopp.** Below `v_eps` friction opposes the NET applied
-torque up to `tau_c + mu_load*|tau_t|` and the shaft is held, instead of
-`tanh(w/v_eps)` fading to exactly nothing at rest. Verified against the old law: a
-sub-breakaway load with the bridge off creeps at 0.013 rad/s before and comes to rest
-after, and `actuator.py --selftest` now probes both that and the past-breakaway case.
-A hold approached from two sides settles at two duties instead of one.
-
-**The decision this section asked for, and it turned out to be forced rather than a
-choice.** `simulate()` can do Karnopp because it has every torque as state and can ask
-"is the net torque below breakaway". `friction()`/`motor_torque()` cannot — `rl/env/walk.py`
-and `rl/eval.py` call them with MuJoCo owning the load, so at that moment the net torque
-does not exist yet. No amount of care inside `actuator.py` recovers it. So stick on the
-training path has to be **MuJoCo's own `frictionloss`**, which is a real stick-slip
-constraint solved with everything else.
-
-**Done on the WSL2 box, 2026-09-11**, where the change could be run end to end.
-`model.build_spec()` sets every joint's `frictionloss` to the fitted `tau_c` = 0.184
-instead of zeroing it, and `actuator.friction()`/`motor_torque()` take a
-`tau_c_external` flag that `walk.py`, `eval.py` and all three of `tools/` pass, so the
-floor is applied once rather than twice. Two A/Bs on the same model, the law's own code
-path either side:
-
-| | frictionloss 0, law owns `tau_c` | frictionloss = `tau_c` |
-|---|---|---|
-| torque off, 1 s from the CAD stance | base falls **107.7 mm**, worst joint 93.9 deg | **65.6 mm**, 44.1 deg |
-| holding the stance, residual joint speed at 3 s | 0.0033 rad/s | **0.0009** — it stops rather than creeps |
-
-The honest limit stands as this section predicted: `frictionloss` is a constant per
-joint, so it carries the `tau_c` floor but NOT the load-dependent `mu_load*|tau_t|`
-part, roughly 0.11 N*m of the ~0.30 at stance. That half keeps the smooth law and
-keeps lacking stick.
-
-**`tau_c` changed sides with it, and that was forced too.** It is a MuJoCo model field
-now, and the only thing that can randomise a model field is brax's `randomization_fn` —
-so the draw left `walk._sample_episode` for `env/randomize.py`: same range, same
-evidence, multiplicative on the fitted nominal, **per environment and fixed for the run**
-instead of per episode. Grease and preload do not change between one episode and the
-next, so the physical reading is not worse; what is lost is variety per unit of
-wall-clock. It lands beside `J_m`, which left the same draw the same day for the
-complementary reason — it was drawn correctly and read by nothing — so `env/randomize.py`
-now carries both `dof_frictionloss` and `dof_armature` and `model.EPISODE_DRAW` lists
-neither. (That table is walked by its own index rather than by a hand-numbered
-`jax.random.split`, so a field leaving it costs no spare key; the seeds were not
-comparable across this day's work either way.) `check_model.py` asserts both are absent
-from the episode draw and installed at their fitted nominal on the compiled training
-model (it must run on the robot, where there is no jax); `python -m env.randomize` is the
-batched-shape probe on the jax side, covering both fields, written because `mu_load`'s
-only symptom was ever a shape.
-
-**The refit was run, and it does NOT rescue `mu_load`.** `fit_bam.py --holdout chirp`
-over the 44-run set, against the Karnopp model, 2026-09-11: `J_m` +20.5 %
-(0.0165 -> 0.0199 — the free swing now has stick in it, so the inertia inferred from a
-timed fall moves), `tau_c` -2.1 %, and **everything else bit-identical**, `mu_load`
-included. Position RMS 8.84 -> 8.81 deg, current RMS 1.010 -> 1.105 A. So the hope in
-this section — that fixing the rest case makes `mu_load` recoverable — is not delivered
-by the analytic pass, because that pass does not fit `mu_load` at all: it reads only
-freeswing, hold and holdbi, and everything else reaches the fit ONLY under `--refine`.
-The refit was NOT adopted (`rl/params/st3215.json` is unchanged): the result is mixed,
-one RMS better and one worse, and the fit is documented as under-determined without
-`--refine`. Adopting it is a judgement call for whoever next trains, not a cleanup.
-
-**Two consequences worth carrying.** The magnitude is uncalibrated: on the bench arm at
-0.6 rad the model gives a half-difference of 0.72 V against the real servo's 0.29 — the
-right order, and not strictly comparable, since that figure is "the friction at that
-load" and the holdbi ladder's angles are not this one. Replaying the ladder through the
-model is what would settle it. And `rl/params/st3215.json` was fitted against the OLD
-`simulate()`, so it now predates the model it describes: **a refit is due**, and it is
-the thing most likely to move `mu_load` off the value the old fit could not see.
-
-#### (superseded) The model has no static friction, and that is the next real defect
-
-`actuator._sign()` is `tanh(w/v_eps)`, which is exactly **zero at rest**. So the
-simulated servo has no stiction at all: a hold approached from below and from
-above settles at the same duty (measured on the model: half-difference 0.00 and
-0.03 V, against the real servo's 0.29). The consequences are concrete:
-
-- **`mu_load` is measurable on hardware but not recoverable from the model's own
-  output.** `fit_bam --selftest` now says so and says why — it is a statement
-  about the model, not about the experiment, which is the opposite of every other
-  entry in that list. The term is still live wherever the joint MOVES, which is
-  where it takes load off the fit; it is only the rest case that is missing.
-- `ST3215_STS3215_measured_parameters.md` already records that "small commanded
-  corrections below the breakaway do not move the joint at all" and puts stiction
-  at 0.23–0.35 N·m. The model cannot produce that behaviour today.
-
-The fix is a friction that can hold at ω = 0 — the standard form is Karnopp's:
-below a velocity threshold, friction opposes the net applied torque up to a
-ceiling, rather than being proportional to a smoothed sign. **It is not a
-one-liner and it should not be bolted on without care**: `simulate()` has every
-torque to hand and can do it directly, but `rl/env/walk.py` and `rl/eval.py` call
-`motor_torque()` with MuJoCo owning the load, so there the honest route is
-probably MuJoCo's own `frictionloss` — which `rl/model.py` currently sets to zero
-on the grounds that `actuator.py` supplies friction. Decide that before writing
-code, and keep the two consumers on one law.
-
-### 2c. CLOSED 2026-09-10 — the stall is 4.50 N·m, and both old answers were wrong
-
-**A scale settled it.** `3d/torque_rig.py`, three duty rungs at 12 V read on a
-2 kg coffee scale at a 170 mm arm: k_u = **0.400 N·m/V**, friction intercept
-−0.30 N·m, **stall 4.50 N·m at 12 V** (4.38 read warm). `mini_dog.py`'s
-`SERVO_STALL_NM` now carries it in place of the vendor's 2.94.
-
-The answer is *between* the two candidates below, which means the framing of this
-section was wrong: there was never one mis-scaling to find. The register routes
-are high by **1.64×**, not 2.2×, and the datasheet is low by **1.53×** on top of
-that. The `tau_c`/`mu_load` immunity argument still holds, and the measured
-intercept is now a third independent read on `tau_c` (−0.30 against the ladder's
-0.43). No shunt was needed, though one would still pin `R` and `k_t` — those stay
-unresolved, because `PRESENT_CURRENT` is unusable below ~0.2 A (fitting
-(current, torque) gives a +0.60 N·m intercept, i.e. torque at zero current).
-
-Method and the traps that cost most of a session — burst-versus-hold, the thermal
-decay, and three fixture faults that each produced a convincing wrong answer — are
-in `robot/README.md`, "The stall torque, in newton-metres". The short version:
-**do not read a scale off `sweep.py --traj stall`**; use `bench/torque_hold.py`.
-
-The original framing of this section is kept below, because the reasoning is what
-justified building the rig.
-
-#### (superseded) The torque constant is 2.2× the datasheet, and it is NOT friction
-
-This plan assumed the inflated `k_u` (fitted stall 4.23 N·m against a spec 2.94)
-was missing friction being absorbed. **It is not.** Cancelling friction properly
-makes it worse, not better — the friction-cancelled paired holds give an implied
-stall of **7.4 N·m**. Two channels that share only the gravity anchor agree:
-
-| route | torque constant | implied stall @ 12 V |
-|---|---|---|
-| friction-cancelled paired holds, current channel | 2.394 N·m/A | 7.40 |
-| duty channel × R (`hysteresis.py`) | 2.382 N·m/A | 7.37 |
-| unidirectional holds (the old route) | 1.368 N·m/A | 4.23 |
-| vendor spec | 1.089 N·m/A | 2.94 |
-
-The two measurements agree to 0.3 % with each other and disagree with the vendor
-by 2.2×. The servo cannot produce 7.4 N·m, so something is mis-scaled, and the
-prime suspect is already on the "not measured" list in
-`ST3215_STS3215_measured_parameters.md`: **`PRESENT_CURRENT`'s 6.5 mA LSB is
-confirmed only against vendor numbers, never against a shunt.** `PRESENT_LOAD`'s
-per-mille scaling is the other candidate — if 1000 is not 100 % duty, every
-`d²U/R` correction in `fit_bam.py` inherits it.
-
-Two things follow. First, **`tau_c` and `mu_load` are immune** — both are ratios
-of quantities in the same register units, converted through a gravity anchor that
-is known exactly, so a constant scale error cancels out of both. Second, the way
-to settle it is an **external shunt or an INA226 on the supply**, which costs a
-part and an evening and would pin `R`, `k_u` and the efficiency at once. Until
-then, do not read the fitted stall as a torque the robot has.
-
-### 2c-i. DONE 2026-09-10 — printed, assembled and run; see 2c above
-
-**Picked up 2026-09-09, parked on print time. Everything needed to resume cold is
-here — nothing about this depends on remembering the conversation it came from.**
-
-`3d/torque_rig.py` is the fixture, and `3d/out/gcode/torque_rig.3mf` is sliced for
-the Qidi: two parts on one plate, 5 walls, 40 % infill, **9 h 01 m, 224 g**, no
-support generated. Re-slice with
-
-```bash
-cd 3d && .venv/bin/python torque_rig.py        # -> out/torque/{step,stl} + the numbers
-.venv/bin/python tools/slice_orca.py --machine "Qidi Q2 0.4 nozzle - Copy" \
-    --process "0.20mm Standard @Qidi Q2 - Copy" --filament "QIDI НИТ petg черный" \
-    --name torque_rig --walls 5 --infill 40% torque_frame torque_arm
-```
-
-**Hardware to have ready:** M6 × 40 and two M6 nuts (the adjustable anvil), 4 × M3 × 6
-into the driven hub, 2 × M3 × 10 set screws for the thrust clamp, and the 2 kg kitchen
-scale the rig is sized around (28 mm to its platform — `SCALE_H`; re-measure and re-run
-`torque_rig.py` if it is a different scale).
-
-**Do this before the first push, and nothing else first:** set `TORQUE_LIMIT` to **350**
-of 1000 and read it back. It is the only thing between a 2 kg scale and a servo that may
-turn out to be the 7.4 N·m one — at full duty two of the three candidates put 2.5–4.4 kg
-through it. `torque_rig.py` prints the full protocol, the three failure modes and the
-arithmetic behind the cap; run it and read what it says rather than working from memory.
-
-**What comes back, and where it goes.** Fit a line through `(d·U, τ)` and through
-`(i, τ)`. The first slope is `k_u` in N·m per volt with no register scaling in it, so
-`k_u × 12` is the stall; the second is `k_t` in N·m/A, which pins `PRESENT_CURRENT`'s
-6.5 mA LSB. Then:
-
-- if the stall is not 2.94, `SERVO_STALL_NM` in `mini_dog.py` section 4 changes, and with
-  it the ROS 2 model's `forcerange` — which is `3d/CLAUDE.md` steps 5 and 6 again;
-- either way **the `rl/` vs `ros2/` servo-strength disagreement gets settled**, which is
-  the second of the three things blocking training (see below);
-- `ST3215_STS3215_measured_parameters.md` carries the ⚠ warning box that this is
-  unresolved. Take it out, or replace it with the answer — it is the public claim.
-
-## 3. Push the fitted numbers into the CAD and re-baseline — **DONE 2026-09-09**
-
-All four constants in `mini_dog.py` section 4, then the whole `3d/CLAUDE.md` ladder in the
-same pass. `MJ_KP` 25 → **40.9**, `MJ_FRICTIONLOSS` 0.02 → **0.184**, `MJ_DAMPING` 0.12 →
-**1.37**, `MJ_ARMATURE` 0.008 → **0.0165**. The full record is in `MAC.md`; step 6's
-baselines are re-stated in `3d/CLAUDE.md`.
-
-Two of those are not the parameter this plan named. `MJ_KP` moved because the stiffness
-was itself wrong by 40 % (step 1), and `MJ_FRICTIONLOSS` moved because MuJoCo's
-`frictionloss` is a proper stick-slip constraint and is therefore **the only place in this
-project where static friction can be modelled at all** — `rl/actuator.py` cannot, by step
-2b. `MJ_DAMPING` is the *total* speed-proportional torque rather than `b_v`, because a
-`position` actuator has no back-EMF to put the rest in.
-
-**Nothing else moved, and that is checked rather than assumed.** `export_sim.py --check`
-reads the same 2.488 kg, 187 mm stand height and camera axis; the ROS 2 regeneration moved
-`mujoco/defaults.xml` and nothing else; `fea.py` was skipped because it reads no `MJ_*`,
-the constants are absent from `out/bom.json`, and neither mass nor geometry changed.
-
-**Every gait distance fell by a quarter to a third, and it is the fix working.**
-
-| | control (old `MJ_*`) | after |
-|---|---|---|
-| flat trot | 556.6 mm | **487.0 mm** |
-| terrain, seeds 7…12 | 520 ±67 mm | **340 ±39 mm** |
-| course, seeds 7 / 8 / 9 | 1/7, 5/7, 4/7 | **2/7, 2/7, 0/7** — all upright |
-
-Same mass to the gram, so this is not the mass cliff, and the terrain sweep moved 180 mm
-against a 32 mm standard error — the first re-baseline in this project that is decisively
-not one distribution. The number that settles the interpretation is the joint's speed
-ceiling, `(forcerange − frictionloss)/damping`: **24.3 rad/s before against 2.01 after**,
-where the servo's vendor no-load speed is 4.71 and the bench measured ~1.8 under the 1 kg
-arm. The old model let every leg swing five times faster than the servo can turn with no
-load at all, and the hand-tuned gait had settled into that headroom.
-
-So the sim was flattering the robot in the one dimension a walker spends most, and the
-distances that just fell were never real. **Do not put `MJ_DAMPING` back.**
-
-### 3b. DONE 2026-09-11 — it was one line, and the line came from the datasheet
-
-**Root cause.** `smalldog_walker/gait.py` set its slew limit to
-`joint_velocity_limit * 0.85` = **4.00 rad/s**, and `joint_velocity_limit` is
-`SERVO_NOLOAD_RADS` = 4.71 — the vendor's **no-load** speed, which the servo reaches
-carrying nothing. A joint under load turns no faster than
-`(forcerange - frictionloss)/damping` = **3.15 rad/s**. So the planner was commanding
-past the ceiling *by construction*: measured, **31.7 % of commanded joint-samples** in
-the 5 s trot asked for a speed the joint does not have, with the commanded rate pinned
-at exactly 4.00 — a clamp, not a gait consequence, which is what gave it away.
-
-**Fix.** `generate_model.py` now emits `joint_rate_ceiling_rad_s` (3.15, derived from
-`SERVO_STALL_NM`, `MJ_FRICTIONLOSS`, `MJ_DAMPING` — all measured) and the gait limits
-against that, falling back to the old expression for a params file that predates the
-field. `joint_velocity_limit` is left alone and still means the no-load speed, because
-`rl/env/walk.py` reads it for a different purpose.
-
-**The over-ask went 31.7 % -> 0.1 %, and the distances fell**, which is the point rather
-than a regression: the missing millimetres were bought by commanding a servo this project
-does not own. Yesterday's stall measurement had already reduced the over-ask from 37.9 %
-to 31.7 % on its own, which is why 3b survived it and had to be done properly.
-
-**The no-load speed was the last vendor number in this chain and it is measured now**
-— 3c below. It came out 3.86, above the 3.15 ceiling, so the ceiling was not optimistic
-and nothing in 3b moves; the generator now takes `min()` of the two so it never can.
-
-### 3c. MEASURED 2026-09-11 — no-load 3.86 rad/s, and it is a plateau, not a k_e
-
-`robot/bench/noload_speed.py --duty-ladder --min-cap 400`, stand, free hub, 12.1 V:
-
-| `TORQUE_LIMIT` | d·U | ω from position | ω from `PRESENT_SPEED` |
-|---|---|---|---|
-| 1000 | 12.0 V | **3.864 rad/s** | 3.835 |
-| 800 | 9.6 | 3.851 | 3.835 |
-| 600 | 7.2 | 3.093 | 2.953 |
-| 400 | 4.8 | 2.077 | 1.994 |
-
-`SERVO_NOLOAD_RADS` is 3.86 now, the vendor's 4.71 was 22 % high, and the register's
-speed LSB is verified as a side effect (position-derived and register speeds agree to
-1–5 %). Consumers: `joint_velocity_limit` in `robot_params.json`, hence `rl/`'s
-`joint_vel` penalty and `rl/tools/ceiling.py`; the URDF velocity limit; `check_model.py`'s
-ledger. The gait was already limiting against 3.15, so the three sims came out
-**bit-identical** (457.8 / 328.8 mm, course 2/7 at 1747) — no re-baseline.
-
-**The finding is the plateau.** Cap 800 and 1000 give the same speed, and the register
-reads a flat 2500 counts/s at both, while the two rungs below are linear through the
-origin at 0.43 rad/s/V → **k_e = 2.32 V·s/rad** (fit 2.03, vendor 2.55, inside the
-`domain_rand` band). So the duty stops mattering around cap ~740. Two readings, and the
-stall number hangs on which:
-
-- **A — the position loop's profile caps at 2500 counts/s.** Then the motor's own free
-  speed is 12/2.32 = 5.2 rad/s, the 4.50 N·m stall extrapolation stands, and what
-  `rl/actuator.py` needs is a *rate cap on the goal* (the firmware slews its target at
-  ≤ 3.86 rad/s), which is a state variable per joint, not a parameter.
-- **B — the position loop never applies more than ~75 % PWM.** Then the same ceiling
-  holds against a block, and 4.50 — a 2.2× extrapolation from rungs 200/350/450, all
-  under this knee — is really ~3.3. That would move `SERVO_STALL_NM`, `fea.py`'s stall
-  column and the 3b ceiling (→ 2.3 rad/s).
-
-**`noload_speed.py --pwm` decides it**: MODE 2 drives the bridge open loop at a commanded
-duty with no position loop in between. Same plateau at duty 1000 → B; ~5 rad/s → A. It
-was written after the adapter was unplugged and has not run. Ten seconds on the stand,
-no arm — do it before the next torque-rig session, because under B the rig's next rungs
-should be 800 and 1000, not 8/10/12 V.
-
-**What `rl/` trains against meanwhile.** `actuator.py`'s law has no plateau, so its free
-speed is 12/2.03 = 5.9 rad/s, 53 % over the measured joint. The `joint_vel` penalty at
-3.86 is the only thing holding a policy under the real ceiling, and it is a penalty, not
-a constraint. Train now — `check_model.py` is 0 FAIL — but read any policy's p95 joint
-speed against 3.86 (`tools/ceiling.py` prints it), and expect the law to acquire the
-plateau once `--pwm` says which form it takes.
-
-#### (superseded) The gait needs re-tuning against the honest joint
-
-Not started. `ros2/tools/standalone_sim.py`'s hand-tuned trot is now commanding swing
-speeds the servo does not have, which is why the distances fell; re-tuning is what gets
-them back, and this time they will mean something. Do this before reading any further
-terrain or course number as evidence about geometry.
-
-It also re-dates the `rl/` work: a policy trained against the old model learned to spend
-joint speed that does not exist, so anything trained before today **retrains rather than
-fine-tunes**. That is the same conclusion the IMU move reached earlier the same day for an
-unrelated reason, and the two compound.
+## 3c, still open: which reading of the no-load plateau
+
+Cap 800 and 1000 give the same 3.86 rad/s and the register reads a flat 2500 counts/s; the
+rungs below are linear at 0.43 rad/s/V (`k_e` = 2.32 V·s/rad). Two readings, and the stall
+number depends on which:
+
+- **A — the position loop's profile caps at 2500 counts/s.** The 4.50 N·m stall stands, and
+  `rl/actuator.py` needs a rate cap on the *goal*, a state per joint.
+- **B — the position loop never applies more than ~75 % PWM.** Then 4.50, a 2.2×
+  extrapolation from rungs all under the knee, is really ~3.3, and `SERVO_STALL_NM`, the
+  FEA stall column and the 3.15 ceiling all move.
+
+`robot/bench/noload_speed.py --pwm` decides it: MODE 2 drives the bridge open loop at a
+commanded duty. Same plateau at duty 1000 → B; ~5 rad/s → A. Ten seconds on the stand, no
+arm. **Do it before the next torque-rig session**; under B the rig's next rungs are 800
+and 1000, not 8/10/12 V.
+
+Meanwhile `actuator.py`'s law has no plateau and frees to 5.9 rad/s, 53 % over the real
+joint; only the `joint_vel` penalty at 3.86 holds a policy under it. Train, but read a
+policy's p95 joint speed against 3.86 (`rl/tools/ceiling.py`) before believing its distance.
 
 ## 4. Randomise over the pack
 
-**The `mu_load` half is DONE, 2026-09-11.** It is drawn per joint per episode now,
-over the same `[0.40, 2.20]` as `tau_c` — `params/domain_rand.json`,
-`model.sample_actuator_params`, and `env/walk.py`'s per-episode draw (which needed a
-thirteenth rng key). `checks/check_model.py` grew `check_randomisation()` so it cannot
-silently come back: it asserts every per-unit servo parameter returns BATCHED, which is
-the only symptom this defect ever had — the field existed in the fit, in
-`actuator.Params` and in the jax pytree, and the sole tell was a shape, `()` where its
-neighbour was `(n, 12)`.
+**Done:** `mu_load` is drawn per joint per episode over the same `[0.40, 2.20]` as `tau_c`;
+`check_model.py` asserts every per-unit servo parameter comes back batched. Voltage is
+measured rather than guessed.
 
-**What is NOT done, and it needs the bench and not an editor.** The ranges are
-*manufacturing spreads* — `domain_rand.json` says so at the top: "sampled once per
-environment at reset ... these are manufacturing and assembly spreads, not noise". Every
-number in this repository came from ONE servo, so no fit can narrow them: fitting one unit
-precisely says nothing about how twelve differ. That file's own instruction, "Narrow them
-when there is a fit, and not before", is loose for exactly this reason — it is right for
-terms whose width was ignorance of the nominal (`J_m`, `kp`, `deadband`, near-identical
-between units of one model) and wrong for the friction terms, whose width is real
-unit-to-unit spread. To put evidence behind `tau_c`, `mu_load` and `b_v` you need three or
-four servos through `sweep.py --traj holdbi`, and the spread across them IS the range.
-There are twelve in the robot. Until then they stay `guessed` and stay wide, which costs
-sample efficiency and not correctness — the reverse of a narrow wrong range.
-
-
-`rl/params/domain_rand.json`, with the voltage range now measured rather than guessed.
-
-**Randomise `mu_load` too, and this is now a measured gap rather than a suggestion.**
-Verified on the WSL2 box, 2026-09-09, on the current tree: `model.sample_actuator_params`
-has no entry for it, `domain_ranges()` has none, and `walk.py`'s `_params()` replaces nine
-fields and leaves `mu_load` as the scalar off `_p0` — live, `_params().mu_load` has shape
-`()` while `_params().tau_c` beside it is `(8, 12)` with a 0.33 spread. So training today
-runs **one shared gearbox friction across every environment while the Coulomb term next to
-it is randomised**, which is the wrong way round: this plan's own argument below is that
-gearbox friction is *exactly* the parameter that varies unit to unit, and it is now the
-larger of the two terms (0.29 N·m per N·m carried, against a 0.18 N·m floor). The jax
-registration is already correct — `mu_load` flattens as data, and a `vmap` over a batched
-`Params` was confirmed to give four distinct per-environment torques — so this is one
-entry in `domain_rand.json` plus one line in `sample_actuator_params`, not plumbing.
-
-**Why:** step 3 gives one servo at one voltage. The robot will run a pack that sags from
-12.6 to 9.9 V, and we now know what that does across three measured points rather than
-two — stiffness is linear in supply at **3.44 N·m/rad per volt** (28.1 / 34.4 / 40.9 at
-8 / 10 / 12 V), so the pack's range costs 21 % of it, and torque per unit duty falls with
-it. Randomise the friction too: it is the term that does *not* move with voltage, so it
-stays put while everything around it shifts. Randomising over it is what makes a policy survive a discharge instead
-of only working on a full pack. This is also the cheapest insurance against the one-sample
-problem: every number in `ST3215_STS3215_measured_parameters.md` came from **one servo**,
-and gearbox friction is exactly the parameter that varies unit to unit.
+**Not done, and it needs the bench:** the ranges in `rl/params/domain_rand.json` are
+*manufacturing spreads*, and every number in this repository came from ONE servo, so no fit
+can narrow them. Put three or four servos through `sweep.py --traj holdbi`; the spread
+across them IS the range for `tau_c`, `mu_load` and `b_v`. Until then they stay `guessed`
+and wide, which costs sample efficiency, not correctness.
 
 ## 5. Settle the traction question before touching a sole
 
-Two runs on the bench, no code, nothing that is not already on the desk. This one is out
-of the actuator chain above — it does not wait on steps 1–4 and they do not wait on it.
+Two bench runs, no code. The sim has already been asked and cannot answer: four alternative
+soles were built and measured (`ros2/README.md`, "The foot's contact patch") and none
+bought anything, because MuJoCo contact is rigid and Coulomb friction ignores area. On
+hardware the foot is a true R = 13 hemisphere with a 2.5 mm Hertz patch at 1.3 MPa, and the
+sim ships μ = 1.2 where TPU on a bench is 0.3–0.5. Whether the robot still *slips* after
+the gait fit (`robot/README.md`) is an inference, not a measurement.
 
-**Why it is open at all:** the two trees disagree about the foot, and both of them are
-right about their own robot.
+1. **Dust the runway** (talc or flour over the ~40 cm). A planted foot leaves a dot, a
+   sliding one a streak; streak length is slip per step. Read it per foot — the plate sits
+   forward, so front duty is 0.68 against the rear's 0.40.
+2. **A/B the surface**: same gait, same start mark, same seconds, bare bench against a
+   rubber mat. Distance grows → the deficit is slip and sole work pays. Unchanged → traction
+   is not where the speed goes. Shorten the run rather than let one arm hit the end.
+3. **Only if 1–2 say yes:** cross-leg consistency from the encoders — two planted diagonal
+   feet each imply a body velocity through FK, and their disagreement is slip. Use measured
+   positions, not commanded (tracking error peaks at 35°).
 
-- `ros2/README.md`, "The foot's contact patch": four alternative soles were built through
-  `MjSpec` and measured against the unchanged control — a truncated flat `pad`, a `tripod`
-  of three lobes, a sprung `ankle`, and the dome with its torsion switched on. **None of
-  them bought anything**: flat ground all within ±21 mm of the 781 mm control, rough
-  ground equal or worse against a ±94…±252 mm seed spread, and the passive ankle
-  unambiguously negative at every spring rate. The reason is in the same section —
-  MuJoCo's contact is rigid, Coulomb friction does not depend on area, and the compliance
-  that actually gives is the servo's `kp = 25`, not the foot.
-- `robot/README.md`, "The feet are the wrong shape for the floor": on hardware `foot()` is
-  a true hemisphere, R = 13, no flat. At 6.25 N per foot Hertz gives a patch of **2.5 mm
-  diameter, 4.8 mm², at 1.3 MPa**. Rubber friction carries an adhesion term that scales
-  with *real* contact area, so this is not the textbook case where area drops out — a
-  point grips worse than a pad of the same material. And the geom ships
-  `friction="1.2 …"` where TPU on a bare bench is realistically 0.3–0.5, so **the sim
-  assumes 2.5–4× the grip the robot has.**
-
-So the sim cannot answer this, and it has already been asked. What is not measured is
-whether the robot still slips *now*: the gait fit in `252e1c6` took it from 0.067 m/s
-against 0.20 commanded to **0.12–0.15 against 0.14**, and `robot/README.md` reads landing
-on the commanded speed as the slip having gone with the drag. That is an inference, not a
-measurement, and it is the one worth spending an evening on before any geometry moves.
-
-**The measurement, in order:**
-
-1. **Dust the runway.** Talc, chalk or flour over the ~40 cm of travel. A planted foot
-   leaves a dot, a sliding one leaves a streak, and the streak's length is slip per step
-   in millimetres — the same quantity the sim reports as `skid mm/foot`. Read it **per
-   foot**: the ballast plate sits forward, front duty is 0.68 against the rear's 0.40–0.43,
-   so the two ends of the robot are not doing the same thing.
-2. **A/B the surface.** The same gait, the same start mark, the same seconds, on bare
-   bench against a rubber mat or paper. Distance grows on the grippy one → the deficit is
-   slip, μ is the binding constraint, and sole work pays. Distance unchanged → traction is
-   not where the speed is going, and the sole becomes a wear question rather than a
-   performance one. Note the runway is the limit here, not the robot: 3 s already travels
-   350–450 mm out of ~40 cm, so shorten the run rather than let one arm hit the end. The
-   bench has no non-slip surface today; that is a consumable to buy, not a blocker.
-3. **Only if 1–2 say yes: cross-leg consistency, from the encoders alone.** In a trot the
-   two diagonal stance feet each imply a body velocity through forward kinematics, and if
-   both are planted the two must agree. The disagreement is a slip signal that needs no
-   instrument, and integrating stance-foot velocity over a run against the measured
-   distance gives the total. Use **measured** positions, not commanded — tracking error
-   peaks at 0.61 rad / 35°, so the commanded path is not where the leg was, and
-   `PRESENT_POSITION` is trustworthy while driving (0 impossible jumps in 321 samples)
-   unlike the temperature byte. Backlash and leg compliance land in the same residual, so
-   read it comparatively (mat against bench, front against rear), not as an absolute.
-
-**What each answer costs.** The friction coefficient is a real defect either way and it is
-cheap: `MJ_FOOT_FRICTION` in `mini_dog.py` section 4, measured rather than inherited, read
-by both exporters, then `3d/CLAUDE.md` steps 4–6. Nobody chose 1.2. The geometry is the
-expensive one — a truncation is one parameter in `foot()` but a full ladder plus a BOM line
-if `FOOT_CB_Z` moves, and it belongs in `MAC.md`'s queue. Two things to know before
-cutting a flat: the shin is **34.6° off vertical while it carries load** (46.7° worst), so
-a flat normal to the shin axis lands on its edge — rake it to the loaded angle or use a
-large-radius crown, which buys area over R = 13 without an edge. And the terrain
-heightfield **cannot compare feet** at `CELL_MM = 12` — a ⌀17.7 face is smaller than one
-cell and collides with prism walls, which is how `tripod` once stood still with 4 kN
-through its touch sensors. `--rough` is the arm that can.
-
-If the sole does change, the way to choose the shape is coupons, not feet: printed pucks
-at the real normal force (3.8 N/foot standing at 1.55 kg, ~7.6 N in the trot; 6.1 and
-12.3 N at the design 2.5 kg), measuring μ on a tilt plate, the real patch off a carbon
-print, and the behaviour of the same coupon tilted 35°. Vary one thing at a time — flat
-diameter, shore, tread, wall count.
+What each answer costs: the friction coefficient is `MJ_FOOT_FRICTION` in `mini_dog.py`
+section 4 plus the ladder — cheap. Geometry is a full ladder and a BOM line, and two things
+to know first: the shin is 34.6° off vertical under load (46.7° worst), so a flat normal to
+the shin lands on its edge — rake it or use a large-radius crown; and the terrain
+heightfield cannot compare feet at `CELL_MM` = 12 (a ⌀17.7 face is smaller than one cell),
+so `--rough` is the arm that can. Choose a shape with coupons on a tilt plate, not with feet.
 
 ## 6. Train
 
-**Why:** the whole `rl/` tree exists and has never been run in anger, because training
-against vendor priors was correctly judged to be wasted work. After steps 1–4 it is not.
-The WSL2 box does this alone; the mac and the robot are not involved.
-
-Train and evaluate in sim now. **Do not expect to deploy** — that needs the IMU, below.
-
-### Not ready yet, and the checklist is short — asked and answered 2026-09-09
-
-Three things, none of them large, and two are decisions about which number goes where
-rather than new work:
-
-1. **RESOLVED 2026-09-11 — step 2b's swap is in.** `rl/` had **zero** joint friction at
-   rest while the real servo has 0.18–0.35 N·m, because `model.py` zeroed MuJoCo's
-   `frictionloss` and `actuator.py`'s own friction is `tanh(w/v_eps)`, exactly zero at
-   w = 0. The floor is MuJoCo's `frictionloss` = `tau_c` now and the law drops its copy
-   on that path (`tau_c_external`). The two sims agree again; what `rl/` still lacks at
-   rest is the load-dependent `mu_load*|tau_t|` half, ~0.11 N·m of the ~0.30 at stance,
-   which no per-joint constant can carry.
-2. **RESOLVED 2026-09-10, in `rl/`'s favour.** The two sims disagreed about servo
-   strength by 44 % — `rl/`'s emergent `k_u × 12` = 4.23 N·m against `ros2/` clamping
-   the same joint at the datasheet's 2.94 — and it decided how strong the servo was
-   *in training*. 2c-i measured it on a scale: **4.50 N·m**, within 6 % of `rl/`'s
-   fitted figure and 53 % above the datasheet. So `rl/` had the right servo and
-   `ros2/` had the wrong one; `SERVO_STALL_NM` is now 4.50 and both sims agree.
-   `model.py`'s ±5 N·m NaN guard was never the problem, but note it now sits only
-   11 % above the real stall rather than 70 % above — still a guard, no longer
-   comfortably out of range, so it is worth a look if a policy ever rails against it.
-3. **Step 4 is not done.** No randomisation over pack voltage, and `mu_load` is not
-   randomised at all — confirmed live on the WSL2 box, `_params().mu_load` is shape `()`
-   while `_params().tau_c` beside it is `(8, 12)` with a 0.33 spread.
-
-Two things that are **not** blockers, so they do not get used as reasons to wait: step
-3b's gait re-tune is for the hand-tuned `standalone_sim` trot, which is a regression
-harness — RL learns its own gait. And the missing IMU blocks deployment, not training,
-exactly as this step already says.
+Everything that blocked it is resolved: the two sims agree on servo strength (4.50), the
+training path has friction at rest, `check_model.py` is 0 FAIL. The WSL2 box does this
+alone. Do not expect to deploy — that needs the IMU. Step 3b's gait re-tune is for the
+hand-tuned regression harness, not a blocker: RL learns its own gait.
 
 ---
 
-# Step 7 — when the IMU arrives
+## 7. When the IMU arrives
 
-## 7. Wire the IMU, then close the walker's loop on hardware for the first time
+Mount at the `IMU_*` site, solder to the pads (headerless — `3d/ref/imu/README.md`), re-run
+`rl/checks/imu_placement.py` against the real mount, then close the walker's loop on
+hardware for the first time. Cheaper than the battery, and it unblocks both the walker's
+levelling/heading hold and the deployability of anything `rl/` produces.
 
-Mount at the `IMU_*` site, solder to the pads (the slot is 3.6 mm and the board with
-headers does not fit), then re-run `rl/checks/imu_placement.py` against the real mount.
+## 8–10. When the battery arrives
 
-**Why this before the battery:** it is the cheaper part, the analysis is already done and
-waiting, and it unblocks two independent things at once — the walker's body levelling and
-heading hold, which have only ever run in simulation, and the deployability of anything
-`rl/` produces. Training without it is speculative; training after it is testable.
-
-The first hardware result to look for is the one the sim already predicts: terrain feedback
-is worth a great deal more than flat-ground performance suggests.
-
----
-
-# Steps 8–10 — when the battery arrives
-
-## 8. Replace the ballast with the pack, and re-tune the gait against real mass
-
-**Why:** the 1 kg plate is a stand-in that sits where you put it. The pack has a cradle, a
-position and a centre of mass the CAD already knows about. Every gait figure measured at
-2.55 kg with a plate should be re-measured once, deliberately, with a control run beside it
-— `3d/CLAUDE.md`'s warning about reading a distance change as a geometry regression applies
-exactly as written.
-
-## 9. Install the Orange Pi and move the 50 Hz loop onto it
-
-**Why now and not earlier:** everything the Pi adds is untethered. `robot/runtime` is
-already controller-agnostic and machine-agnostic; moving it is a deployment step, not a
-development one. Re-run `bus_probe.py` on the Pi first — the transaction cost is a property
-of the machine, and the 50 Hz budget was measured on the mac.
-
-## 10. LiDAR and camera
-
-**Why last:** both are sensors for autonomy, not for walking, and both need the Pi. The
-model side is already done and already honest — `lidar.py` carries the *measured* point
-rate (62 341/s at 12 Hz, against a catalogue 21 600) and both sim consumers read the cone
-out of the compiled model rather than a config file.
+8. **Replace the ballast with the pack** and re-measure every gait figure once, with a
+   control run beside it — `3d/CLAUDE.md`'s mass-cliff warning applies as written.
+9. **Install the Orange Pi** and move the 50 Hz loop onto it. Re-run `bus_probe.py` there
+   first: the transaction cost is a property of the machine.
+10. **LiDAR and camera** — sensors for autonomy, not walking, and both need the Pi. The
+    model side is done: measured point rate, cone read out of the compiled model by both
+    consumers.
 
 ---
 
-## The one thing to keep doing throughout
-
-Every model change goes through the ladder in `3d/CLAUDE.md` — FEA, `export_sim.py
---check`, and the ROS 2 regeneration — in the same pass. The ROS 2 tree is the easy one to
-forget: it lives outside the repo, nothing imports it, and its meshes keep rendering
-happily with whatever geometry they were baked from.
-
-And when a bench number changes, it goes in **two** places: the repo, and
-`ST3215_STS3215_measured_parameters.md`, which is the public reference for people who will
-never build this robot.
+**Throughout:** every model change goes through the ladder in `3d/CLAUDE.md` in one pass,
+and every bench number goes into the repo *and* `ST3215_STS3215_measured_parameters.md`.

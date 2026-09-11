@@ -1,8 +1,7 @@
 # SmallDog — ROS 2 + MuJoCo
 
-12-DOF quadruped simulation for the printed ST3215 dog designed in [`../3d`](../3d).
-Layout follows the hexapod project (`ogonek25-spider/ros2`): description → ros2_control →
-gait node, with MuJoCo standing in for the hardware.
+12-DOF quadruped simulation for the printed ST3215 dog designed in [`../3d`](../3d):
+description → ros2_control → gait node, with MuJoCo standing in for the hardware.
 
 ![trot](docs/trot.png)
 
@@ -16,18 +15,14 @@ gait node, with MuJoCo standing in for the hardware.
 | `smalldog_teleop` | ament_python | keyboard teleop |
 | `tools/` | — | standalone MuJoCo sim, no ROS needed |
 
-One external source dependency: **`mujoco_ros2_control`**, the spider project's fork on
-its `kilted` branch, vendored here as a submodule at `src/mujoco_ros2_control`.
+One external source dependency: **`mujoco_ros2_control`**, a fork on its `kilted` branch,
+vendored as a submodule at `src/mujoco_ros2_control`. The LiDAR publisher, the camera
+checks and the real-time pacing live there, so a pull that touches them needs one
+`colcon build --packages-select mujoco_ros2_control`.
 
 ## Build & run
 
-This workspace has **its own ROS 2 environment**, in `pixi/`. It used to borrow the spider
-project's, which meant smalldog could not run without an unrelated project checked out
-beside it, and it shipped whatever controller set the spider happened to need —
-`imu_sensor_broadcaster` was not among them, so the launched robot had no IMU topic and
-the gait ran blind no matter what was wired up.
-
-### Build once
+The workspace has its own ROS 2 environment in `pixi/` (macOS arm64 only, as committed).
 
 ```bash
 pixi install --manifest-path ros2/pixi/pixi.toml    # ~2.3 GB, once
@@ -36,60 +31,41 @@ source tools/env.sh
 colcon build --symlink-install
 ```
 
-Four pins in `pixi/pixi.toml` are load-bearing, and each is there because the workspace
-does not build or does not start without it. `ros2_control 5.6` / `ros2_controllers 5.7`:
-by hardware_interface 5.12 the fork's `MujocoSystemInterface` matches no `import_component`
-overload. `libmujoco 3.3`: `mjv_moveCamera` grew an argument after that. `clang_osx-arm64`
-by name: `c-compiler` 2.0 stopped pulling the conda wrappers on this platform, CMake then
-silently takes `/usr/bin/c++`, and without the wrapper's `-dead_strip_dylibs` the node
-links 18 `*__rosidl_generator_py` dylibs it never calls and dies at startup on
-`symbol not found in flat namespace '_PyExc_RuntimeError'`. And `filelock`, which
-`controller_manager`'s spawner imports — without it every controller fails to spawn.
+Four pins in `pixi/pixi.toml` are load-bearing: `ros2_control 5.6` / `ros2_controllers 5.7`
+(by hardware_interface 5.12 the fork's `MujocoSystemInterface` matches no `import_component`
+overload); `libmujoco 3.3` (`mjv_moveCamera` grew an argument after); `clang_osx-arm64` by
+name (without the conda wrapper's `-dead_strip_dylibs` the node links 18 rosidl dylibs it
+never calls and dies at startup on `_PyExc_RuntimeError`); and `filelock`, which the
+controller spawner imports.
 
 ### Run
 
-One terminal. The keys are read by the **MuJoCo render window**: the sim node
-republishes every printable key pressed over its viewer on `~/key`, and the teleop node —
-launched here, with no TTY of its own — turns those into `/cmd_vel`. Click the MuJoCo
+One terminal. Keys are read by the **MuJoCo render window** — the sim node republishes
+every printable key on `~/key`, and the teleop node turns them into `/cmd_vel`. Click the
 window and type.
 
 ```bash
-./tools/sim.sh                 # flat ground
-./tools/sim.sh terrain:=true   # ... or the heightfield scene
-./tools/sim.sh teleop:=false   # ... or no teleop node, drive it from a second terminal
-./tools/sim.sh foxglove:=true  # ... plus a Foxglove websocket on ws://localhost:8765
+./tools/sim.sh                 # flat ground, real time
+./tools/sim.sh terrain:=true   # the heightfield scene
+./tools/sim.sh teleop:=false   # no teleop node — drive it from a second terminal
+./tools/sim.sh foxglove:=true  # plus a Foxglove websocket on ws://localhost:8765
+./tools/sim.sh rtf:=2.0        # twice real time; rtf:=0 is unpaced (long unattended runs)
 ```
 
-`sim.sh` kills stray `robot_state_publisher` processes first: leftovers from a previous
-launch keep the next `controller_manager` from ever coming up, and the symptom is an
-endless `waiting for service /controller_manager/list_controllers`.
-
-`tools/teleop.sh` is the old second-terminal path, for when the viewer does not have the
-keys — a headless run, or a remote one. It reads raw stdin, so it needs its own focused
-TTY, and it waits for `/smalldog_walker` to appear before starting. Launch with
-`teleop:=false` when you use it: two teleop nodes both publish `/cmd_vel` at 50 Hz and
-fight over the robot.
-
-On macOS you can open it in its own Terminal window from anywhere:
+`sim.sh` kills stray `robot_state_publisher` processes first: a leftover keeps the next
+`controller_manager` from coming up (`waiting for service /controller_manager/list_controllers`
+forever). `tools/teleop.sh` is the second-terminal path for a headless or remote run; launch
+with `teleop:=false` when you use it, or two teleop nodes fight over `/cmd_vel`.
 
 ```bash
-osascript -e 'tell application "Terminal" to do script "'$PWD'/tools/teleop.sh"'
+pkill -f "ros2 launch smalldog"; pkill -f robot_state_publisher    # stopping
 ```
 
-### Stopping
+`tools/env.sh` picks `local_setup.zsh` or `.bash` to match the shell: sourcing the `.bash`
+file from zsh silently never applies the overlay (`$BASH_SOURCE` is unset), and
+`ros2 run smalldog_teleop keyboard` then says "package not found".
 
-```bash
-pkill -f "ros2 launch smalldog"
-pkill -f robot_state_publisher      # always, or the next launch hangs
-```
-
-`tools/env.sh` picks `local_setup.zsh` or `local_setup.bash` to match the running shell.
-That matters: ROS 2's `local_setup.bash` finds its own directory through `$BASH_SOURCE`,
-which zsh does not set, so sourcing the `.bash` file from zsh silently looks in `$PWD`
-and the workspace overlay is never applied — `ros2 run smalldog_teleop keyboard` then
-fails with "package not found" while `ros2` itself works fine.
-
-### Doing it by hand
+By hand:
 
 ```bash
 eval "$(pixi shell-hook --manifest-path pixi/pixi.toml)"
@@ -104,15 +80,12 @@ ros2 run smalldog_teleop keyboard                            # second terminal
 ros2 control list_controllers        # both must say "active"
 ros2 node list | grep smalldog       # walker, controller, keyboard_teleop
 ros2 topic info /cmd_vel             # 1 publisher (teleop), 1 subscriber (walker)
-ros2 topic echo /joint_states --once
 ros2 topic echo /mujoco_ros2_control_node/key   # what the render window is seeing
 ```
 
-If the legs do not move, check `/cmd_vel` first: the teleop prints the `vx / vy / wz` it
-thinks it is sending on every key. If that is silent, check the key topic above — nothing
-there means the MuJoCo window does not have focus (click it), and something there with a
-silent `/cmd_vel` means the teleop node is not up. `/cmd_vel` with **2 publishers** is a
-leftover teleop from an earlier run still holding a command.
+If the legs do not move: the teleop prints the `vx / vy / wz` it sends on every key. Silent
+key topic → the MuJoCo window has no focus. Keys but no `/cmd_vel` → the teleop node is not
+up. `/cmd_vel` with **2 publishers** → a leftover teleop still holding a command.
 
 ## Keyboard
 
@@ -126,108 +99,37 @@ leftover teleop from an earlier run still holding a command.
   t          gait enable / disable
 ```
 
-Type them into the **MuJoCo window** (or into the teleop's own terminal, on the
-`teleop:=false` path). Backspace still belongs to the viewer itself and resets the sim.
-
 Published: `/cmd_vel` (Twist), `/smalldog/body_height` (Float64), `/smalldog/enable` (Bool).
-Subscribed: `/mujoco_ros2_control_node/key` (String, one character per press) — the
-`key_topic` parameter. `read_stdin:=false` turns the raw-TTY reader off; the node does that
-by itself whenever stdin is not a TTY, which is what makes it launchable.
+Subscribed: `/mujoco_ros2_control_node/key` (String, one character per press). Backspace
+belongs to the viewer and resets the sim. `read_stdin:=false` turns the raw-TTY reader off;
+the node does that by itself whenever stdin is not a TTY.
 
 ## Without ROS 2
 
-The gait and IK have no ROS imports, so the whole thing runs from a bare Python env
-with `mujoco` and `numpy`:
+The gait and IK have no ROS imports, so everything runs from a bare env with `mujoco` and
+`numpy`:
 
 ```bash
 ./tools/view.sh                             # interactive viewer, same key bindings
-./tools/view.sh --terrain --lidar           # ... rough ground, with the LiDAR cloud drawn
+./tools/view.sh --terrain --lidar           # rough ground, with the LiDAR cloud drawn
 python tools/standalone_sim.py --headless   # self-test: stand, trot, turn
 python tools/standalone_sim.py --terrain    # either mode, on the rough-ground scene
 python tools/standalone_sim.py --course     # 25 s over the ramp/wall/log obstacle course
-python tools/standalone_sim.py --lidar      # ... with the L2 scanning
+python tools/standalone_sim.py --lidar      # ... with the L2 scanning (needs ../3d beside)
 ```
 
-**The interactive viewer goes through `tools/view.sh`, not `python`.** On macOS the passive
-viewer must run under `mjpython` (it needs the main thread), and `mjpython` then cannot
-dlopen the uv-built venv's interpreter — it dies on `Library not loaded:
-@rpath/libpython3.12.dylib` before the script runs. `view.sh` asks `sysconfig` where that
-dylib actually is and sets `DYLD_FALLBACK_LIBRARY_PATH`. The headless runs have neither
-problem and stay on plain `python`.
+The interactive viewer goes through `tools/view.sh`: on macOS the passive viewer needs
+`mjpython`, which cannot dlopen the uv venv's interpreter, and the wrapper sets
+`DYLD_FALLBACK_LIBRARY_PATH` from `sysconfig`.
 
-`--lidar` is the only flag that needs the CAD tree (`../3d`) beside the workspace — the
-scan model lives in `../3d/lidar.py`, next to the geometry it is a sensor for.
+**Both viewers are paced to real time** (measured 1.000× off `/clock`; `rtf:=` on the ROS
+launch, `CATCHUP` in `interactive()`). Unpaced they ran 1.5–3× real time, which is exactly
+the kind of thing you calibrate your eye against. A machine that cannot keep up degrades
+to slow motion rather than sprinting through a backlog. The headless runs are deliberately
+not paced. Rendering is ~70 % of a frame and physics plus the whole ros2_control stack 7 %;
+nothing there is worth optimising.
 
-**The viewer is paced against the wall clock.** It did not used to be: the loop was
-`while v.is_running(): step; sync()`, which runs at whatever rate `sync()` allows and shows
-whatever sim time that happens to produce. Measured under the real passive viewer, that was
-**1.49x real time** at ~1490 sync/s — `sync()` costs 0.67 ms here, and the 1 ms physics step
-it follows costs far less. So the viewer was not slow, it was fast: everything on screen,
-the gait included, ran half again quicker than the robot really moves, which is exactly the
-sort of thing you calibrate your eye against without noticing. `interactive()` now steps to
-a wall-clock budget and syncs at 60 Hz — measured 1.000x real time at 58 sync/s. `CATCHUP`
-caps how much sim time one frame may make up, so a dragged window or a scene heavy enough to
-fall behind degrades to slow motion instead of sprinting to catch up.
-
-None of this touches the headless runs, which have no viewer and are deliberately not paced,
-and none of it touches `tools/sim.sh` — see below.
-
-**`tools/sim.sh` is a different loop, and it is now paced too.** The ROS 2 node
-(`src/mujoco_ros2_control`) advances a fixed 1/60 s of sim per rendered frame and used to
-never sleep, so it ran as fast as the frame cost — 2.6–3.0x real time on this machine. Faster
-than real time is not free: everything on screen moves at that multiple, `/clock` outruns the
-wall clock so any wall-clock timeout outside the sim fires early relative to what the robot
-has actually done, and a gait tuned by eye gets tuned against a robot that does not exist.
-
-```bash
-./tools/sim.sh                # 1.0x - real time, the default
-./tools/sim.sh rtf:=2.0       # twice real time
-./tools/sim.sh rtf:=0         # pacing off: as fast as the frame costs, as it was before
-```
-
-Measured from outside, off `/clock`, so it is the number every other node sees and not the
-loop marking its own homework:
-
-| `rtf` | measured | samples |
-|---|---|---|
-| 1.0 (default) | 1.000x real time | 6005 |
-| 2.0 | 2.007x | 8945 |
-| 0 (off) | 2.630x | 10525 |
-
-A machine that cannot keep up falls behind rather than accumulating debt: past 0.1 s of lag
-the pacing resyncs, so it degrades to slow motion instead of sprinting through a backlog the
-moment it gets one fast frame. `rtf:=0` is what long unattended runs want.
-
-The frame profile that says there is headroom for this, robot standing, `teleop:=false`:
-
-```
-2.79x real time | 164 fps | frame 6.09 ms = phys/ctrl 0.42 + render 4.24 + lidar 0.03 + cam 1.40
-3.03x real time | 178 fps | frame 5.61 ms = phys/ctrl 0.45 + render 3.78 + lidar 0.03 + cam 1.35
-```
-
-Rendering is 70 % of a frame and the camera another 23 %; physics *and* the whole ros2_control
-stack together are 7–8 %. Per physics step, over ~6000 steps: `/clock` publish 11.1 µs,
-`mj_step1` 6.3, controller_manager read+update 4.9 (200 Hz, so one step in five), write 0.3,
-`mj_step2` 4.2 — 26.7 µs/step all in. Nothing there is worth optimising. If `sim.sh` ever does
-crawl, check `rtf` first and then profile; it is not short of headroom.
-
-**The pacing itself lives in the submodule** (`src/mujoco_ros2_control`), alongside the LiDAR
-work already there, so it is not in this repo's history — only the `rtf` launch argument is.
-A fresh clone gets the argument and a node that ignores it until the submodule is built from
-the same working tree.
-
-**One real defect found while profiling, unrelated to speed — since FIXED (2026-09-11).**
-`robot.xml`'s camera declared `resolution="3840 2160"` while the scene's offscreen buffer
-was `offwidth="1400" offheight="1000"`. MuJoCo's Python API rejects that combination
-outright; the C++ `MujocoCameras::register_cameras` did not check, and set the viewport to
-3840×2160 against a 1400×1000 buffer — so what `camera/color` and `camera/depth` published
-was not a valid image. Both halves are closed now: `generate_model.py`'s `SCENE` derives
-`offwidth`/`offheight` from `md.CAM_PIX`, so the buffer can no longer be smaller than the
-camera, and `register_cameras` refuses a camera larger than the buffer with an error
-instead of rendering into nothing. It was never a performance problem (4K render+readback
-measured at 16.6 ms against 13.2 at 1400×1000, ~10 % of a frame at 6 Hz).
-
-Current self-test result:
+Current self-test:
 
 ```
 model ok: 18 dof, 12 actuators, mass 2.493 kg
@@ -238,667 +140,271 @@ model ok: 18 dof, 12 actuators, mass 2.493 kg
 RESULT: OK — stands and trots forward
 ```
 
-**Two of those lines changed meaning on 2026-09-11 and one is a typo fix.** `dof` was
-printing `model.nq` (19: 18 velocities plus the free joint's quaternion having four
-components for three); it prints `model.nv` now. And `stand` used to read **199.4 mm**
-against a 181 mm nominal stance, because `settle()` took its command with `dt = 0` and the
-gait's rate limiter turns that into 3e-4 rad — so the robot "settled" with its legs
-STRAIGHT and the 29 mm `hold 1s` "drop" underneath it was the gait ramping to the stance
-for the first time. `settle()` now seeds the limiter from the stance, so `stand` and
-`hold 1s` agree and the drop is gone. Every number downstream of `settle()` moved with it
-— see "Rough ground" for the re-baseline over seeds.
-
-0.15 m/s against a 0.20 m/s command, 10 mm lateral drift over 5 s, attitude within 2.8°.
-That 22 % is not lag or torque — see "Forward speed, and what does not move it" under Gait
-before trying to tune it out. It is also the *only* thing about this robot that is slow: both
-viewers were measured running at or above real time, so an impression that the gait looks slow
-is the gait, not the renderer.
-
-### Re-baselined 2026-09-11 by `settle()`
-
-`settle()` never settled at the stance (see the self-test block above), so every arm in
-this section and in `tools/foot_contact.py` started its trot from a body that was still
-ramping down off straight legs. Fixing it moves all three arms. Measured on one tree, in
-one process, the old `settle()` beside the new one, same scenes and same seeds:
-
-| | before (old `settle`, hand-typed limits) | `settle` fixed only | **after** (`settle` + CAD limits) |
-|---|---|---|---|
-| flat trot | 457.8 mm | 457.9 mm | **457.9 mm** |
-| terrain, seeds 7…12 | 347 ±18 mm, 0/6 down | 420 ±16 mm, 0/6 down | **419 ±16 mm, 0/6 down** |
-| course, seeds 7 / 8 / 9 | 2/7 1747, 1/7 1597, 2/7 1812 — all upright | 0/7 731 **DOWN**, 2/7 1873, 2/7 1911 | **1/7 1663, 2/7 1733, 2/7 1836 — all upright** |
-
-**The flat arm did not move at all** (0.1 mm on a deterministic run), which is what says
-nothing else in this pass touched the dynamics: the model regenerated with the same
-2.493 kg, the same limits and the same actuator constants. **The terrain arm went up on
-every one of the six seeds** — 73 mm of means against spreads of 18 and 16, so this is a
-different distribution and not one seed's chaos, and neither arm put the robot down. The
-5 s trot simply no longer spends its first fraction of a second finishing a ramp.
-
-**Widening the joint limits changed nothing on flat or on the terrain sweep** — 457.9 mm
-to the tenth of a millimetre, 419 ±16 against 420 ±16 — which is the answer to "does the
-gait live near its clamps": on open ground it does not. The one place it did matter is the
-course.
-
-**Seed 7 on the course is a coin, and the full 2×2 is worth keeping.** With the old
-`settle` and the old limits it was 2/7 upright; with EITHER change alone it went down
-(0/7 731 with the new `settle`, 0/7 752 with the old `settle` and the wide limits); with
-both it is 1/7 1663 and upright again. Seeds 8 and 9 barely moved through all four cells.
-So that seed sits on a knife edge at the first obstacle and no single run of it means
-anything — which is what this file already says about the course, and the reason the
-shipping figure is three seeds and not the default one.
+`settle()` seeds the gait's rate limiter from the stance (it used to take one command at
+`dt = 0`, which the limiter turned into 3e-4 rad, so the robot "settled" with straight legs
+and every trot started from a ramp). The flat trot is deterministic to 0.1 mm and is the
+control for any change; the terrain and course arms are read over seeds. `3d/CLAUDE.md`
+carries the current baseline and how to read it.
 
 ## Rough ground
 
-`mujoco/scene_terrain.xml` is the same world with the ground plane swapped for a
-heightfield — `meshes/terrain.png`, generated by `../3d/terrain.py` and rewritten by
-`generate_model.py` on every run. Seeded fractal noise, ±27 mm over a 160 mm wavelength
-(36° peak slope), flat only inside 160 mm of the origin (the stance footprint, so the robot
-spawns level) and fully rough 250 mm further out. Same seed, same ground, so two runs are
-comparable.
+`mujoco/scene_terrain.xml` is the same world with the plane swapped for a heightfield —
+`meshes/terrain.png`, generated by `../3d/terrain.py` and rewritten by `generate_model.py`.
+Seeded fractal noise, ±27 mm over 160 mm (36° peak slope), flat inside 160 mm of the origin.
+Same seed, same ground.
 
-```
-python tools/standalone_sim.py --headless --terrain
-  stand    z= 186.4 mm  roll= +0.0 pitch= +0.0
-  trot 5s  z= 172.5 mm  roll= +0.6 pitch= +3.5  travelled x= 675.1 mm  y=  -2.9 mm
-  turn 4s  z= 164.8 mm  roll= -1.0 pitch= -3.5
-RESULT: OK — stands and trots forward
+```bash
+python tools/standalone_sim.py --headless --terrain            # default seed
+python tools/standalone_sim.py --headless --terrain --blind    # feedback off
 ```
 
-675 mm against 780 mm on the flat — and **read that single number over a seed sweep, not on
-its own**: at 2.495 kg it was 585 mm on this seed and 610 ±51 mm over seeds 7…12, and one
-seed moves ±100 mm under mass changes far too small to be a geometry regression (0.1 g of
-`gps_mount` moved the default seed 690 → 585 with the flat trot unmoved; swapping the
-11.1 g LiDAR guard for the 16.1 g camera — +5 g net — moved it 585 → 675 with the flat
-trot again unmoved, at 780). `--blind` runs the same thing with the terrain feedback
-switched off, which is what this gait was until 2026-08-27; over twelve terrain seeds
-(swept at the old 2.10 kg mass model — the numbers below have not been re-swept since the
-print densities were measured and the robot became 2.45 kg):
+**One seed is not a measurement.** At fixed settings the trot spreads ±70 mm across seeds
+and one seed moves ±100 mm under mass changes far too small to be a geometry regression.
+Sweep seeds 7…12, one png per seed — MuJoCo caches a heightfield by file name inside a
+process, so rewriting `terrain.png` and reloading silently reuses the first field compiled.
+A dead-flat heightfield already costs the blind gait ~15 % against `type="plane"` (that is
+the hfield contact, not the relief), so raising the amplitude is not the knob it looks like.
 
-| | flat | terrain, 12 seeds | body tilt, median / worst | fell |
-|---|---|---|---|---|
-| `--blind` — open loop | 793 mm | 574 ±67 mm | 13.5° / 180° | 2/12 |
-| terrain feedback | 758 mm | 628 ±79 mm | 6.5° / 12.5° | 0/12 |
-
-Better on 10 of the 12 seeds, by 54 ±30 mm. The tilt column is the real result: the blind
-trot rolls over on two seeds out of twelve and the closed loop never exceeds 13°. It costs
-4 % on the flat, where there is nothing to correct.
-
-**One seed is not a measurement.** At fixed settings the blind trot spreads ±67 mm across
-seeds, so a single before/after run says nothing; sweep seeds, and give each seed its own
-png — MuJoCo caches a heightfield by file name inside a process, so rewriting `terrain.png`
-and reloading the scene silently reuses whichever field was compiled first.
+Terrain feedback against `--blind`, twelve seeds: better on 10 of 12; the blind trot rolls
+over on two seeds and the closed loop never exceeds 13° of tilt. It costs ~4 % on the flat.
 
 ### The obstacle course
 
-The heightfield alone is smooth — 160 mm is its longest feature and the octaves under it
-are gentler, so a foot always lands on a hillside and never meets an edge. Since
-2026-08-28 the scene also carries ramps, walls and logs (`COURSE` in `../3d/terrain.py`),
-bedded into the relief along +x and graded to what the trot can actually do. Measured one
-obstacle at a time on flat ground, 8 s at 0.20 m/s against 1252 mm of clear ground:
-
-| | | | | |
-|---|---|---|---|---|
-| ramp | 4° 1240 | 8° 1155 | 10° 1122 | 14° 950 mm |
-| wall | 6 mm 1249 | 14 mm 1183 | 18 mm 889 | 22 mm 474 mm |
-| log | 6 mm 1251 | 14 mm 1141 | 22 mm 875 | 30 mm 432 mm |
-
-Ramps to at least 14°, walls to ~18 mm, logs to ~22 mm. The wall cliff between 18 and
-22 mm is the 22 mm foot swing, exactly; a log gets a few mm more because the foot rolls
-over a crest instead of catching a square edge.
-
-The course starts at x = 0.95 m, deliberately past the 0.65 m the 5 s regression trot
-reaches, so `--headless --terrain` still measures the relief and nothing else — both arms
-come out at 652 ±56 mm over the same six seeds, identical to the tenth of a millimetre. `--course` is the one that walks it:
+The heightfield alone is smooth — a foot always lands on a hillside. The scene also
+carries ramps, walls and logs (`COURSE` in `../3d/terrain.py`) along +x, graded to what the
+trot can clear (measured one obstacle at a time: ramps to 14°, walls to ~18 mm, logs to
+~22 mm — the wall cliff between 18 and 22 mm is the 22 mm foot swing exactly). It starts at
+x = 0.95 m, past what the 5 s regression trot reaches, so `--headless --terrain` measures
+the relief and nothing else. `--course` walks it:
 
 ```
-python tools/standalone_sim.py --course
 course: log at 950, ramp_up at 1583, deck at 1875, ramp_dn at 2166, wall at 2600, ...
-  cleared 5/7: log ramp_up deck ramp_dn wall
-  furthest x while inside the course corridor: 2896 mm
-RESULT: upright at x=2891 mm, y=+48 mm after 25 s  (travelled 2882 mm)
+  cleared 2/7: log ramp_up
+  furthest x while inside the course corridor: 1791 mm
+RESULT: upright ...
 ```
 
-Over six seeds, 25 s: relief only 2917 ±187 mm; with the course 2713 ±291 mm, both 0/6
-down; fully blind 1353 ±755 mm and 3/6 down. Until the heading hold went in the course cost
-~1300 mm and put the robot down on 2 seeds in 6, and almost none of that was the obstacles
-— what an obstacle did first was knock the robot off course, and it then walked out of the
-0.80 m corridor sideways. That is why `--course` credits an obstacle only when the robot
-passed it while still inside its width; scoring on x alone gives it credit for walking
-around things.
+An obstacle is credited only when the robot passed it while still inside the 0.80 m
+corridor — scoring on x alone credits walking around things. It is a *report*, not a
+pass/fail: the unchanged model reads 5/7, 4/7 and 3/7 across sessions on one seed, and
+seed 7 sits on a knife edge at the first obstacle. Read it over seeds 7 / 8 / 9.
 
-An obstacle's rotation is written as a **quaternion**, not euler. `robot.xml` compiles with
-`<compiler angle="radian">`, so degrees are read as radians without a word: the first cut
-of this course had a "6°" ramp that came out tilted 16° the other way and 75 mm tall, and
-logs turned by 90 radians. Walls carry no rotation and were the only element that behaved.
-Ray-cast the *compiled* scene to check geometry — a hand-built test scene with no
-`<compiler>` line uses degrees and will confirm a model you do not have.
-
-`generate_model.py --no-terrain-obstacles` leaves the course out, which is the ground the
-gait gains above were measured on.
-
-`generate_model.py --terrain-amp <mm> --terrain-wave <mm> --terrain-seed <n>` regenerates
-the field; the ROS 2 launch picks the scene with `terrain:=true`. Note that the running sim
-keeps the heightfield it loaded — regenerating means restarting `./tools/sim.sh
-terrain:=true`. Raising the amplitude is not the knob it looks like: a dead-flat
-heightfield already costs the blind gait ~15 % against `type="plane"` (that is the hfield
-contact, not the relief), and ±15 mm of relief costs it as much as ±30 mm.
+An obstacle's rotation is a **quaternion**: `robot.xml` compiles with `angle="radian"`, so
+a degree value is read as radians without a word. Ray-cast the *compiled* scene to check.
+`generate_model.py --no-terrain-obstacles` leaves the course out;
+`--terrain-amp/--terrain-wave/--terrain-seed` regenerate the field (restart the sim — it
+keeps the heightfield it loaded).
 
 ### Terrain feedback
 
 `smalldog_walker/gait.py` closes three loops on top of the open-loop profile, all fed by
 `TrotGait.feedback(quat=..., gyro=..., contact=...)`:
 
-- **body levelling** on the IMU. A body rotation lifts the foot corner at (x, y) by
-  `roll*y - pitch*x`; the leg retracts by the same amount to put it back. It acts on the
-  attitude low-passed over 0.30 s, deliberately: most of what the IMU sees is the trot's
-  own rocking at the gait frequency, which is the gait working, and chasing that holds the
-  body beautifully level at the cost of nearly half the forward speed.
-- **stand where you land.** A debounced foot contact partway through the swing means the
-  ground came up; the foot stops there instead of finishing a sine that would peel it back
-  off the hillside, and holds that height until the next lift-off.
-- **heading hold** on the IMU yaw (added 2026-08-28). The command is in body axes —
-  `fx = -(vx - wz*ny)` turns with the robot — so a robot knocked off course keeps walking
-  straight ahead *of itself* and curves through the world, and the open-loop profile cannot
-  notice. Rough ground supplies the knock: the drift is 1.8° over 1.2 m on the flat and
-  1.65 m of sideways travel in 25 s on relief. The reference is latched, not commanded —
-  whatever heading it had when it last started walking straight — and dropped the moment
-  the operator asks for a turn, so it never fights one.
+- **body levelling** on the IMU: a body rotation lifts the foot corner at (x, y) by
+  `roll·y − pitch·x` and the leg retracts by the same amount. Acts on the attitude
+  low-passed over 0.30 s — most of what the IMU sees is the trot's own rocking, and chasing
+  that costs half the forward speed.
+- **stand where you land**: a debounced contact partway through the swing means the ground
+  came up; the foot stops there instead of finishing a sine that would peel it off.
+- **heading hold** on the IMU yaw. The command is in body axes, so a robot knocked off
+  course curves through the world and the profile cannot notice. The reference is latched
+  when it last started walking straight and dropped on a commanded turn.
 
-Measured over the same six terrain seeds, hold off → on (at 2.459 kg, i.e. before the GPS
-mast; the seeds and the conclusion carry, the absolute distances are 36 g stale):
+Hold off → on over six terrain seeds: on the flat nothing changes; on the relief the final
+|yaw| goes 9.4° → 3.9°; on the course 46.6° → 10.3°, path 2292 → 2836 mm, 1/6 → 0/6 down,
+and the default seed goes from 1 obstacle cleared to 5. The loop corrects heading, not
+position. **Sim yaw is truth; hardware yaw is an integrated gyro** (no magnetometer) — it
+holds a line over a run, not an absolute bearing.
 
-| | path | final &#124;y&#124; | final &#124;yaw&#124; | fell |
-|---|---|---|---|---|
-| relief, 5 s | 681 → 652 mm | 12 → 22 mm | 9.4° → 3.9° | 0/6 |
-| relief + course, 25 s | 2292 → 2836 mm | 258 → 99 mm | 46.6° → 10.3° | 1/6 → 0/6 |
-
-On flat ground it changes nothing (547 → 548 mm), which is the point: there is no drift to
-correct. On the course the default seed goes from 1 obstacle cleared to 5. Note the 5 s
-`|y|` going *up* while `|yaw|` halves — the loop corrects heading, not position, and does
-not walk back the offset it already has; only the yaw column measures what it does.
-
-**Sim yaw is truth, hardware yaw is not.** MuJoCo's `imu_quat` is the real orientation, but
-the robot has no magnetometer, so its yaw is an integrated gyro and drifts. This holds a
-straight line over a run; it is not an absolute bearing and must not be sold as one.
-
-All three are optional and additive. With neither the IMU nor the contacts arriving, or
-with either stream stale for 0.20 s, `TrotGait` is exactly the blind gait it was before.
-Under the ROS 2 launch the IMU does arrive — `imu_sensor_broadcaster`, and the walker logs
-`IMU is live - terrain feedback active` once — so levelling and heading hold are running
-there; the foot contacts still have no publisher, see "Known gaps".
-
-A phase lag is what makes contact logic delicate: measured on flat ground the foot leaves
-at s ≈ 0.6 and lands at s ≈ 0.05, about a tenth of a cycle behind the profile that
-commanded it, and a stance foot is off the ground ~60 % of its nominal stance. Thresholds
-keyed to the commanded phase misfire on flat ground; `gait.py` carries the numbers and the
-before/after for each one that did.
-
-**That lag is not the servo, whatever this file used to say here.** It is `joint_targets`'
-own rate limiter. At the default 0.20 m/s the profile demands up to 23.6 rad/s of the knee
-against a 4.0 rad/s limit (0.85 × the ST3215's 4.7); the limiter clips 28 % of all
-joint-steps and runs up to 9.3° behind, and because it clamps against its own *previous
-output* rather than the previous target, once it falls behind it stays behind. The demand
-is not a spike to be smoothed away either — the whole swing, phase 0.5 to 1.0, sits at
-6–7.6 rad/s. Knowing this does not make the robot faster (below), but it does mean the
-thresholds are compensating for a software clamp, and would need re-measuring on hardware
-where the real servo dynamics replace it.
+All three are optional and additive: with neither stream arriving, or either stale for
+0.20 s, the gait is the blind gait. Under the ROS 2 launch the IMU arrives
+(`imu_sensor_broadcaster`; the walker logs `IMU is live`); the foot contacts have no
+publisher (Known gaps). Contact thresholds are keyed to the *measured* phase lag — the foot
+leaves at s ≈ 0.6 and lands at ≈ 0.05, a tenth of a cycle behind the profile — and that lag
+is the gait's own rate limiter, not the servo, so it wants re-measuring on hardware.
 
 ## LiDAR
 
-The Unitree L2 is in the model as a **sensor**, not just as 230 g bolted to the pedestal.
-`mujoco/robot.xml` carries a `lidar` site at its optical centre and a `<custom>` block with
-the scan parameters; both are written by `../3d/lidar.py` out of the CAD, like everything
-else here.
+The Unitree L2 is in the model as a **sensor**: `mujoco/robot.xml` carries a `lidar` site at
+its optical centre and a `<custom>` block with the scan parameters, both written by
+`../3d/lidar.py` out of the CAD.
 
 ```
 /mujoco_ros2_control_node/lidar/points   sensor_msgs/PointCloud2, 12 Hz, SensorDataQoS
 ```
 
-~5195 points a frame (the compiled model's `lidar_pps` / `lidar_frame_hz`, measured at
-62340 /s and 12 Hz on 2026-09-05; it read 2160 at 10 Hz when the catalogue's 21600 /s was
-believed), x/y/z float32, in `lidar_link` — the frame `robot_state_publisher`
-puts on TF from the URDF, whose **+Z is the sensor's own axis**, leaning 45° nose-down with
-the pedestal. Timestamps are simulated time, like `/clock` and the joint states.
+~5195 points a frame (measured 62340 /s at 12 Hz), float32 xyz in `lidar_link`, whose +Z is
+the sensor's own axis, leaning 45° nose-down. Simulated time stamps. About a quarter of the
+rays return: the ground from ~280 mm ahead outwards, the course, and the robot's own legs
+(the chassis it is bolted to is excluded; the legs are not, because a real sensor sees
+them). The publisher is `src/mujoco_ros2_control/.../mujoco_lidar.{hpp,cpp}`; it uses
+`mj_multiRay` with no GL context, runs at the sim cadence, and stays quiet on a model with no
+`lidar` site. The Risley scan *pattern* exists twice — Python and C++ — because neither can
+call the other; the parameters exist once, in the CAD. Nothing subscribes to the cloud yet.
 
-### GPS
-
-The GY-NEO6MV2 and its active patch ride `gps_mount` over the Orange Pi (see
-`../3d/README.md`, *GPS*). They are in this model as **mass and a frame only**: 25 g on the
-mast's platform, a `gps` site at the patch's phase centre and a fixed `gps_link` on TF,
-whose +Z is the patch normal. There is no simulated fix — a `NavSatFix` here would be a
-noise model rather than a measurement, and nothing subscribes to one yet. On hardware the
-receiver is a 9600 baud NMEA stream on a UART, next to the servo bus, not a ROS 2 sensor
-this workspace owns.
+**GPS**: mass and a frame only — 25 g on the mast, a `gps` site at the patch's phase centre
+and a `gps_link` on TF (+Z the patch normal). No simulated fix; on hardware it is an NMEA
+stream on a UART, not a ROS 2 sensor this workspace owns.
 
 ### Looking at it
 
-Two ways, and the first needs nothing installed:
-
 ```bash
-./tools/view.sh --terrain --lidar    # MuJoCo's own viewer, cloud drawn into the scene
+./tools/view.sh --terrain --lidar              # MuJoCo's own viewer, cloud drawn into the scene
+./tools/sim.sh terrain:=true foxglove:=true    # ROS 2 topic → ws://localhost:8765
 ```
 
-The cloud is the last six frames (0.6 s) in world coordinates, coloured by height, one
-small sphere per return — so a stationary robot visibly keeps *filling in* its field of
-view, which is the whole point of a non-repetitive scan. Drive it with the usual keys and
-watch the near edge of the cone sweep the ground ahead. Subsampled to 6000 spheres
-(`CLOUD_MAX` in `tools/standalone_sim.py`), because the viewer redraws every one of them at
-60 Hz.
-
-For the ROS 2 topic, **Foxglove, not RViz**. `rviz2` is not in this workspace's pixi env
-and is not going in it: on macOS it is a large install and an unpleasant one to run.
-`foxglove_bridge` is 5 MB, is already in `pixi/pixi.toml`, and is headless — it serves a
-websocket that the Foxglove desktop app (or app.foxglove.dev in a browser) connects to.
-
-```bash
-./tools/sim.sh terrain:=true foxglove:=true    # ws://localhost:8765
-```
-
-Then in Foxglove: *Open connection* → *Foxglove WebSocket* → `ws://localhost:8765`. In a
-**3D** panel, turn on the `/mujoco_ros2_control_node/lidar/points` topic and set the frame
-to `base_link` (or `lidar_link`, to sit in the sensor). The bridge advertises
-`/tf`, `/tf_static` and `/robot_description` as well, and it has the `assets` capability,
-so the panel loads the URDF and its `package://` meshes and you get the cloud drawn on the
-robot rather than in a void.
-
-The bridge binds to `127.0.0.1` by default (the upstream default is `0.0.0.0`); change
-`address` in [smalldog-mujoco.launch.py](smalldog_ros_control/launch/smalldog-mujoco.launch.py)
-to watch from another machine. QoS is not something you have to think about here — unlike
-RViz, the bridge matches the publisher's, so the `SensorDataQoS` cloud just arrives.
-
-Without any viewer at all:
+The viewer draws the last six frames (0.6 s) in world coordinates, coloured by height,
+subsampled to `CLOUD_MAX` = 6000 spheres. For the ROS 2 topic use **Foxglove, not RViz**
+(`rviz2` is not in the pixi env and is not going in): *Open connection* → *Foxglove
+WebSocket* → `ws://localhost:8765`, a 3D panel, the `…/lidar/points` topic, frame
+`base_link`. The bridge advertises `/tf`, `/tf_static` and `/robot_description` with the
+`assets` capability, so the URDF and its meshes load. It binds `127.0.0.1`; change `address`
+in the launch file to watch from another machine. QoS matches the publisher's automatically.
+The MuJoCo window the ROS launch opens does **not** show the cloud.
 
 ```bash
 ros2 topic hz /mujoco_ros2_control_node/lidar/points
-ros2 topic echo /mujoco_ros2_control_node/lidar/points --once --no-arr   # header + fields
 ros2 bag record -s mcap /mujoco_ros2_control_node/lidar/points /tf /tf_static /clock
 ```
 
-`rosbag2` with MCAP storage is already installed, and Foxglove opens an `.mcap` file
-directly — which is the path to use when you want to look at a run later, or at one that
-happened on another machine.
-
-The MuJoCo window the ROS 2 launch opens does **not** show the cloud — that window is the
-control node's own renderer, and the points go out on the topic. Use `view.sh` to see them
-drawn, RViz to see what a subscriber gets.
-
-What it sees, standing on the terrain scene: about a quarter of the rays come back. The
-cone is a hemisphere and most of it is pointed at the sky; what returns is the ground from
-~280 mm ahead of the body outwards, the obstacle course, and the robot's own legs when they
-swing through the forward-down part of the cone. The chassis it is bolted to is excluded —
-it would otherwise fill a third of the cloud — but the legs are not, because that is what a
-real sensor gets and masking them is the perception side's job.
-
-Nothing subscribes to it. The gait is unchanged and still walks on the IMU and the foot
-contacts alone; `standalone_sim.py --course --lidar` only *reports* how far ahead each
-obstacle was first seen, which on open ground is "all of them, immediately".
-
-The publisher is a new component in the vendored fork —
-`src/mujoco_ros2_control/.../mujoco_lidar.{hpp,cpp}`, alongside `mujoco_cameras` — so it
-needs one `colcon build --packages-select mujoco_ros2_control` after pulling. It adds
-nothing to a model without a `lidar` site: it logs that there is none and stays quiet. It
-uses `mj_multiRay` on `mjData`, no GL context and no offscreen buffer, so unlike the
-cameras it runs on the sim cadence rather than being throttled to keep the renderer alive.
-
-The scan pattern is a Risley pair (two counter-rotating prisms), which is what makes it
-*non-repetitive* — stand still and the cloud keeps filling in. It matches the L2's
-coverage, point rate and non-repetition, and deliberately does not claim to match its
-density profile or to carry an intensity; the honest version of that argument is in
-`../3d/lidar.py`'s header and in `../3d/README.md`. That pattern is the one piece of this
-that exists twice, in Python and in C++, because neither can call the other — the
-*parameters* still exist only once, in the CAD, and both read them out of the compiled
-model.
+Foxglove opens an `.mcap` directly, which is how to look at a run from another machine.
 
 ## Regenerating the model from CAD
-
-`smalldog_description` is **not hand-written**. Everything comes out of the CAD:
 
 ```bash
 ../3d/.venv/bin/python smalldog_description/scripts/generate_model.py
 ```
 
-It imports `../3d/mini_dog.py`, exports one STL per link in that link's own frame,
-computes real mass properties from the tessellated solids (printed parts at PETG ×40 %
-infill, feet in TPU, plus servo / battery / Orange Pi / LiDAR point masses), and writes
-`urdf/smalldog.urdf`, `mujoco/robot.xml`, `mujoco/scene.xml`, `mujoco/scene_terrain.xml`,
-`mujoco/defaults.xml`, `meshes/terrain.png` and `robot_params.json`. Change a dimension in the CAD, re-run, rebuild.
+Imports `../3d/mini_dog.py`, exports one STL per link in its own frame, integrates mass
+properties from the tessellated solids at measured print density plus the payload point
+masses, and writes `urdf/smalldog.urdf`, `mujoco/{robot,scene,scene_terrain,defaults}.xml`,
+`meshes/terrain.png` and `robot_params.json`. **Every density, mass, limit and actuator
+constant comes from `mini_dog.py`** — this script keeps no copies (it did, and the servo
+mass, the joint limits and the `MJ_*` constants each drifted once). The workspace is built
+`--symlink-install`, so regenerated files are picked up without a rebuild; a *new* file
+needs one `colcon build --packages-select smalldog_description`.
 
-The workspace is built `--symlink-install`, so regenerated files are picked up without a
-rebuild — but a *new* file (`mujoco/scene_terrain.xml` and `meshes/terrain.png` were new)
-has no symlink yet, so it needs one `colcon build --packages-select smalldog_description`
-before a launch can find it.
+`../3d/export_sim.py` is the other exporter of the same CAD (different link decomposition:
+the foot is a separate part there). Both are re-run after a model change; `3d/CLAUDE.md`
+step 6 is the checklist.
 
-**Every density and point mass comes from `mini_dog.py` section 4** — this script keeps no
-copies. It used to, and its servo mass drifted to 60 g while the CAD side said 55 g, so
-the two models of the same robot differed by 60 g. If you need to change one, change it in
-the CAD.
-
-This is also not the only exporter of that CAD: `../3d/export_sim.py` writes its own
-URDF/MJCF into `3d/out/sim/` with a different link decomposition (the foot is a separate
-part there, merged into the shin here). Both read the same `mini_dog.py` and both have to
-be re-run after a model change; `3d/CLAUDE.md` step 6 is the checklist. As of the last
-run both report 2.493 kg.
-
-`robot_params.json` is the single source the gait reads at runtime — link lengths,
-hip offsets, joint limits and the nominal stance all come from there, so the walker
-can never drift out of sync with the mechanics.
+`robot_params.json` is the single source the gait, the runtime and `rl/` read: link
+lengths, hip offsets, the three limit ladders, the rate ceiling, the nominal stance.
 
 ## Model facts
 
 | | |
 |---|---|
-| total mass | 2.493 kg (base 1.559 kg incl. battery, Orange Pi, LiDAR, GPS) |
-| leg reach | 98…152 mm from the hip-pitch axis → usable body height 150…170 mm (it was 102…152 and 154…170 until the knee soft limit widened on 2026-09-11 — a bigger knee angle is a shorter leg) |
+| total mass | 2.493 kg (base 1.559 kg incl. battery, Orange Pi, LiDAR, GPS, camera, IMU) |
+| leg reach | 98…152 mm from the hip-pitch axis → usable body height 150…170 mm |
 | joints | `{fl,fr,rl,rr}_{roll,pitch,knee}` — 12 servo IDs 1…12 in that order |
-| joint limits | roll ±1.5708, pitch ±1.5708, knee ±1.9199 rad — **read** from the CAD interference scan (`3d/out/bom.json`), see "Joint limits" below |
+| joint limits | roll ±1.5708, pitch ±1.5708, knee ±1.9199 rad — **read** from the CAD ROM scan (`3d/out/bom.json`) via `export_sim.joint_rom()`, so the two exporters cannot drift |
 | MuJoCo hard stops | 0.03 rad **inside** the URDF limits, so the measured position can never trip ros2_control's joint limiter |
 | gait soft limits | 0.12 rad inside the mechanical limits → roll/pitch 1.4508, knee 1.7999 |
-| joint effort / velocity | 4.50 N·m measured on the torque rig, 3.15 rad/s achievable ceiling (`(forcerange − frictionloss)/damping`, below the measured 3.86 no-load) |
-
-### Joint limits
-
-**Changed 2026-09-11: the generator now reads the ROM scan instead of a hand-typed dict.**
-`J_LIM` was `{"roll": 0.90, "pitch": 1.30, "knee": 1.85}` with a comment claiming it came
-from the CAD scan. It did not — `3d/out/bom.json` reads ±90° / ±90° / ±110°, and
-`3d/export_sim.py` has always exported exactly those — so the two exporters of the same CAD
-were shipping robots with different mechanical limits, narrower here by 51.6° of roll and
-74.5° of pitch. Same class of defect as the servo mass and the `MJ_*` constants, and it is
-fixed the same way: this file imports `3d/export_sim.py`'s own `joint_rom()`/`limits()`
-rather than re-deriving them, so the two cannot drift again.
-
-The scan is not a guess about the geometry: `mini_dog.rom_scan_all()` sweeps real solids
-with the fork screws, the thrust bolts, the bolted cradle, the camera module and the GPS
-mast all in the static set, and `3d/CLAUDE.md` treats a range that *reaches* its scan
-window as "the end of the scan, not a mechanical limit" — which roll and pitch both do at
-90°. So ±90° is where the sweep stopped looking, not where the leg fouls.
+| joint effort / velocity | 4.50 N·m measured on the torque rig; 3.15 rad/s achievable ceiling `(forcerange − frictionloss)/damping`, below the measured 3.86 no-load; the generator takes `min()` |
+| nominal stance | base 181 mm above ground, gait default 158 mm |
+| meshes | 13 link meshes + 12 ST3215 bodies (visual only — their mass is in each link's `<inertial>`) |
+| links | `base_link` + `{leg}_hip` / `{leg}_thigh` / `{leg}_shin` (foot fused into shin), plus fixed `imu_link`, `lidar_link`, `gps_link` |
 
 `robot_params.json` keeps **one magnitude per kind** in `joint_limits_rad` and
-`joint_soft_limits_rad`, because every consumer reads it that way — `gait.py`'s `_clamp`,
-`rl/model.py`'s action scaling, `robot/runtime/calib.py`'s servo clamp and
-`smalldog_walker`'s own test. The signed per-leg pairs the URDF and MJCF are written from
-are carried alongside in `joint_limits_rad_signed`. The generator **asserts** the scan is
-symmetric before writing that shape: taking a `min()` of two different magnitudes would
-silently clip one direction on the real robot.
+`joint_soft_limits_rad`, because every consumer reads it that way; the signed per-leg pairs
+are in `joint_limits_rad_signed`, and the generator asserts the scan is symmetric before
+writing them. ±90° of roll and pitch is where the ROM *scan window* stopped, not where the
+leg fouls; widening the scan in `3d/mini_dog.py` is the way to find out. The soft limits
+also clamp the real servos (`robot/runtime/calib.py`).
 
-**This widens the real robot, not just the sim.** `robot/runtime/calib.py` clamps the
-actual servos with `joint_soft_limits_rad`, so the runtime roll clamp goes 0.78 → 1.45 rad.
-A policy or gait tuned against the old band saw a different action space and has to be
-re-tuned, not carried over.
-| nominal stance | base 181 mm above ground, gait default 158 mm |
-| meshes | 13 link meshes + 12 ST3215 bodies (visual only — their mass is already in each link's `<inertial>`, so they are drawn, never weighed twice) |
-| links | `base_link` + `{leg}_hip` / `{leg}_thigh` / `{leg}_shin` (foot fused into shin), plus the fixed `imu_link`, `lidar_link` and `gps_link` frames |
-
-The 12 servos are drawn in place (`{leg}_roll_servo.stl` etc., dark) so the model reads as
-the real machine. They carry no geometry mass: each link's `<inertial>` already accounts
-for its servo as a 60 g uniform box at the case centre, and the MJCF's explicit `<inertial>`
-overrides any geom-derived mass. `sum(model.body_mass)` matches `robot_params.json` exactly.
-
-Collision model is deliberately simple: boxes/capsules for the links, a sphere per foot
-with its own friction. Feet and body collide with the ground; **self-collision is off** —
-joint limits already come from the CAD sweep, so the sim does not need to re-discover them.
+Collision model: boxes/capsules for the links, a sphere per foot with its own friction and
+`priority="1"`, `condim="4"` (`3d/CLAUDE.md` has why). Self-collision is off — joint limits
+already come from the CAD sweep. `sum(model.body_mass)` matches `robot_params.json` exactly.
 
 ## Gait
 
 `smalldog_walker/gait.py` — trot, diagonal pairs `(FL,RR)` / `(FR,RL)`, duty 0.5.
 
 - `period` 0.45 s, `swing_height` 22 mm, `max_step` ±60 mm fore/aft, ±30 mm lateral
-- **the leg is short**: 75 + 82 mm with a ±1.85 rad knee gives only ~50 mm of vertical foot
-  travel, so the gait cannot lift the foot much. `body_height` is clamped at runtime to the
-  band where stance *and* swing apex both stay inside that reach; ask for more and the
-  setter shrinks the swing instead of producing an unreachable target
-- yaw is folded in as `v + ω × r_hip`, so turning and translating compose
-- a `_moving` blend keeps the feet planted when the command drops to zero, instead of
-  freezing mid-swing
-- joint outputs are clamped to the soft limits, then rate-limited to 0.85 × the servo's
-  4.7 rad/s, so start-up ramps into stance instead of stepping there
+- **the leg is short**: 75 + 82 mm gives ~50 mm of vertical foot travel, so `body_height`
+  is clamped to the band where stance and swing apex both stay in reach; asking for more
+  shrinks the swing instead of producing an unreachable target
+- yaw folds in as `v + ω × r_hip`; a `_moving` blend keeps the feet planted when the command
+  drops to zero
+- joint outputs are clamped to the soft limits, then rate-limited against
+  `joint_rate_ceiling_rad_s` = 3.15 from `robot_params.json` (the achievable joint speed
+  under load; it used to limit against the vendor no-load speed and 32 % of commanded
+  samples asked for a speed the joint does not have)
 
-### Forward speed, and what does not move it
-
-The trot makes 0.156 m/s on a 0.20 m/s command — 781 mm in the 5 s flat run. Asking for
-more buys little and then goes backwards:
-
-| commanded | achieved | gait period | body z | mean tracking error | torque saturation |
-|---|---|---|---|---|---|
-| 0.10 | 0.070 | 0.45 | 172 mm | 2.6° | 0.0 % |
-| 0.20 | 0.156 | 0.45 | 168 mm | 2.9° | 0.0 % |
-| 0.30 | 0.191 | 0.30 | 167 mm | 3.3° | 0.0 % |
-| 0.35 | **0.229** | 0.30 | 167 mm | 3.4° | 0.0 % |
-| 0.45 | 0.184 | 0.30 | 159 mm | 3.7° | 1.1 % |
-
-So the practical ceiling is ~0.23 m/s, and past that the body starts sagging toward a fall.
-Two thirds of "it walks slowly" is simply that nobody asks for more: 0.20 m/s is the default
-in the viewer's `scale`, in the teleop node's `speed` parameter and in the headless
-self-test. The teleop `.` key goes to 0.45.
-
-**The remaining 22 % has been chased and is not what it looks like.** Four hypotheses were
-measured and all four are dead:
-
-- *not torque.* Actuator force is inside ±3 N·m for 99–100 % of every run.
-- *not actuator stiffness.* Raising `kp` from 25 to 200 in `mujoco/defaults.xml` cuts mean
-  tracking error from 2.9° to 1.0° and changes the distance not at all (0.156 → 0.151 m/s).
-- *not the swing profile.* Holding the foot at the back of the stroke while it lifts, so the
-  phase lag falls where the foot is not travelling fore/aft, was the obvious fix for the
-  obvious story. It costs 250 mm on the flat (781 → 527) and 95 mm on relief. A C1 profile
-  — raised-cosine lift, cubic-Hermite retrace leaving and arriving at the stance's own
-  velocity — drops the peak knee demand from 23.6 to 10.5 rad/s and is *also* a regression
-  at the shipping period (598 mm flat).
-- *not the rate-limit clipping.* Stretch `period` to 0.65 s and the demand falls under the
-  4.0 rad/s limit for 94 % of steps. Best case measured: 798 mm flat and 652 ±37 mm over
-  terrain seeds 7–12, against a baseline of 781 mm and 630 ±27 mm. That is inside one
-  seed-sweep's spread — noise, not a gain.
-
-The measurement that explains it: **the body advances mostly by the foot moving over the
-ground, not by the stance sweeping.** Per stance at 0.20 m/s the profile commands a 45 mm
-stroke and only ~30 mm is delivered while the foot is loaded; the body's advance per cycle
-is `2 × (loaded stroke + foot travel over the ground)` and comes out at 70 mm either way.
-Stretch the period to 0.65 s and the loaded stroke *falls* to 13.5 mm while ground travel
-rises from 18.5 to 48.4 mm/s — and the speed is unchanged at 0.160 m/s. The split moves;
-the sum does not. The operating point is set by a traction equilibrium, and reshaping the
-profile only decides how much of the same total comes from each half.
-
-What is left is the foot friction (1.2) and the sphere-on-heightfield contact model, and
-both are flagged in `3d/CLAUDE.md` as estimates rather than measured values. Tuning them
-would make the *simulation* faster without making the robot faster, so they are deliberately
-left alone. If this is revisited, the thing to establish first is what the real foot does on
-the real floor — everything above says the answer is in the contact, not in the gait.
-
-Measured 2026-08-29. Baseline for any future comparison, same commands, 2.499 kg:
-flat 781.2 mm, terrain seeds 7–12 630.2 ±27.1 mm (default seed 651.9), course 5/7 cleared
-with 2839 mm of corridor reach.
-
-`leg_kinematics.py` is a closed-form solver, not numeric: the roll angle comes from the
-requirement that the foot lands in the thigh/shin plane (`py·cos q1 + pz·sin q1 = dy`),
-then a plain 2-link solve inside that plane. FK/IK round-trip is tested to 1e-6.
+`leg_kinematics.py` is closed-form: the roll angle comes from the requirement that the foot
+lands in the thigh/shin plane, then a 2-link solve in that plane. FK/IK round-trip to 1e-6:
 
 ```bash
 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest smalldog_walker/test -q   # 11 passed
 ```
 
-The prefix is not optional in this pixi env: `launch_testing`'s pytest entry point
-registers a hook against an older pluggy and pytest refuses to start at all. It has
-nothing to do with these tests.
+(the prefix is not optional in this pixi env — `launch_testing` registers a pytest hook
+against an older pluggy and pytest refuses to start).
+
+### Forward speed, and what does not move it
+
+The trot achieves ~75 % of the commanded speed. Four hypotheses were measured and are dead:
+not torque (force inside ±3 N·m 99 % of every run), not actuator stiffness (`kp` 25 → 200
+cuts tracking error 3× and moves the distance not at all), not the swing profile (a C1
+profile that halves peak knee demand is a regression), not rate-limit clipping (a period
+long enough to satisfy the limiter is inside one seed-sweep's noise). What explains it:
+**the body advances mostly by the foot moving over the ground, not by the stance sweeping**
+— stretch the period and the loaded stroke falls while ground travel rises, and the sum is
+unchanged. The operating point is a traction equilibrium set by the foot friction and the
+sphere-on-heightfield contact, and tuning those would make the simulation faster without
+making the robot faster. The answer is in the real foot on the real floor (PLAN.md step 5).
 
 ### The foot's contact patch, and why growing it changed nothing
 
-The printed foot is a ⌀26 TPU dome, so the model gives it one `sphere` geom per leg, and a
-sphere on a plane is **one contact point at any attitude**. Until 2026-09-08 the foot also
-shipped at MuJoCo's default `condim="3"`, which uses only the first column of its own
-`friction` — so a planted foot resisted no twist at all, and the torsion number sat in both
-exporters unread. Measured on that model over the 5 s flat trot:
+The foot is one `sphere` geom, so one contact point at any attitude; the shin is 34.6° off
+vertical while carrying load (46.7° worst), so the dome touches a third of the way round its
+side and rolls ~25° during a stance. `tools/foot_contact.py` builds alternatives through
+`MjSpec` (writing nothing) and runs each beside the unchanged control:
 
-```
-1.00 contact points per loaded foot,  patch spread 0.0 mm
-skid 28.7 mm/foot,  twist 20.6 deg/foot
-the shin is 34.6 deg off vertical while it is carrying load (46.7 deg worst)
-```
+| arm | what it is | flat, mm | rough, mm (6 seeds) | pts/foot | skid |
+|---|---|---|---|---|---|
+| `base` | as shipped — **the control** | 781.1 | 625.6 ±94 | 1.00 | 28.7 |
+| `grip` | same dome, torsion friction on | 785.5 | 572.1 ±222 | 1.00 | 32.5 |
+| `pad` | dome truncated 3.5 mm to a ⌀17.7 flat, raked to the loaded shin | 773.6 | 531.8 ±176 | 1.37 | 25.1 |
+| `tripod` | three ⌀10 lobes on a ⌀16 ring | 760.4 | 485.1 ±252 | 1.88 | 30.9 |
+| `ankle` | flat pad on a passive sprung rocker | 445.8 | 404.7 ±117 | 1.33 | 199.9 |
 
-That last line is the one to keep: the dome does not touch at its lowest point, it touches
-a third of the way round its side, and it rolls ~25° across the side during one stance.
+(Measured before the fitted actuator, so the absolute distances are old; the comparison
+holds.) A real patch buys nothing: flat within ±21 mm of the control, rough equal or worse
+against the seed spread, the passive ankle unambiguously negative at every spring rate.
+`--push` says why: lean 6 N on the standing robot and the body gives 5.6 mm whatever the
+foot is — the compliance that matters is the servo's `kp`, and Coulomb friction does not
+depend on area. MuJoCo contact is rigid; what a TPU dome does under 60 N (squash into a
+patch) is not represented at any shape.
 
-`tools/foot_contact.py` builds four answers to that on top of the compiled model — through
-`MjSpec`, writing nothing — and runs each beside the unchanged control. The numbers below
-are from before the condim fix, so `base` there is the old behaviour:
+What *was* changed is the contact model in `3d/mini_dog.py` section 4 (`MJ_FOOT_*`, read by
+both exporters): `condim` 3 → 4 so a planted foot resists twist (not 6 — rolling triples the
+terrain spread), a torsion coefficient derived from the real patch (⅔·a·μ·f_n, a =
+1.4…2.1 mm in 95A TPU), and `priority="1"` so the foot's numbers — `solref`/`solimp`
+included — win over the floor's. Check a contact model by reading `d.contact[i].friction`.
 
-| arm | what it is | flat, mm | rough, mm (6 seeds) | pts/foot | spread | skid |
-|---|---|---|---|---|---|---|
-| `base` | as shipped — **the control** | 781.1 | 625.6 ±94 | 1.00 | 0.0 mm | 28.7 |
-| `site` | control #2: only the touch site's radius | 781.1 | 625.6 ±94 | 1.00 | 0.0 mm | 28.7 |
-| `grip` | same dome, its torsion friction switched on | 785.5 | 572.1 ±222 | 1.00 | 0.0 mm | 32.5 |
-| `pad` | dome truncated 3.5 mm to a ⌀17.7 flat face, raked to the loaded shin | 773.6 | 531.8 ±176 | 1.37 | 3.4 mm | 25.1 |
-| `tripod` | three ⌀10 lobes on a ⌀16 ring, same ⌀26 envelope | 760.4 | 485.1 ±252 | 1.88 | 9.2 mm | 30.9 |
-| `ankle` | flat pad on a passive sprung rocker at the dome's centre | 445.8 | 404.7 ±117 | 1.33 | 2.9 mm | 199.9 |
-
-Every arm keeps the sole in the same place and moves no mass (`ankle` takes its rocker's
-8 g out of the shin), so the mass cliff in `3d/CLAUDE.md` step 6 is not what moves a
-distance here. **`pad` and `tripod` do make a real patch and it buys nothing:** on flat
-ground all three are inside ±21 mm of the 781 mm control, and on rough ground every one of
-them is equal or worse against a ±94…±252 mm seed spread. The passive ankle is the only
-unambiguous result and it is negative — it slaps down on an edge and skids seven times as
-far, at every spring rate from 0.02 to 3 N·m/rad. `--push` says why: stand the robot up and
-lean 6 N on it sideways and the body gives 5.6 mm **whatever the foot is**, because the
-compliance that matters is the servo's `kp = 25`, not the contact; and Coulomb friction does
-not depend on contact area, so no patch can change when a foot starts to slide. Past ~12 N
-every arm is shoved equally.
-
-So the small contact point is not costing this walker anything *that this model can see* —
-and the italics are the caveat. MuJoCo contact is rigid: the thing a TPU dome actually does
-under 60 N, which is squash into a patch, is not represented at any foot shape. What the
-test can compare is contact count, torsion, roll and skid; what it cannot compare is
-contact pressure, wear, or how the real foot feels on a table.
-
-#### What was actually changed
-
-Only the contact model, in `3d/mini_dog.py` section 4 — `MJ_FOOT_CONDIM`,
-`MJ_FOOT_FRICTION`, `MJ_FOOT_PRIORITY`, read by both exporters, copied by neither. No
-printed geometry moved, and `fea.py --all` is bit-identical to the pre-change run.
-
-- **`condim` 3 → 4.** The foot now resists twist. Not 6: adding the *rolling* dimension
-  takes the terrain sweep from 657 ±35 mm to 615 ±124 — the mean moves less than the
-  spread but the spread triples, and it is not even the coefficient's doing, because
-  condim 6 with the roll coefficient set to zero still reads 612 ±72. condim 4 reads
-  653 ±28, the tightest of the five. A foot is also not a wheel.
-- **The torsion coefficient is derived, not chosen.** MuJoCo's torsional friction has units
-  of length and caps the twist torque at ~⅔·a·μ·f_n for a patch of radius a. The foot
-  carries ~25 N mean and 57 N peak; 95A TPU works near 4 MPa, so a = 1.4…2.1 mm and the
-  coefficient is 1.6e-3 m. The two exporters had been carrying 0.02 and 0.05 — an order of
-  magnitude and 25× generous. Nobody had picked those; they had never been used.
-- **`priority="1"` on the foot.** MuJoCo does not use a geom's friction, it uses the
-  elementwise *max* of the pair. After the fix above both feet declared the same numbers
-  and still met the ground with different ones, because the two floors differ (`0.9 0.02
-  0.001` against `1.0 0.005 0.0001`): effective torsion 0.02 against 0.005, a factor of
-  four, in two files that now agreed. Priority also settles `solref`/`solimp`, which is
-  the bigger half — the ROS 2 foot had been landing at solref 0.014 / solimp 0.925 0.97,
-  an average of its own 0.008 / 0.95 0.99 with whatever the floor said, so the foot was as
-  soft as the scenery. Check this by reading `d.contact[i].friction`, never the XML.
-
-Re-baselined with the condim-3 control re-run beside it on the same tree, so both columns
-are measurements and neither is a remembered number:
-
-| | condim 3 (control) | **condim 4 (shipped)** |
-|---|---|---|
-| flat trot, 5 s | 788.2 mm | **790.8 mm** |
-| terrain, seeds 7–12 | 480 ±67 mm | **537 ±67 mm** |
-| terrain, default seed | 412.9 mm | **611.2 mm** |
-| course | 1/7, 1621 mm | **5/7, 2778 mm** |
-
-The course figure is a *report*, not a pass, and it is worth seeing how it behaved across
-three small variations of this one change: 2/7 at 1800 mm, 3/7 at 2209 mm, 5/7 at 2778 mm.
-Re-baseline it; do not chase it.
-
-#### Two things worth knowing before repeating any of this
-
-**The heightfield cannot compare feet.** `terrain.py`'s field is `CELL_MM = 12` and MuJoCo
-collides a heightfield as prisms at that pitch. A ⌀26 sphere spans two cells and behaves. A
-⌀17.7 flat face or a ⌀10 lobe is *smaller than one cell*, so what it collides with is the
-prisms' side walls: `pad` was on its back before the trot started, and `tripod` stood still
-with **4 kN** summed through its touch sensors — forty times the robot's weight, at a
-stand. Re-generating the same noise at 4 mm cells makes it worse, not better (46 contacts
-per foot, 6.7 kN, and the *control* arm down from 657 to 363 mm), because the cost is the
-prism count and not the cell size. So `--terrain` compares gaits and masses, as the rest of
-this README uses it, but it cannot compare feet. `--rough` is the ground that can: a plane,
-which every collider handles exactly, strewn with seeded tilted slabs across the metre the
-5 s trot covers.
-
-**A harness bug that looks exactly like a result.** The walker feeds on `<touch>` sensors
-attached to a sphere **site** around each ankle, and the shipped site is r = 14 mm. A foot
-that puts its contacts further out than that is not a better foot, it is a foot the walker
-cannot feel: with the site left alone, `pad` was upside down 0.4 s into the terrain trot
-and walked 554 mm with the feedback switched *off*. Hence `SITE_R`, and hence the `site`
-arm, which is the control that proves the enlarged site is inert on its own.
-
-## Verified run
-
-Built and run end-to-end in the spider project's `pixi` `kilted` environment on macOS
-(`colcon build` → `ros2 launch` → `ros2 run smalldog_teleop keyboard`):
-
-```
-walker up: 12 joints -> /smalldog_controller/joint_trajectory @ 100 Hz
-leg reach 102..152 mm -> body height 154..170 mm, using 158 mm, swing 22 mm
-
-keyboard -> /cmd_vel -> walker -> controller -> MuJoCo joints
-  idle (no key)                max joint swing 0.010 rad
-  after 'w'                    max joint swing 0.376 rad
-  after space                  max joint swing 0.011 rad
-controllers: both active, 0 deactivations
-```
-
-Keys were confirmed individually against `/cmd_vel`:
-`w`→vx +0.20, `d`→vy −0.20, `e`→wz −1.20, space→0, `.`→speed 0.20→0.25, `r`→height 158→162 mm.
-
-Four real defects were found and fixed by running it, not by reading it:
-
-1. `robot_description` must be wrapped in `ParameterValue(..., value_type=str)` on Kilted —
-   the launch aborted immediately without it.
-2. The **controller deactivated itself mid-run**: `fl_knee` physically reached 1.7599 rad
-   against a 1.75 rad URDF limit and `joint_limiter` threw. Fixed structurally — MuJoCo's
-   own joint ranges now sit 0.03 rad inside the URDF limits, so the measured state can
-   never violate them.
-3. The gait was asking for a 45 mm swing the leg cannot reach; the knee spent the swing
-   phase pinned at its clamp. `body_height` is now validated against the real reach band.
-4. `KeyboardTeleop.handle()` shadowed rclpy's `Node.handle` property — the teleop node
-   crashed on construction and had never run. Also fixed its shutdown race (segfault on
-   Ctrl-C) by owning the executor instead of `rclpy.spin` in a daemon thread.
-
-**Real-time factor ≈ 6.2×** on this machine: `mujoco_ros2_control` does not throttle to
-wall clock, so a 0.45 s gait period plays back in ~0.07 s and the robot looks like it is
-sprinting. Command freshness in the walker is therefore measured on the **wall** clock
-while the gait phase integrates in **sim** time — mixing them makes a steady 20 Hz teleop
-look stale on the sim clock.
+Two harness facts before repeating any of this: **the heightfield cannot compare feet** —
+at `CELL_MM` = 12 a ⌀17.7 face is smaller than one cell and collides with prism walls
+(`tripod` stood still with 4 kN through its touch sensors); `--rough` (a plane strewn with
+tilted slabs) is the arm that can. And the walker feeds on `<touch>` sites of r = 14 mm
+around each ankle; a foot whose contacts land further out is a foot the walker cannot feel
+(`SITE_R`, and the `site` control arm that proves the enlarged site is inert on its own).
 
 ## Known gaps
 
-- No hardware interface yet. The real robot needs an ST3215 bus node (ESP32 + URT-1);
-  `smalldog_ros_control` currently only wires up the MuJoCo system, mirroring
-  `spider-mujoco.urdf.xacro`. The serial half is the spider's `spider_hardware_interface.cpp`
-  equivalent and is not written.
-- Foot contact is not published under ROS 2. The IMU now is — `imu_sensor_broadcaster`
-  puts it on `/imu_sensor_broadcaster/imu` and the walker logs `IMU is live` when the
-  first message lands — but `/smalldog/foot_load` has no publisher, so the launched robot
-  runs with body levelling and without the landing latch. On the measured terrain that
-  costs nothing (levelling is the whole effect there); on step-like ground it is worth
-  about 100 mm over a 5 s trot.
-- On hardware there are no foot switches either. `/smalldog/foot_load` is deliberately a
-  load, not a boolean, so the knee servo's own load reading can drive it through
-  `contact_threshold`. That path is sketched in `smalldog_walker/contact.py` and is
-  neither wired up nor measured on hardware.
-- No odometry. The GPS is mounted, massed and framed but not read: no NMEA driver, no
-  `NavSatFix`, and nothing that would fuse one with the IMU.
-- Nothing consumes the LiDAR. The cloud is published and correct, and no node subscribes
-  to it: there is no mapping, no obstacle layer and no perception in the gait. The sensor
-  model is also not motion-compensated — every point of a frame is cast from the pose at
-  the end of that frame's 100 ms window, which at 0.2 m/s is 20 mm of missing distortion.
-- Keys reach the teleop from the MuJoCo window only while that window has focus, and only
-  on press — GLFW auto-repeat is dropped, which costs nothing here because a press latches
-  the command until the next one. Non-printable keys (arrows, modifiers) are not forwarded.
-- Nothing throttles the sim to real time; see the real-time factor note above.
-- Stale nodes from a killed launch (`robot_state_publisher` especially) block the next
-  `controller_manager` from coming up. `pkill -f robot_state_publisher` before relaunching.
-- **The 90° roll and pitch limits are where the ROM *scan window* stopped, not where the
-  leg fouls.** `mini_dog.rom_scan_all()` sweeps roll and pitch over ±90° and both come
-  back free at both ends, which `3d/CLAUDE.md` is explicit about reading as "the end of
-  the scan, not an interference limit" — `3d/export_sim.py --check` even prints that
-  caveat next to the number. Since 2026-09-11 those are the limits this workspace ships
-  and the band `robot/runtime/calib.py` clamps the real servos to, so the honest statement
-  is that the mechanism has been *shown* to reach ±90° and has never been asked whether it
-  reaches further. Widening the scan window in `3d/mini_dog.py` is the way to find out;
-  nothing here should assume 90° is a hard stop.
+- No hardware interface: `smalldog_ros_control` wires up the MuJoCo system only. The real
+  robot runs `robot/runtime` (pure Python, no ROS) for now.
+- Foot contact is not published under ROS 2 (`/smalldog/foot_load` has no publisher), so the
+  launched robot runs with levelling and heading hold but without the landing latch. On
+  hardware there are no foot switches either — the topic is a *load*, so the knee servo's
+  own load reading can drive it (`smalldog_walker/contact.py`; measured in
+  `robot/README.md`).
+- No odometry: the GPS is framed but not read.
+- Nothing consumes the LiDAR: no mapping, no obstacle layer. The sensor model is not
+  motion-compensated (every point of a frame is cast from the end-of-frame pose — 20 mm at
+  0.2 m/s).
+- Keys reach the teleop only while the MuJoCo window has focus, on press only (GLFW
+  auto-repeat dropped); non-printable keys are not forwarded.
+- `pkill -f robot_state_publisher` before relaunching, or the next `controller_manager`
+  never comes up.

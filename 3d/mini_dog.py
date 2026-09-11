@@ -138,7 +138,7 @@ THRUST_SEAT = 3.00                    # lug behind each nut - this is what takes
 # always last and always blind.  Two answers were built for that.  The first was four @6
 # bores coaxial with the screws, driven from inside the tray; it reached ONE screw of four
 # - a deck boss stood in front of two, the outboard bore's axis ran 0.2 mm inside the
-# tray's own side wall, and a coaxial bore only lets a key tilt 12 deg (MAC.md, 2026-09-03).
+# tray's own side wall, and a coaxial bore only lets a key tilt 12 deg (git history, 2026-09-03).
 # The second was two @6 channels leaning 20 deg outboard through the tray's front corner,
 # with the leg turned a quarter turn by hand between screws so two channels served all
 # four.  That one worked, and it cost the chassis a @6 hole through its front corner post
@@ -903,7 +903,7 @@ LIDAR_SIGMA  = 20.0                   # mm, 1-sigma range noise (+-2 cm spec) **
 # parts could pass neither.  NO CHECK IN THIS FILE COULD SEE IT: the two parts share no
 # solid, so interference() reads clear, and a fastener that lines up is not a volume.
 # Reading the pair means the mast now follows the deck wherever it goes.  Fixed
-# 2026-09-11; recorded in ../MAC.md.
+# 2026-09-11.
 GPS_X, GPS_Y = DECK_SCREWS[0][0], DECK_SCREWS[0][1]   # the deck's rear boss pair
 GPS_PAD_R, GPS_PAD_H = 4.8, 10.0      # r is 1 x D of wall round an M3 clearance hole,
                                       # which is the whole job of the pad.  At |y| = 41
@@ -2834,8 +2834,8 @@ def fork_access():
     of four, then two tilted channels through the tray's corner.  Both are in the history
     above DRIVER_D.  What made this simple was not a better hole, it was the cradle
     becoming a separate part.  Keep the probe honest about that: it must end in open air,
-    not inside a bore, which is what the first version got wrong and what MAC.md of
-    2026-09-03 cost."""
+    not inside a bore, which is what the first version got wrong and what the
+    2026-09-03 bores cost."""
     out = {}
     # The roll joint's neighbour is cradle_front ALONE, and that is the whole point of the
     # split: the fork goes on with the cradle in hand, before its four screws hold it to
