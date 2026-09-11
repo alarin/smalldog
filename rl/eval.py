@@ -123,7 +123,8 @@ import numpy as np
 def parse():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("run", help="a runs/<name> directory written by train_ppo.py")
+    ap.add_argument("run", help="a runs/<name> directory written by train_ppo.py, "
+                                "or one of its runs/<name>/ckpt/<step> checkpoints")
     ap.add_argument("--seconds", type=float, default=10.0)
     ap.add_argument("--episodes", type=int, default=64,
                     help="MJX rollouts per command in the battery")
@@ -182,9 +183,15 @@ def main():
 
     p = actuator.load()
     print(f"\nrun         {run_dir}")
-    print(f"trained     {targs['num_timesteps']/1e6:.1f} M steps, "
+    # a runs/<name>/ckpt/<step> directory carries the same params + run.json,
+    # minus the wall clock: the run is still going when one of these is scored
+    trained = (f"{meta['step']/1e6:.1f} of {targs['num_timesteps']/1e6:.1f} M steps"
+               if "wall_clock_min" not in meta else
+               f"{targs['num_timesteps']/1e6:.1f} M steps")
+    print(f"trained     {trained}, "
           f"{targs['num_envs']} envs, boxes {targs['boxes']}, "
-          f"terrain {targs['terrain']}, {meta['wall_clock_min']:.1f} min")
+          f"terrain {targs['terrain']}"
+          + (f", {meta['wall_clock_min']:.1f} min" if "wall_clock_min" in meta else ""))
 
     env = Walk(terrain=targs["terrain"], n_boxes=targs["boxes"])
 
