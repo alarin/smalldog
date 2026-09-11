@@ -41,6 +41,7 @@ this script prints the numbers and eval.py produces the honest ones.
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import datetime
 import functools
 import json
@@ -77,10 +78,12 @@ def parse():
                     help="only keep the final weights. The row-per-checkpoint "
                          "video needs the intermediate ones and they cannot be "
                          "recovered afterwards.")
-    ap.add_argument("--tracking-sigma", type=float, default=None,
-                    help="override rewards.Weights.tracking_sigma, the width of the "
-                         "linear-velocity tracking term. Every other weight stays "
-                         "at its default. Recorded in run.json like every arg.")
+    ap.add_argument("--reward", action="append", default=[], metavar="FIELD=VALUE",
+                    help="override one rewards.Weights field (a weight or a width), "
+                         "e.g. --reward tracking_sigma=0.1 --reward joint_vel=0. "
+                         "Repeatable; everything else stays at its default. An "
+                         "unknown field is an error. Recorded in run.json like "
+                         "every arg.")
     ap.add_argument("--name", default=None)
     ap.add_argument("--smoke", action="store_true",
                     help="a two-minute run that proves the loop closes and "
@@ -117,7 +120,19 @@ def main():
     print(f"run         {out}")
     print(f"cache       {jaxenv.cache_line(cache)}")
 
-    weights = Weights(tracking_sigma=a.tracking_sigma) if a.tracking_sigma else None
+    weights = None
+    if a.reward:
+        fields = {f.name for f in dataclasses.fields(Weights)}
+        over = {}
+        for kv in a.reward:
+            k, v = kv.split("=", 1)
+            if k not in fields:
+                sys.exit(f"--reward {kv}: no such Weights field; "
+                         f"one of {sorted(fields)}")
+            over[k] = float(v)
+        weights = Weights(**over)
+        for k, v in over.items():
+            print(f"reward      {k} = {v:g}")
     env = Walk(terrain=a.terrain, n_boxes=a.boxes, weights=weights)
     eval_env = Walk(terrain=a.terrain, n_boxes=a.boxes, weights=weights)
     for n in env.build_notes:
