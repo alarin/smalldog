@@ -395,7 +395,10 @@ def rollout_mujoco(mj, policy_jit, env, p, cmd, seconds, shot=None):
             duty = actuator.duty(p, target - q, w, xp=np)
             i = (duty * u_bat - p.k_e * w) / p.R
             volt = u_bat - 0.0 * np.sum(np.abs(i))     # nominal: no sag
-            d.ctrl[act] = actuator.motor_torque(p, duty * volt, w, xp=np)
+            # tau_c_external: the Coulomb floor is MuJoCo's frictionloss on
+            # every MuJoCo path (actuator.friction, model.build_spec).
+            d.ctrl[act] = actuator.motor_torque(p, duty * volt, w, xp=np,
+                                                tau_c_external=True)
             mujoco.mj_step(mj, d)
 
         if -gravity_b[2] < 0.4 and not fell:

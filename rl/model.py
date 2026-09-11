@@ -27,14 +27,30 @@ What gets changed, and why each one is a training concern rather than a model fi
    servo, good enough for the analytic trot in `ros2/`, and check_model.py lists
    it under "GUESSED — and not a servo model".
 
-2. ARMATURE BECOMES THE REFLECTED ROTOR INERTIA, DAMPING AND FRICTIONLOSS GO TO ZERO.
+2. ARMATURE BECOMES THE REFLECTED ROTOR INERTIA, DAMPING GOES TO ZERO, AND
+   FRICTIONLOSS BECOMES THE MEASURED COULOMB FLOOR.
    Not a tightening — a move. `armature`, `damping` and `frictionloss` in the
-   MJCF are three of the four guesses check_model.py flags. Once `actuator.py`
-   supplies Coulomb friction (tau_c), viscous friction (b_v) and back-EMF damping
-   (k_w = k_u*k_e), leaving MuJoCo's own damping and frictionloss in place counts
-   the same physics twice. The reflected inertia J_m has to stay in MuJoCo — it
-   is inertia, it belongs in the mass matrix, and at 1:345 it is ~73x the knee
-   link's own, which check_model.py measures and calls the dominant term.
+   MJCF are three of the four guesses check_model.py flags. `actuator.py`
+   supplies viscous friction (b_v) and back-EMF damping (k_w = k_u*k_e), so
+   leaving MuJoCo's own damping in place counts the same physics twice. The
+   reflected inertia J_m has to stay in MuJoCo — it is inertia, it belongs in the
+   mass matrix, and at 1:345 it is ~73x the knee link's own, which check_model.py
+   measures and calls the dominant term.
+
+   `frictionloss` USED to go to zero on the same argument, and that was the one
+   place the argument failed (PLAN.md 2b). `actuator.py`'s Coulomb term is
+   `(tau_c + mu_load*|tau_t|) * tanh(w/v_eps)`, which is exactly zero at rest, so
+   a standing or stancing robot here felt NO joint friction at all while the real
+   servo breaks away at 0.18-0.35 N*m and the ROS 2 model carries 0.184. Karnopp
+   fixes this inside `actuator.simulate()`, which owns every torque as state; it
+   cannot be done on this path, where MuJoCo owns the load and the net torque
+   does not exist when the law is called. So the floor is MuJoCo's own
+   `frictionloss` — a real stick-slip constraint, solved with everything else —
+   set to the fitted `tau_c`, and every MuJoCo caller of `actuator.motor_torque`
+   passes `tau_c_external=True` so it is applied once. What MuJoCo cannot carry
+   is the load-dependent half: `frictionloss` is a constant per joint, so
+   `mu_load*|tau_t|` (~0.11 N*m of the ~0.30 at stance) keeps the smooth law and
+   keeps lacking stick.
 
 3. THE FEET GET priority=1.
    check_model.py's first warning: the foot declares solref 0.008 s, the floor
@@ -138,17 +154,20 @@ def build_spec(terrain: bool = False, n_boxes: int = 0, p: actuator.Params | Non
     notes.append(f"{len(spec.actuators)} position actuators -> torque motors, "
                  f"+-{TORQUE_CEILING_NM:g} N*m ceiling")
 
-    # 2. armature <- J_m; damping and frictionloss go to the law.
+    # 2. armature <- J_m; damping goes to the law; frictionloss is the floor
+    #    the law cannot supply at rest (docstring 2, PLAN.md 2b).
     n = 0
     for j in spec.joints:
         if j.type == mujoco.mjtJoint.mjJNT_FREE:
             continue
         j.armature = float(p.J_m)
         j.damping = [0.0, 0.0, 0.0]     # MjsJoint.damping is a 3-vector, not a scalar
-        j.frictionloss = 0.0
+        j.frictionloss = float(p.tau_c)
         n += 1
     notes.append(f"{n} joints: armature <- J_m = {p.J_m:g} kg*m^2, "
-                 f"damping and frictionloss -> 0 (actuator.py supplies b_v, tau_c, k_w)")
+                 f"damping -> 0 (actuator.py supplies b_v and k_w), "
+                 f"frictionloss <- tau_c = {p.tau_c:g} N*m (MuJoCo sticks; the "
+                 f"law drops its own tau_c on this path)")
 
     # 3. the feet win their own contact parameters.
     if foot_priority:
@@ -332,6 +351,13 @@ def sample_actuator_params(rng, n: int, ranges: dict | None = None,
 
     Per-joint where the spread is per-servo (twelve different motors out of one
     bag), per-environment where it is not (one pack, one bus).
+
+    `tau_c` is NOT here, and its absence is the one that needs saying out loud,
+    because it was here until 2026-09-11. The Coulomb floor is now MuJoCo's
+    `dof_frictionloss` — the only mechanism in this tree that can hold a joint at
+    rest — and a model field can only be randomised by brax's randomization_fn,
+    so its draw lives in env/randomize.py instead. Same range, same evidence,
+    per environment rather than per episode.
     """
     ranges = ranges or domain_ranges()
     base = base or actuator.load(quiet=True)
@@ -348,7 +374,7 @@ def sample_actuator_params(rng, n: int, ranges: dict | None = None,
     return dict(
         # per servo
         k_u=mul("k_u", (n, 12)), k_e=mul("k_e", (n, 12)), R=mul("R", (n, 12)),
-        J_m=mul("J_m", (n, 12)), tau_c=mul("tau_c", (n, 12)), b_v=mul("b_v", (n, 12)),
+        J_m=mul("J_m", (n, 12)), b_v=mul("b_v", (n, 12)),
         mu_load=mul("mu_load", (n, 12)), kp=mul("kp", (n, 12)),
         deadband=absolute(A, "deadband_abs", (n, 12)),
         punch=absolute(A, "punch_abs", (n, 12)),

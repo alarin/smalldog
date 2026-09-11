@@ -371,11 +371,18 @@ class Walk(PipelineEnv):
     # --------------------------------------------------------------- torque
     def _params(self, info):
         """A Params whose fields are this environment's draw. One copy of the law:
-        these feed actuator.py's own functions with xp=jnp."""
+        these feed actuator.py's own functions with xp=jnp.
+
+        `tau_c` is deliberately NOT replaced here. The Coulomb floor is MuJoCo's
+        `dof_frictionloss` on this path (model.py docstring 2), so the law is
+        called with `tau_c_external=True` and whatever `_p0.tau_c` holds is
+        unused; the per-environment spread of it is drawn in env/randomize.py.
+        Replacing it here would look like it mattered and would not.
+        """
         return dataclasses.replace(
             self._p0,
             k_u=info["k_u"], k_e=info["k_e"], R=info["R"], J_m=info["J_m"],
-            tau_c=info["tau_c"], b_v=info["b_v"], mu_load=info["mu_load"],
+            b_v=info["b_v"], mu_load=info["mu_load"],
             kp=info["kp"],
             deadband=info["deadband"], punch=info["punch"])
 
@@ -400,7 +407,11 @@ class Walk(PipelineEnv):
         # only satisfied by accident is not a floor.)
         i = (d * u_bat - p.k_e * w) / p.R
         volt = jnp.clip(u_bat - sag * jnp.sum(jnp.abs(i)), 0.0, u_bat)
-        return actuator.motor_torque(p, d * volt, w, xp=jnp)
+        # tau_c_external: MuJoCo's frictionloss applies the Coulomb floor here,
+        # because tanh(w/v_eps) cannot hold a joint at rest and a stance foot
+        # spends most of its time there. Counting it in both places would double
+        # it (actuator.friction, model.build_spec, PLAN.md 2b).
+        return actuator.motor_torque(p, d * volt, w, xp=jnp, tau_c_external=True)
 
     # ---------------------------------------------------------------- reset
     def reset(self, rng: jax.Array) -> State:
@@ -448,6 +459,11 @@ class Walk(PipelineEnv):
         """
         R = self._ranges
         A, S, B = R["actuator"], R["supply"], R["bus"]
+        # 13 keys, and keys[4] is spare: it used to draw tau_c, which is now
+        # MuJoCo's dof_frictionloss and is drawn per environment in
+        # env/randomize.py. The count is left at 13 rather than renumbered
+        # because renumbering changes every other draw for a given seed, and a
+        # run would stop being comparable to the ones before it for no reason.
         keys = jax.random.split(rng, 13)
 
         def per_joint(key, name, nominal):
@@ -467,7 +483,6 @@ class Walk(PipelineEnv):
             "k_e": per_joint(keys[1], "k_e", self._p0.k_e),
             "R": per_joint(keys[2], "R", self._p0.R),
             "J_m": per_joint(keys[3], "J_m", self._p0.J_m),
-            "tau_c": per_joint(keys[4], "tau_c", self._p0.tau_c),
             "b_v": per_joint(keys[5], "b_v", self._p0.b_v),
             "mu_load": per_joint(keys[12], "mu_load", self._p0.mu_load),
             "kp": per_joint(keys[6], "kp", self._p0.kp),

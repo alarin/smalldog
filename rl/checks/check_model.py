@@ -312,8 +312,14 @@ def check_sensors(m, R):
 #: deliberately NOT here: J_l, theta_bl, k_bl, c_bl are load/backlash structure,
 #: duty_max / loop_hz / v_eps / kd are configuration or solver constants, and
 #: none of them is a manufacturing spread.
-PER_UNIT_FIELDS = ["k_u", "k_e", "R", "J_m", "tau_c", "b_v", "mu_load", "kp",
+PER_UNIT_FIELDS = ["k_u", "k_e", "R", "J_m", "b_v", "mu_load", "kp",
                    "deadband", "punch"]
+
+# Per-unit spreads that are MuJoCo model fields, so they are drawn by brax's
+# randomization_fn in env/randomize.py and NOT by sample_actuator_params. The
+# probe for these is the model field itself, below: a range with nothing reading
+# it is the same defect whichever side of the line it is on.
+MODEL_FIELDS = {"tau_c": "dof_frictionloss"}
 
 
 def check_randomisation(R):
@@ -327,6 +333,12 @@ def check_randomisation(R):
     neighbour was `(n, 12)`, and it took reading `_params()` live on the training
     box to see it.  A missing entry is not a crash and never will be, which is
     exactly why it needs a probe rather than a test of something else.
+
+    `tau_c` moved to MuJoCo on 2026-09-11 — it is `dof_frictionloss` now, because
+    only a stick-slip constraint holds a joint at rest (PLAN.md 2b) — so it is
+    checked as a model field instead: installed non-zero by model.build_spec(),
+    and randomised in env/randomize.py, which this check cannot import because it
+    needs jax and this file runs on the robot too.
     """
     R.head("domain randomisation — is every per-unit servo parameter batched")
     try:
@@ -355,11 +367,36 @@ def check_randomisation(R):
             lo, hi = ranges[key]["range"]
             R.say(INFO, f"{f:<9} {str(np.shape(a)):<9} "
                         f"x{lo:.2f}..{hi:.2f}  {ranges[key]['evidence']}")
-    extra = [k for k in ranges if k not in PER_UNIT_FIELDS
-             and k.removesuffix("_abs") not in PER_UNIT_FIELDS]
+    # the fields MuJoCo owns: probe the compiled training model, not the draw
+    try:
+        m_tr, _ = model_mod.build(terrain=False, n_boxes=0)
+        P_tr = model_mod.robot_params()
+        _, vadr, _ = model_mod.joint_order(m_tr, P_tr)
+        p0 = actuator.load(quiet=True)
+        fl = np.asarray(m_tr.dof_frictionloss)[np.asarray(vadr)]
+        if np.any(fl <= 0.0):
+            R.say(FAIL, f"tau_c      dof_frictionloss is {fl.min():.3f} on some "
+                        f"joint — the law drops its own tau_c on this path "
+                        f"(tau_c_external), so zero here is NO Coulomb friction "
+                        f"at all, at rest or moving")
+        elif not np.allclose(fl, p0.tau_c, rtol=1e-6):
+            R.say(FAIL, f"tau_c      dof_frictionloss {fl.min():.4f}..{fl.max():.4f} "
+                        f"is not the fitted tau_c {p0.tau_c:.4f}")
+        else:
+            lo, hi = ranges["tau_c"]["range"]
+            R.say(INFO, f"{'tau_c':<9} dof_frictionloss = {p0.tau_c:.4f} N*m on "
+                        f"12 joints, x{lo:.2f}..{hi:.2f} per environment in "
+                        f"env/randomize.py  {ranges['tau_c']['evidence']}")
+    except Exception as e:                                    # pragma: no cover
+        R.say(WARN, f"could not build the training model to check tau_c: {e}")
+
+    known = set(PER_UNIT_FIELDS) | set(MODEL_FIELDS)
+    extra = [k for k in ranges if k not in known
+             and k.removesuffix("_abs") not in known]
     for k in extra:
-        R.say(WARN, f"{k} is in domain_rand.json but not in PER_UNIT_FIELDS — "
-                    f"decide whether it is a per-unit spread and list it, or drop it")
+        R.say(WARN, f"{k} is in domain_rand.json but is in neither "
+                    f"PER_UNIT_FIELDS nor MODEL_FIELDS — decide whether it is a "
+                    f"per-unit spread and list it, or drop it")
 
 
 # ------------------------------------------------------------- 7. ledger

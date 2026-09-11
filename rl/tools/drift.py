@@ -94,7 +94,8 @@ def rollout(seed):
         for _ in range(n_sub):
             q, w = d.qpos[qadr], d.qvel[vadr]
             d.ctrl[act] = actuator.motor_torque(
-                p, actuator.duty(p, target - q, w, xp=np) * 12.0, w, xp=np)
+                p, actuator.duty(p, target - q, w, xp=np) * 12.0, w, xp=np,
+                tau_c_external=True)
             mujoco.mj_step(mj, d)
         R = np.zeros(9); mujoco.mju_quat2Mat(R, d.qpos[3:7]); R = R.reshape(3, 3)
         vb = R.T @ d.qvel[0:3]
