@@ -81,6 +81,26 @@ the already-generated description.
   the law's output MOVE across this range — and `model.EPISODE_DRAW` is the one
   declaration both the check and the env walk. Add an axis by adding a row there,
   and expect the check to tell you if nothing consumes it.
+- **Randomise the field the PHYSICS reads, and that is sometimes a MuJoCo field.**
+  Two ranges have left `EPISODE_DRAW` for `env/randomize.py`, on the same day and
+  by opposite routes, and the rule that covers both is worth more than either
+  story. `J_m` was never read on the training path at all. `tau_c` IS read by the
+  law, but not on this path: the Coulomb term is `(tau_c + mu_load*|tau_t|) *
+  tanh(w/v_eps)`, exactly zero at rest, so it cannot hold a standing or stancing
+  joint — MuJoCo's `dof_frictionloss` is the only stick-slip constraint in the
+  tree, `model.build_spec()` installs the fitted `tau_c` there, and every MuJoCo
+  caller of the law passes `tau_c_external=True` so the floor is applied once
+  (PLAN.md 2b). A model field can only be randomised by brax's
+  `randomization_fn`, so both are drawn per ENVIRONMENT now, as `dof_armature`
+  and `dof_frictionloss`. Per environment rather than per episode is a real cost
+  in variety per unit of wall-clock and it buys correctness; for these two terms
+  — rotor inertia, grease and preload — it is not even a worse physical reading,
+  because neither changes between one episode and the next. `check_model.py`
+  asserts both are ABSENT from the episode draw and installed at the fitted
+  nominal in the compiled model; `python -m env.randomize` asserts the draw on
+  top of them comes back batched, in range, and zero on the free joint. That
+  second one cannot live in `check_model.py`: it needs jax, and `check_model.py`
+  has to run on the robot.
 - **Run `checks/check_model.py` before training against a changed model.** It is
   not a second copy of `export_sim.py --check`, which asks whether the model is
   still the robot. This one asks whether the model is fit to train against: the
@@ -149,6 +169,29 @@ retrain rather than a fine-tune. `eval.py` numbers move with them.
   a key, so the hardest shove was always followed by the longest wait; and the
   torque ceiling handed to MuJoCo went 5.0 -> 7.5 N*m, derived, because 13.2 % of
   `(k_u, u_bat)` draws asked for more than 5.0 and were silently clipped.
+
+- **2026-09-11 — the training path had no friction at rest (PLAN.md 2b).**
+  `model.build_spec()` zeroed MuJoCo's `frictionloss` on the grounds that
+  `actuator.py` supplied it, and `actuator.py`'s Coulomb term is
+  `(tau_c + mu_load*|tau_t|) * tanh(w/v_eps)` — exactly zero at w = 0. So a
+  standing or stancing robot in this tree felt NO joint friction at all, while
+  the real servo breaks away at 0.18-0.35 N*m and `ros2/` has carried 0.184 since
+  2026-09-09. `frictionloss` is now the fitted `tau_c`, a real stick-slip
+  constraint solved with everything else, and `friction()`/`motor_torque()`/
+  `bus_torque()` take a `tau_c_external` flag that every MuJoCo caller passes —
+  `env/walk.py`, `eval.py`, `tools/{ceiling,drift,gait}.py` and
+  `check_model.py`'s probe — so the floor is applied once rather than twice. What
+  stays in the law is deliberate: `frictionloss` is one constant per joint and
+  cannot carry `mu_load*|tau_t|` (~0.11 N*m of the ~0.30 at stance), and viscous
+  drag does not stick. Measured: torque off, 1 s from the CAD stance, the base
+  fell **107.7 mm before and 65.6 mm after**, worst joint 93.9° against 44.1°;
+  holding the stance under the law the residual joint speed at 3 s goes
+  **0.0033 -> 0.0009 rad/s**. `tau_c` changed sides with it — it is a model field
+  now, so its spread is drawn in `env/randomize.py` over the same [0.40, 2.20],
+  per environment. A joint that now sticks is a different environment: **retrain,
+  do not fine-tune**, and note that this and the episode-boundary entry above it
+  landed on the same day from two machines and compose — `EPISODE_DRAW` lists
+  neither `tau_c` nor `J_m`, and `env/randomize.py` draws both.
 
 ## Notes
 

@@ -414,7 +414,11 @@ def rollout_mujoco(mj, policy_jit, env, p, cmd, seconds, shot=None):
             # sag = 0: a nominal pack, deliberately. The battery test is the
             # place the supply is swept; this pass is about the two engines
             # disagreeing, and it can only be that if everything else is held.
-            d.ctrl[act] = actuator.bus_torque(p, target - q, w, u_bat, 0.0, xp=np)
+            #
+            # tau_c_external: the Coulomb floor is MuJoCo's frictionloss on
+            # every MuJoCo path (actuator.friction, model.build_spec).
+            d.ctrl[act] = actuator.bus_torque(p, target - q, w, u_bat, 0.0,
+                                              xp=np, tau_c_external=True)
             mujoco.mj_step(mj, d)
 
         if -gravity_b[2] < 0.4 and not fell:

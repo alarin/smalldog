@@ -16,12 +16,29 @@ There are two randomisations in this tree and the split is not arbitrary:
   outside MuJoCo — so they can be resampled at every episode boundary, which is
   better, and they cost twelve floats per environment.
 
-The split is not a matter of taste, and getting it wrong is silent. `J_m` was in
-the per-episode draw for the whole of step 4 and did nothing: it went into an
-`actuator.Params` field, and not one function on the training path reads it —
-`duty`, `current`, `friction`, `motor_torque` all ignore it, because the inertia
-belongs to the mass matrix and MuJoCo owns that. It is randomised HERE now, as
-`dof_armature`, out of the same range.
+The split is not a matter of taste, and getting it wrong is silent. TWO fields
+have crossed the line into this file, on the same day and for two different
+reasons, and neither move was a preference:
+
+  `J_m` was in the per-episode draw for the whole of step 4 and did nothing: it
+  went into an `actuator.Params` field, and not one function on the training path
+  reads it - `duty`, `current`, `friction`, `motor_torque` all ignore it, because
+  the inertia belongs to the mass matrix and MuJoCo owns that. It is randomised
+  HERE now, as `dof_armature`, out of the same range.
+
+  `tau_c` crossed on 2026-09-11 for the opposite reason: the law reads it, but the
+  Coulomb floor has to be MuJoCo's `dof_frictionloss` to stick at rest at all
+  (model.py docstring 2, PLAN.md 2b), so the MuJoCo callers pass
+  `tau_c_external=True` and the law's copy is unused on that path. A model field
+  can only be randomised by brax's randomization_fn, so its spread is drawn HERE,
+  per environment and fixed for the run, instead of per episode as it was. The
+  physical reading is not worse: grease and preload are what this term varies
+  with, and they do not change between one episode and the next. What is lost is
+  variety per unit of wall-clock, and the cost in VRAM is nv floats.
+
+One rule covers both, and it is the one to apply to the next candidate: randomise
+the field the PHYSICS reads. A draw that lands anywhere else lands nowhere, and
+nothing crashes when it does.
 
 Both read params/domain_rand.json, and every range in it is labelled `measured`,
 `spec` or `guessed`. The masses are measured (real solids in 3d/mini_dog.py) and
@@ -58,8 +75,14 @@ def domain_randomize(sys, rng: jax.Array, ranges: dict | None = None,
     p_lo, p_hi = ranges["body"]["payload_kg_abs"]["range"]
     h_lo, h_hi = ranges["terrain"]["box_height_m_abs"]["range"]
     d_lo, d_hi = ranges["terrain"]["box_density"]["range"]
+    # The two that left model.EPISODE_DRAW, named there rather than spelled out
+    # here: which range each of them reads is model.py's to declare, so a rename
+    # in params/domain_rand.json breaks in one place instead of silently drawing
+    # the wrong band in the other.
     a_block, a_key = model_mod.ARMATURE_RANGE
     j_lo, j_hi = ranges[a_block][a_key]["range"]
+    f_block, f_key = model_mod.FRICTIONLOSS_RANGE
+    tc_lo, tc_hi = ranges[f_block][f_key]["range"]
 
     if n_boxes and box_geoms is None:
         raise ValueError(
@@ -78,7 +101,8 @@ def domain_randomize(sys, rng: jax.Array, ranges: dict | None = None,
     patch = model_mod.BOX_PATCH_M
 
     def one(key):
-        k_fr, k_m, k_c, k_p, k_j, k_up, k_h, k_d, k_xy = jax.random.split(key, 9)
+        (k_fr, k_m, k_c, k_p, k_j, k_fl,
+         k_up, k_h, k_d, k_xy) = jax.random.split(key, 10)
 
         # -- foot friction. Sliding only; the torsional and rolling components
         #    of MuJoCo's friction triple are not what a printed foot varies in.
@@ -110,8 +134,20 @@ def domain_randomize(sys, rng: jax.Array, ranges: dict | None = None,
         ipos = sys.body_ipos.at[1].add(
             jax.random.uniform(k_c, (3,), minval=c_lo, maxval=c_hi))
 
+        # -- the servo's Coulomb friction, which lives in MuJoCo because only a
+        #    stick-slip constraint can hold a joint at rest. Multiplicative on
+        #    the nominal model.build_spec() installed (the fitted tau_c), and over
+        #    the WHOLE dof vector rather than over dof_idx like the armature
+        #    above. The asymmetry is deliberate: build_spec() leaves the free
+        #    joint's frictionloss at 0, so scaling all nv entries cannot disturb
+        #    it and no index has to be hard-coded to protect it. `dof_armature`
+        #    takes the index instead, because its free-joint entries are not ours
+        #    to scale whatever they hold.
+        fl = sys.dof_frictionloss * jax.random.uniform(
+            k_fl, (sys.nv,), minval=tc_lo, maxval=tc_hi)
+
         out = {"geom_friction": fr, "body_mass": mass, "body_ipos": ipos,
-               "dof_armature": arm}
+               "dof_armature": arm, "dof_frictionloss": fl}
 
         if n_boxes:
             # Each box is raised to a random top height, or left buried. Density
@@ -145,3 +181,85 @@ def domain_randomize(sys, rng: jax.Array, ranges: dict | None = None,
     in_axes = jax.tree.map(lambda _: None, sys)
     in_axes = in_axes.tree_replace({k: 0 for k in fields})
     return sys_v, in_axes
+
+
+def _selftest(n: int = 8):
+    """Every field this function touches must come back BATCHED, n copies deep.
+
+    checks/check_model.py runs the same probe on the per-episode draw and cannot
+    run this one: it has to work on the robot, where there is no jax. So it lives
+    here and is run by hand - `python -m env.randomize` from rl/ - whenever this
+    file or model.build_spec() moves. It exists for one reason: `mu_load` shipped
+    unrandomised for weeks and the only symptom was a shape.
+
+    `dof_frictionloss` and `dof_armature` are the two fields most worth probing,
+    because they are the two that arrived here from the per-episode draw and
+    because a zero in either is not a narrower spread. A zero frictionloss is no
+    Coulomb friction at all on a path whose law has handed the floor away
+    (`tau_c_external`, model.py docstring 2); a zero armature is a rotor with no
+    inertia in the term that dominates the knee's.
+    """
+    import numpy as np
+
+    from env.walk import Walk
+
+    ok = True
+
+    def check(name, good, detail=""):
+        nonlocal ok
+        ok &= bool(good)
+        print(f"  {'ok  ' if good else 'FAIL'} {name}{'  ' + detail if detail else ''}")
+
+    env = Walk()
+    keys = jax.random.split(jax.random.PRNGKey(0), n)
+    sys_v, in_axes = domain_randomize(env.sys, keys,
+                                      joint_dofs=env.joint_dofs)
+
+    vadr = np.asarray(env._vadr)
+    ranges = model_mod.domain_ranges()
+    p0 = model_mod.actuator.load(quiet=True)
+
+    def probe(field, nominal, block_key, units):
+        """Batched, non-zero and in range on the twelve joints; free joint untouched."""
+        a = np.asarray(getattr(sys_v, field))
+        base = np.asarray(getattr(env.sys, field))
+        lo, hi = ranges[block_key[0]][block_key[1]]["range"]
+        check(f"{field} is batched", a.shape == (n, env.sys.nv),
+              f"{a.shape} vs ({n}, {env.sys.nv})")
+        check(f"brax is told {field} is batched",
+              getattr(in_axes, field) == 0)
+        joints = a[:, vadr]
+        check(f"{field} is non-zero on every joint of every environment",
+              bool(joints.min() > 0.0), f"min {joints.min():.4g} {units}")
+        check(f"{field} spans the range and nothing wider",
+              bool(joints.min() >= lo * nominal - 1e-9
+                   and joints.max() <= hi * nominal + 1e-9),
+              f"{joints.min():.4g}..{joints.max():.4g} of "
+              f"{lo * nominal:.4g}..{hi * nominal:.4g}")
+        check(f"{field} differs between environments", bool(joints.std() > 0.0),
+              f"sd {joints.std():.4g} {units}")
+        free = np.delete(a, vadr, axis=1)
+        free0 = np.delete(base, vadr)
+        check(f"{field} leaves the free joint alone",
+              bool(np.all(free == free0[None, :])),
+              f"max |delta| {np.abs(free - free0[None, :]).max():.4g}")
+
+    # the Coulomb floor: build_spec installs the fitted tau_c on the twelve
+    # joints and 0 on the free joint, and this draw multiplies it.
+    probe("dof_frictionloss", float(p0.tau_c),
+          model_mod.FRICTIONLOSS_RANGE, "N*m")
+    # the reflected rotor inertia, the other field that left the episode draw.
+    probe("dof_armature", float(p0.J_m),
+          model_mod.ARMATURE_RANGE, "kg*m^2")
+
+    mass = np.asarray(sys_v.body_mass)
+    check("body_mass is still batched", mass.shape == (n, env.sys.nbody))
+    fr = np.asarray(sys_v.geom_friction)
+    check("geom_friction is still batched", fr.shape[0] == n)
+
+    print("  PASS" if ok else "  FAILED")
+    return ok
+
+
+if __name__ == "__main__":
+    raise SystemExit(0 if _selftest() else 1)

@@ -60,7 +60,8 @@ for CMDV in (0.2,0.4,0.6,0.8):
         tgt=np.clip(st_j+a_*ACTION_SCALE,lo,hi)
         for _ in range(n_sub):
             q,w=d.qpos[qadr],d.qvel[vadr]
-            d.ctrl[act]=actuator.motor_torque(p,actuator.duty(p,tgt-q,w,xp=np)*12.0,w,xp=np)
+            d.ctrl[act]=actuator.motor_torque(p,actuator.duty(p,tgt-q,w,xp=np)*12.0,w,xp=np,
+                                              tau_c_external=True)
             mujoco.mj_step(mj,d)
         if k==int(0.5/dt): BX0=d.qpos[0]
         if k>=int(0.5/dt): W.append(np.abs(d.qvel[vadr]).copy())

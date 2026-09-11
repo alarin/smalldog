@@ -126,7 +126,8 @@ def rollout(cmd, seed, perturb=True):
         for _ in range(n_sub):
             q, w = d.qpos[qadr], d.qvel[vadr]
             d.ctrl[act] = actuator.motor_torque(
-                p, actuator.duty(p, tgt - q, w, xp=np) * 12.0, w, xp=np)
+                p, actuator.duty(p, tgt - q, w, xp=np) * 12.0, w, xp=np,
+                tau_c_external=True)
             mujoco.mj_step(mjs, d)
         if k == int(SETTLE / dt):
             x0 = d.qpos[0]

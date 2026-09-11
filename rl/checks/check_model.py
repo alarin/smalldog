@@ -358,10 +358,22 @@ def check_sensors(m, R):
 PER_UNIT_FIELDS = ["k_u", "k_e", "R", "J_m", "tau_c", "b_v", "mu_load", "kp",
                    "deadband", "punch"]
 
-#: Per-unit fields that are NOT in the per-episode draw because the law does not
-#: read them — they are model fields, and env/randomize.py randomises them there.
-#: `J_m` is inertia; MuJoCo owns the mass matrix and calls it `dof_armature`.
-MODEL_SIDE_FIELDS = {"J_m": "env/randomize.py, as sys.dof_armature"}
+#: Per-unit fields that are NOT in the per-episode draw, because the field the
+#: PHYSICS reads is a MuJoCo model field and not an actuator.Params attribute.
+#: brax's randomization_fn is the only thing that can move one of those, so
+#: env/randomize.py draws them, per environment. Field -> (the MjModel array,
+#: where the draw lives). A range with nothing reading it is the same defect
+#: whichever side of this line it is on, which is why they stay in
+#: PER_UNIT_FIELDS and are probed here rather than dropped.
+#:
+#: `J_m` is inertia: MuJoCo owns the mass matrix and calls it `dof_armature`.
+#: `tau_c` is the Coulomb floor: only a stick-slip constraint holds a joint at
+#: rest, so it is `dof_frictionloss` and the law is called with
+#: `tau_c_external=True` on every MuJoCo path (PLAN.md 2b).
+MODEL_SIDE_FIELDS = {
+    "J_m":   ("dof_armature", "env/randomize.py, as sys.dof_armature"),
+    "tau_c": ("dof_frictionloss", "env/randomize.py, as sys.dof_frictionloss"),
+}
 
 #: Operating points the consumption probe below evaluates the law at.  Three,
 #: because no single one exercises every register: the first sits just outside
@@ -377,7 +389,9 @@ def _law_moves(base, field, lo, hi, absolute):
     `actuator.bus_torque` is that path — inner loop, pack sag, motor torque — and
     it is the same function rl/env/walk.py calls inside its physics scan, which
     is the point: a probe that reimplemented it could drop a term and then report
-    the parameter that term reads as unconsumed.
+    the parameter that term reads as unconsumed.  `tau_c_external=True` for the
+    same reason: that is what walk.py and eval.py pass, so a field this probe
+    says is consumed is one the training path really reads.
     """
     import dataclasses
     import actuator
@@ -385,7 +399,8 @@ def _law_moves(base, field, lo, hi, absolute):
     a, b = (lo, hi) if absolute else (lo * nom, hi * nom)
     for err, w in PROBE_POINTS:
         t = [actuator.bus_torque(dataclasses.replace(base, **{field: v}),
-                                 err, w, 12.0, 0.03, xp=np) for v in (a, b)]
+                                 err, w, 12.0, 0.03, xp=np, tau_c_external=True)
+             for v in (a, b)]
         if abs(float(t[0]) - float(t[1])) > 1e-9:
             return True
     return False
@@ -401,7 +416,9 @@ def check_randomisation(R):
     against one shared value while `tau_c` beside it - the SMALLER of the two
     friction terms - got a per-joint draw.  Nothing caught it: the field exists
     everywhere it is looked for, so the only symptom was a shape, `()` where its
-    neighbour was `(n, 12)`.
+    neighbour was `(n, 12)`, and it took reading `_params()` live on the training
+    box to see it.  A missing entry is not a crash and never will be, which is
+    exactly why it needs a probe rather than a test of something else.
 
     CONSUMED exists because the shape test passed two defects that shipped
     anyway.  `J_m` was drawn per joint and fed into an actuator.Params field that
@@ -416,6 +433,17 @@ def check_randomisation(R):
     by both `sample_actuator_params` here and `Walk._sample_episode` there.  It
     used to be a second, hand-written copy, which is how a check could be green
     about a draw the environment never called.
+
+    MODEL_SIDE_FIELDS are the two that answer both questions somewhere else.
+    `J_m` left the draw on 2026-09-11 because nothing read it; `tau_c` left the
+    same day because only MuJoCo's `dof_frictionloss` can hold a joint at rest
+    (PLAN.md 2b) and the law is handed `tau_c_external=True` on every MuJoCo
+    path.  For those two the probe is inverted - they must be ABSENT from the
+    episode draw - and then the compiled training model is asked whether the
+    field they moved to is really installed at the fitted nominal.  Whether the
+    per-environment draw on top of it is batched is env/randomize.py's own
+    `_selftest()`, which this file cannot run: it needs jax, and this file has to
+    run on the robot.
     """
     R.head("domain randomisation — is every per-unit servo parameter batched")
     try:
@@ -440,14 +468,13 @@ def check_randomisation(R):
         lo, hi = ranges[key]["range"]
         a = draw.get(f)
         if f in MODEL_SIDE_FIELDS:
+            _, where = MODEL_SIDE_FIELDS[f]
             if a is not None:
-                R.say(FAIL, f"{f:<9} is drawn per episode, but nothing on the "
-                            f"training path reads it — it belongs in "
-                            f"{MODEL_SIDE_FIELDS[f]}")
+                R.say(FAIL, f"{f:<9} is drawn per episode, but the training path "
+                            f"does not read it there — it belongs in {where}")
             else:
                 R.say(INFO, f"{f:<9} {'(model)':<9} x{lo:.2f}..{hi:.2f}  "
-                            f"{ranges[key]['evidence']} — randomised in "
-                            f"{MODEL_SIDE_FIELDS[f]}")
+                            f"{ranges[key]['evidence']} — randomised in {where}")
             continue
         if a is None:
             R.say(FAIL, f"{f:<9} has a range but the episode draw does not "
@@ -478,11 +505,44 @@ def check_randomisation(R):
                     f"(params/bus_timing.json, sync_read + sync_write p50/p95) — "
                     f"{share*100:.0f} % of episodes run one tick late")
 
+    # The fields MuJoCo owns: the draw is in env/randomize.py and needs jax, so
+    # what is checkable from here is the NOMINAL those draws multiply. A zero in
+    # either is not a narrower spread: model.build_spec() installs
+    # `frictionloss <- tau_c` and `armature <- J_m`, and env/randomize.py scales
+    # what it finds — so a zero nominal is a field that stays zero however wide
+    # the range is, and for tau_c that is no Coulomb friction at all, because the
+    # law has already handed the floor away (tau_c_external).
+    try:
+        m_tr, _ = model_mod.build(terrain=False, n_boxes=0)
+        P_tr = model_mod.robot_params()
+        _, vadr, _ = model_mod.joint_order(m_tr, P_tr)
+        vadr = np.asarray(vadr)
+        for f, (attr, where) in MODEL_SIDE_FIELDS.items():
+            nom = float(getattr(base, f))
+            v = np.asarray(getattr(m_tr, attr))[vadr]
+            lo, hi = ranges[f]["range"]
+            if np.any(v <= 0.0):
+                R.say(FAIL, f"{f:<9} {attr} is {v.min():.4g} on some joint — the "
+                            f"draw in {where} is multiplicative, so a zero here "
+                            f"is that axis dead whatever the range says")
+            elif not np.allclose(v, nom, rtol=1e-6):
+                R.say(FAIL, f"{f:<9} {attr} {v.min():.4g}..{v.max():.4g} is not "
+                            f"the fitted nominal {nom:.4g} — the draw scales this "
+                            f"number, so the whole spread is off by the same factor")
+            else:
+                R.say(INFO, f"{f:<9} {attr} = {nom:.4g} on 12 joints, "
+                            f"x{lo:.2f}..{hi:.2f} per environment in {where}")
+    except Exception as e:                                    # pragma: no cover
+        R.say(WARN, f"could not build the training model to check the model-side "
+                    f"fields ({', '.join(MODEL_SIDE_FIELDS)}): {e}")
+
     extra = [k for k in ranges if k not in PER_UNIT_FIELDS
              and k.removesuffix("_abs") not in PER_UNIT_FIELDS]
     for k in extra:
         R.say(WARN, f"{k} is in domain_rand.json but not in PER_UNIT_FIELDS — "
-                    f"decide whether it is a per-unit spread and list it, or drop it")
+                    f"decide whether it is a per-unit spread and list it (adding "
+                    f"it to MODEL_SIDE_FIELDS too if MuJoCo owns the field the "
+                    f"physics reads), or drop it")
 
 
 # ------------------------------------------------------------- 7. ledger
