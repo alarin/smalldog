@@ -11,7 +11,6 @@ human-facing overview; this file only routes.
 | `ros2/` | ROS 2 workspace + MuJoCo. Its `smalldog_description` is **generated** from `3d/`, never authored | `ros2/README.md`, and `3d/CLAUDE.md` step 6 |
 | `rl/` | the RL walking policy — the third consumer of the same CAD | `rl/CLAUDE.md` |
 | `robot/` | the hardware side: bus driver, bench, the 50 Hz runtime | `robot/README.md` |
-| `actuators/` | **not this dog.** The bench-test plan for the NEXT one: a 5010 BLDC and a printed gearbox, and which of this project's mistakes not to repeat. No code, no parts, nothing generated from it, and nothing here imports it | `actuators/README.md` |
 
 `3d/CLAUDE.md`'s rules about what is source and what is output hold across the whole
 repository, not just inside `3d/`. Anything under `ros2/smalldog_description/` or
