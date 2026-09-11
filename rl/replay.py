@@ -82,11 +82,15 @@ def parse():
 
 
 # ================================================================= recording
-def record(run_dirs, n_each, seconds, command, mem_fraction):
+def record(run_dirs, n_each, seconds, command):
     """Roll every checkpoint out in MJX and keep only qpos.
 
-    Returns (qpos, labels): qpos is (T, n_robots, nq) and labels names which
-    checkpoint each robot came from.
+    Returns (qpos, labels, surface): qpos is (T, n_robots, nq), labels names
+    which checkpoint each robot came from, and `surface` is the (terrain, boxes)
+    the rollout actually happened on — which the render scene has to be built
+    from, not assumed. It used to be assumed: build_grid loaded the flat
+    scene.xml unconditionally, so a --terrain run replayed over a flat floor and
+    the video showed a robot stepping over nothing and tripping on air.
     """
     import jax
     import jax.numpy as jnp
@@ -95,15 +99,17 @@ def record(run_dirs, n_each, seconds, command, mem_fraction):
     from brax.training.agents.ppo import networks as ppo_networks
 
     from env import Walk, check_obs_width
+    from env.walk import CTRL_HZ
 
-    env = None
+    env, surface = None, None
     tracks, labels = [], []
-    n_steps = int(seconds * 50)
+    n_steps = int(seconds * CTRL_HZ)
 
     for run_dir in run_dirs:
         with open(os.path.join(run_dir, "run.json")) as f:
             targs = json.load(f)["args"]
         if env is None:
+            surface = (bool(targs["terrain"]), int(targs["boxes"]))
             env = Walk(terrain=targs["terrain"], n_boxes=targs["boxes"])
             reset = jax.jit(jax.vmap(env.reset))
             step = jax.jit(jax.vmap(env.step))
@@ -129,8 +135,11 @@ def record(run_dirs, n_each, seconds, command, mem_fraction):
         for _ in range(n_steps):
             act, _ = policy(st.obs, jax.random.PRNGKey(0))
             st = step(st, act)
-            # The command is held: an episode that ends is auto-reset by nothing
-            # here, so a fallen robot stays fallen and that is what we want to see.
+            # The command is held: this steps the RAW env, with none of brax's
+            # episode wrappers, so nothing auto-resets and nothing resamples —
+            # `Walk.step` gates its per-episode redraw on the `episode_done` key
+            # only EpisodeWrapper writes. A fallen robot stays fallen, on the
+            # command it was given, which is exactly what the herd is for.
             st = st.replace(info={**st.info, "command": cmd})
             qs.append(np.asarray(st.pipeline_state.qpos))
         tracks.append(np.stack(qs))                      # (T, n_each, nq)
@@ -138,11 +147,11 @@ def record(run_dirs, n_each, seconds, command, mem_fraction):
         print(f"  recorded {n_each:3d} x {seconds:g} s from "
               f"{os.path.basename(run_dir.rstrip('/'))}")
 
-    return np.concatenate(tracks, axis=1), labels, env
+    return np.concatenate(tracks, axis=1), labels, surface
 
 
 # ============================================================== the render scene
-def build_grid(n, spacing):
+def build_grid(n, spacing, surface=(False, 0)):
     """One ground plane and n copies of the robot, assembled through MjSpec.
 
     Copies are attached at the origin and placed by their own free joint at
@@ -155,18 +164,38 @@ def build_grid(n, spacing):
     import mujoco
     import model as model_mod
 
-    scene = os.path.join(model_mod.MJCF, "scene.xml")
+    terrain, boxes = surface
+    if boxes:
+        # The procedural boxes are per ENVIRONMENT, and a herd shares one world:
+        # there is no honest ground to put a hundred differently-scattered
+        # rollouts on. Say so rather than drawing them over a floor none of them
+        # walked on.
+        print(f"  !! this run trained on {boxes} procedural boxes, which are "
+              f"randomised PER ENVIRONMENT — the herd shares one world, so the "
+              f"ground below is the bare surface and the boxes each robot met "
+              f"are not in it.")
+    scene = os.path.join(model_mod.MJCF,
+                         "scene_terrain.xml" if terrain else "scene.xml")
+    print(f"  render scene {os.path.basename(scene)} — the surface the rollout "
+          f"was recorded on")
     base = mujoco.MjSpec.from_file(scene)
 
     # Everything after the first copy is the same spec with its world furniture
-    # removed — one floor, one light, one skybox for the whole herd.
+    # removed — one ground, one light, one skybox for the whole herd. EVERY
+    # worldbody geom goes, not just the one named "floor": on the heightfield
+    # scene the worldbody also carries the seven obstacle-course geoms, and a
+    # hundred copies of the course is a hundred copies of a wall in the same
+    # place. The hfield asset goes with them, and that one is not cosmetic —
+    # it is 446k data points, and nothing in a stripped copy references it once
+    # its geom is gone.
     def stripped():
         s = mujoco.MjSpec.from_file(scene)
         for g in list(s.worldbody.geoms):
-            if g.name == "floor":
-                s.delete(g)
+            s.delete(g)
         for lt in list(s.worldbody.lights):
             s.delete(lt)
+        for hf in list(s.hfields):
+            s.delete(hf)
         return s
 
     child = stripped()
@@ -278,11 +307,12 @@ def main():
 
     print(f"\n{n} robots = {n_ckpt} checkpoint(s) x {n_each}, "
           f"command {cmd}, {a.seconds:g} s")
-    qpos, labels, env = record(a.runs, n_each, a.seconds, cmd, a.mem_fraction)
+    qpos, labels, surface = record(a.runs, n_each, a.seconds, cmd)
     print(f"  qpos {qpos.shape} = {qpos.nbytes/1e6:.1f} MB — this is the whole "
           f"recording; the physics is done and never runs again")
+    print(f"  {len(set(labels))} checkpoint(s): {', '.join(sorted(set(labels)))}")
 
-    m, nq, offsets = build_grid(n, a.spacing)
+    m, nq, offsets = build_grid(n, a.spacing, surface)
     if nq != qpos.shape[2]:
         print(f"!! the render scene has {nq} qpos per robot and the rollout "
               f"recorded {qpos.shape[2]}; they must be the same model")

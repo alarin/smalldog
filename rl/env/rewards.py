@@ -5,7 +5,8 @@ Every term here is either a thing we want (velocity tracking) or a thing the
 robot cannot afford (torque, joint speed past the servo's limit, a foot skidding
 under load). The weights are the part of this tree with the least evidence behind
 them: they are the published quadruped defaults, rescaled for a 2.5 kg robot on a
-4.71 rad/s servo. They are guesses, they are labelled as guesses, and unlike the
+3.86 rad/s servo (the MEASURED no-load speed; the 4.71 they were first scaled
+against was the vendor's). They are guesses, they are labelled as guesses, and unlike the
 model parameters there is no bench that can ever measure them — the only honest
 way to change one is to run eval.py before and after and read the numbers.
 
@@ -147,6 +148,16 @@ class Weights:
 #   the terrain. domain_rand.json caps box_height_m_abs at 0.022, so the tallest
 #   obstacle the policy ever meets is 22 mm. Feet that peak at 20-22 mm are not
 #   under-lifting; they are clearing the world they were shown, exactly.
+#
+#   That second paragraph was itself wrong by a factor of two while it was being
+#   used as an argument, and the correction cuts the same way. env/randomize.py
+#   drew the "is this box raised" coin and the box's HEIGHT off one key, so the
+#   two uniforms were the same number and the tallest box that could ever be
+#   raised was 12.1 mm, not 22. Fixed 2026-09-11. So the measurement below was
+#   taken against a world half as rough as the one it was described as, and the
+#   feet that "cleared the world they were shown, exactly" were clearing 12 mm.
+#   Re-measure this term against the fixed curriculum before concluding anything
+#   from the -20 result again.
 #
 #   the speed. "never pass 20 mm" came from a 0.2 m/s rollout. At 0.4 m/s the
 #   same policies peak at 20/22/16/20 mm -- the number was quoted at the speed

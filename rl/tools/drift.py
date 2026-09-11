@@ -1,5 +1,7 @@
 #!/usr/bin/env python
-"""
+# RAW docstring: the ascii art below contains \_ , and python 3.12+ reports a
+# lone backslash-underscore in a normal string literal as a SyntaxWarning.
+r"""
 drift.py -- the sideways displacement, split into the two things that cause it.
 
     RUN=runs/<run>             python tools/drift.py
@@ -27,11 +29,12 @@ one side and -0.43 on the other is a policy leaning, and that shows up here
 before it shows up anywhere else.
 
 Runs on the CPU (JAX_PLATFORMS=cpu) so it can be used while a run holds the GPU.
+That is now set rather than claimed: jaxenv.configure(platforms="cpu").
 """
 import os, sys, json
 _RL = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, _RL); os.chdir(_RL)
-import jaxenv; jaxenv.configure(0.10)
+import jaxenv; jaxenv.configure(0.10, platforms="cpu")
 
 import numpy as np, jax, mujoco
 from brax.io import model as brax_io_model
@@ -39,6 +42,7 @@ from brax.training.acme import running_statistics
 from brax.training.agents.ppo import networks as ppo_networks
 import actuator, model as model_mod
 from env import Walk, assemble_obs, stack_obs, init_hist
+from env.walk import ACTION_SCALE, CTRL_HZ
 
 RUN = os.environ.get("RUN")
 if not RUN:
@@ -66,7 +70,7 @@ lo, hi = model_mod.limits(P, soft=True)
 q0 = model_mod.stance_qpos(mj, P); stance_j = q0[qadr]
 sadr = lambda n: int(mj.sensor_adr[mujoco.mj_name2id(mj, mujoco.mjtObj.mjOBJ_SENSOR, n)])
 aq, ag, aa = sadr("imu_quat"), sadr("imu_gyro"), sadr("imu_accel")
-dt = 1 / 50.0
+dt = 1 / CTRL_HZ
 n_sub = int(round(dt / mj.opt.timestep))
 names = [mujoco.mj_id2name(mj, mujoco.mjtObj.mjOBJ_ACTUATOR, int(i)) for i in act]
 
@@ -90,7 +94,7 @@ def rollout(seed):
             obs, hist = stack_obs(hist, fr_, xp=np)
         a_, _ = policy_jit(obs, jax.random.PRNGKey(0)); a_ = np.asarray(a_)
         last_action = a_
-        target = np.clip(stance_j + a_ * 0.35, lo, hi)
+        target = np.clip(stance_j + a_ * ACTION_SCALE, lo, hi)
         for _ in range(n_sub):
             q, w = d.qpos[qadr], d.qvel[vadr]
             d.ctrl[act] = actuator.motor_torque(
@@ -121,7 +125,7 @@ for s in range(SEEDS):
     ACTS.append(A)
     if s == 0:
         A0 = A
-        print(f"\nseed 0, unperturbed:")
+        print("\nseed 0, unperturbed:")
         print(f"{'t':>5}{'x mm':>9}{'y mm':>9}{'head deg':>10}{'u m/s':>8}"
               f"{'v m/s':>8}{'yaw r/s':>9}{'y_head':>9}{'y_slip':>9}")
         for i in range(0, len(t), max(1, len(t) // 20)):
@@ -130,7 +134,6 @@ for s in range(SEEDS):
 
 if not fin_x:
     raise SystemExit("fell on every seed")
-f = lambda a: (np.mean(a), np.std(a))
 sd = lambda a: f" +- {np.std(a):.0f}" if len(a) > 1 else ""
 print(f"\nover {len(fin_x)} seed(s)" + (f", {fell} fell" if fell else "") + ":")
 print(f"  travelled x   {np.mean(fin_x):+8.0f}{sd(fin_x)} mm")
@@ -167,6 +170,14 @@ for k, (mu, sg) in sorted(res.items(), key=lambda z: -abs(z[1][0])):
     print(f"    {k:<16}{mu:+.4f}" + (f" +- {sg:.4f}" if len(ACTS) > 1 else "")
           + f"   {bar}")
 
-print("\nmean action per joint, seed 0 (policy output, before scaling):")
-for n, m in sorted(zip(names, A0.mean(axis=0)), key=lambda z: z[0]):
-    print(f"    {n:<16}{m:+.4f}")
+# A0 is seed 0's action trace, and seed 0 is the one seed that can be MISSING
+# from the pooled set: it is the unperturbed rollout, and if it is the rollout
+# that fell, the loop above skipped it. Without this guard the summary below
+# ends in AttributeError on None, after every number it was going to print.
+if A0 is None:
+    print("\nseed 0 fell, so there is no unperturbed action trace to print. The "
+          "pooled numbers above stand; re-run with a different SEEDS to see one.")
+else:
+    print("\nmean action per joint, seed 0 (policy output, before scaling):")
+    for n, m in sorted(zip(names, A0.mean(axis=0)), key=lambda z: z[0]):
+        print(f"    {n:<16}{m:+.4f}")

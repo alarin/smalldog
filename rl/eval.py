@@ -100,15 +100,19 @@ became a lax.scan: the same-code pairs and the across-rewrite pairs have the
 SAME spread, column for column. That is what says the rewrite changed nothing —
 not the fact that the numbers looked close.
 
-And the standing caveat, until the bench runs: `params/st3215.json` is the vendor
-datasheet, not a fit. Every number below is this policy's score against the
-datasheet servo. `actuator.load()` says so at the top of every run and it is not
-to be silenced.
+And the standing caveat has changed shape rather than gone away.
+`params/st3215.json` IS a fit now — `fit_bam.py`, 44 runs at three voltages — so
+the numbers below are this policy's score against a measured servo rather than a
+datasheet one, and `actuator.load()` prints nothing because there is nothing to
+warn about. What it does not mean is that the servo is solved: the fit's own
+`source` says UNDER-DETERMINED (its analytic passes read freeswing and hold
+only), and its derived free speed of 5.90 rad/s overshoots the 3.86 the hardware
+does, because the real servo stops at a firmware plateau the law does not carry
+(PLAN.md 3c). Read `p.source` before quoting a number as "against the servo".
 """
 from __future__ import annotations
 
 import argparse
-import functools
 import json
 import os
 import sys
@@ -162,14 +166,14 @@ def main():
 
     import jax
     import jax.numpy as jnp
-    import mujoco
     from brax.io import model as brax_io_model
     from brax.training.acme import running_statistics
     from brax.training.agents.ppo import networks as ppo_networks
 
     import actuator
     import model as model_mod
-    from env import Walk, assemble_obs, rotate_inv, check_obs_width
+    from env import Walk, rotate_inv, check_obs_width
+    from env.walk import CTRL_HZ
 
     run_dir = a.run.rstrip("/")
     with open(os.path.join(run_dir, "run.json")) as f:
@@ -204,7 +208,7 @@ def main():
     print(f"{'command':<16}{'up':>6}{'vx':>9}{'vy':>8}{'yaw':>8}"
           f"{'|err|':>8}{'x':>9}{'v>lim':>9}")
 
-    n_steps = int(a.seconds * 50)
+    n_steps = int(a.seconds * CTRL_HZ)
 
     @jax.jit
     def battery_rollout(cmd):
@@ -230,17 +234,19 @@ def main():
         per-step data (frames, traces) becomes a scan output rather than 500 host
         round trips.  It did not make the battery fast.
 
-        The command is re-stamped inside the loop rather than once before it.
-        Nothing in Walk.step touches info["command"] today, so the two are
-        equivalent — but the battery's premise is that the command is HELD, and an
-        env that resampled it mid-episode would otherwise quietly be scored on a
-        command nobody asked for.
+        The command is re-stamped inside the loop rather than once before it, and
+        that is no longer a precaution: `Walk.step` DOES resample the command
+        now, at every episode boundary, gated on the `info["episode_done"]` key
+        that brax's EpisodeWrapper writes. This loop steps the raw env, so there
+        is no such key and no resampling — but the battery's premise is that the
+        command is HELD, and the re-stamp is what makes that true of the state
+        rather than of an argument about which wrappers are in play.
         """
         st = jax.vmap(env.reset)(
             jax.random.split(jax.random.PRNGKey(0), a.episodes))
 
         def one_step(carry, _):
-            st, alive, vsum, over = carry
+            st, alive, vsum, over, n_live = carry
             st = st.replace(info={**st.info, "command": cmd})
             act, _ = policy_jit(st.obs, jax.random.PRNGKey(0))
             st = jax.vmap(env.step)(st, act)
@@ -254,26 +260,34 @@ def main():
                 q.sensordata, (0, env._s_quat[0]), (a.episodes, 4))
             vb = jax.vmap(lambda qq, vv: rotate_inv(qq, vv, jnp))(quat, q.qvel[:, 0:3])
             vsum = vsum + jnp.concatenate([vb[:, :2], q.qvel[:, 5:6]], 1) * alive[:, None]
-            over = over + jnp.sum(
-                jnp.clip(jnp.abs(q.qvel[:, env._vadr]) - env._vel_limit, 0.0, None) > 0,
-                axis=1) * alive
-            return (st, alive, vsum, over), None
+            # ANY joint past the limit on this control step, not how many. The
+            # legend under the table says "control steps with any joint past
+            # ... rad/s" and the sum counted joint-steps, so a policy with three
+            # joints over read three times worse than one with one.
+            over = over + jnp.any(
+                jnp.abs(q.qvel[:, env._vadr]) > env._vel_limit, axis=1) * alive
+            # Per-environment alive-step counter. `vsum` accumulates only while
+            # an environment is alive, so dividing it by the mean fraction alive
+            # at the END is a bias: a row where half the envs fall at step 10 and
+            # half survive divides a nearly-full sum by 0.5. Each environment
+            # divides by its own step count instead.
+            n_live = n_live + alive
+            return (st, alive, vsum, over, n_live), None
 
         init = (st, jnp.ones(a.episodes), jnp.zeros((a.episodes, 3)),
-                jnp.zeros(a.episodes))
-        (st, alive, vsum, over), _ = jax.lax.scan(
+                jnp.zeros(a.episodes), jnp.zeros(a.episodes))
+        (st, alive, vsum, over, n_live), _ = jax.lax.scan(
             one_step, init, None, length=n_steps)
-        return alive, vsum, over, st.pipeline_state.qpos[:, 0]
+        return alive, vsum, over, n_live, st.pipeline_state.qpos[:, 0]
 
     results = {}
 
     for label, vx, vy, yaw in BATTERY:
         cmd = jnp.tile(jnp.array([vx, vy, yaw]), (a.episodes, 1))
-        alive, vsum, over, x_end = battery_rollout(cmd)
+        alive, vsum, over, n_live, x_end = battery_rollout(cmd)
 
         n_alive = float(jnp.mean(alive))
-        v = np.asarray(vsum) / max(n_steps, 1)
-        v = v / max(n_alive, 1e-6)
+        v = np.asarray(vsum) / np.maximum(np.asarray(n_live), 1.0)[:, None]
         err = float(np.mean(np.linalg.norm(v[:, :2] - np.array([vx, vy]), axis=1)))
         x = float(jnp.mean(x_end))
         results[label] = dict(upright_fraction=n_alive, vx=float(v[:, 0].mean()),
@@ -290,7 +304,7 @@ def main():
           f"past {env._vel_limit:.2f} rad/s — the servo's no-load speed.")
 
     # ========================================== vanilla MuJoCo, sim-to-sim
-    print(f"\n== sim-to-sim: the SAME policy, vanilla MuJoCo ====================")
+    print("\n== sim-to-sim: the SAME policy, vanilla MuJoCo ====================")
     surfaces = [("flat", False, False)]
     if a.terrain or targs["terrain"]:
         surfaces.append(("heightfield", True, False))
@@ -317,7 +331,7 @@ def main():
               f"  Re-run with --seconds {BASELINE_SECONDS:g} to put them side by side.")
 
     if not p.fitted:
-        print(f"\n!! Every number above is against the DATASHEET servo, not a fit.")
+        print("\n!! Every number above is against the DATASHEET servo, not a fit.")
         print(f"!! {p.source}")
 
     if a.json:
@@ -335,6 +349,11 @@ def rollout_mujoco(mj, policy_jit, env, p, cmd, seconds, shot=None):
     and the torque by actuator.py with xp=np — the same three functions MJX
     calls, on the other backend. That is the point: if this disagrees with the MJX rollout, the
     disagreement is the physics, not two different policies.
+
+    `env` is here for the same reason: the action scale and the control period
+    come off it rather than being written out again. They were `* 0.35` and
+    `1/50.0` literals, which is two more places an action-space change has to
+    reach before this stops silently scoring the policy on a different robot.
     """
     import jax
     import mujoco
@@ -362,7 +381,7 @@ def rollout_mujoco(mj, policy_jit, env, p, cmd, seconds, shot=None):
     ag, _ = sadr("imu_gyro")
     aa, _ = sadr("imu_accel")
 
-    dt_ctrl = 1.0 / 50.0
+    dt_ctrl = float(env.dt)
     n_sub = int(round(dt_ctrl / mj.opt.timestep))
     last_action = np.zeros(12)
     hist = None                       # filled from the first frame, not from zeros
@@ -387,15 +406,15 @@ def rollout_mujoco(mj, policy_jit, env, p, cmd, seconds, shot=None):
         action, _ = policy_jit(obs, jax.random.PRNGKey(0))
         action = np.asarray(action)
         last_action = action
-        target = np.clip(stance_j + action * 0.35, lo, hi)
+        target = np.clip(stance_j + action * env._action_scale, lo, hi)
 
         for _ in range(n_sub):
             q = d.qpos[qadr]
             w = d.qvel[vadr]
-            duty = actuator.duty(p, target - q, w, xp=np)
-            i = (duty * u_bat - p.k_e * w) / p.R
-            volt = u_bat - 0.0 * np.sum(np.abs(i))     # nominal: no sag
-            d.ctrl[act] = actuator.motor_torque(p, duty * volt, w, xp=np)
+            # sag = 0: a nominal pack, deliberately. The battery test is the
+            # place the supply is swept; this pass is about the two engines
+            # disagreeing, and it can only be that if everything else is held.
+            d.ctrl[act] = actuator.bus_torque(p, target - q, w, u_bat, 0.0, xp=np)
             mujoco.mj_step(mj, d)
 
         if -gravity_b[2] < 0.4 and not fell:

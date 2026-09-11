@@ -140,6 +140,43 @@ def check_limits(m, R, P):
     R.say(INFO, "for RL: action range lives inside SOFT, the safety layer clips at SOFT,")
     R.say(INFO, "the MuJoCo stop is a backstop, and the servo's own angle-limit registers")
     R.say(INFO, "get the CAD ROM.  Three numbers, three jobs — do not collapse them.")
+
+    # The two SPEED numbers, which were declared at the top of this file and then
+    # never compared against anything.  They are different quantities and the
+    # model carries both, so both get checked rather than one being assumed to
+    # imply the other.
+    vlim = float(P["joint_velocity_limit"])
+    ceil = float(P.get("joint_rate_ceiling_rad_s", float("nan")))
+    R.data["joint_velocity_limit"] = vlim
+    R.data["joint_rate_ceiling_rad_s"] = ceil
+    if abs(vlim - SERVO_NOLOAD_RADS) > 1e-6:
+        R.say(FAIL, f"joint_velocity_limit {vlim:.3f} != the CAD's measured no-load "
+                    f"speed {SERVO_NOLOAD_RADS:.2f} rad/s — one of the two is stale, "
+                    f"and it is not the generated model; regenerate, or fix the "
+                    f"constant at the top of this file")
+    else:
+        R.say(INFO, f"joint_velocity_limit {vlim:.2f} rad/s = the MEASURED no-load "
+                    f"speed (2026-09-11, free hub).  env/rewards.py's joint_vel "
+                    f"penalty is what holds the policy under it, because "
+                    f"actuator.py's law has no firmware plateau and runs to 5.90.")
+    if not math.isnan(ceil):
+        # (forcerange - frictionloss)/damping in the GENERATED model: the fastest
+        # the position actuator there can turn a joint.  ros2/smalldog_walker
+        # rate-limits its gait against it (3d/CLAUDE.md, 2026-09-11 re-baseline);
+        # nothing in rl/ read it at all, and it is the number that says how much
+        # of the no-load speed the analytic controller can actually reach.
+        R.say(INFO, f"joint_rate_ceiling_rad_s {ceil:.2f} — the generated model's own "
+                    f"(forcerange - frictionloss)/damping, {ceil/vlim*100:.0f} % of the "
+                    f"no-load speed.  rl/ does NOT train against it: model.py replaces "
+                    f"the position actuator with the voltage law, so this ceiling is "
+                    f"ros2/smalldog_walker's limit, not this tree's.")
+        if ceil > vlim + 1e-6:
+            R.say(FAIL, f"the model's rate ceiling {ceil:.2f} is ABOVE the servo's "
+                        f"measured no-load speed {vlim:.2f} — the analytic gait would "
+                        f"be rate-limited against a speed the hardware does not have")
+    else:
+        R.say(WARN, "no joint_rate_ceiling_rad_s in robot_params.json — regenerate "
+                    "the description; ros2/smalldog_walker's gait limits against it")
     R.data["limits"] = {"hard": hard, "soft": soft,
                         "mjcf": {k: float(m.jnt_range[mujoco.mj_name2id(
                             m, mujoco.mjtObj.mjOBJ_JOINT, f"fl_{k}")][1])
@@ -281,7 +318,13 @@ def check_sensors(m, R):
     R.head("sensors the RL observation will read")
     want = {"imu_quat": "body orientation (sim only — the robot has no magnetometer)",
             "imu_gyro": "angular velocity, goes straight into the observation",
-            "imu_accel": "projected gravity comes from here",
+            # Projected gravity does NOT come from here: env/walk.py rotates
+            # imu_quat's world -z into the body frame for that. The
+            # accelerometer is its own observation channel, PROPER acceleration,
+            # which is gravity plus the body's own motion plus the w x (w x r)
+            # artefact imu_placement.py measures — a different signal that
+            # happens to contain the same vector at rest.
+            "imu_accel": "proper acceleration, its own observation channel",
             "fl_contact": "foot load, for rewards and diagnostics only"}
     for name, why in want.items():
         i = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_SENSOR, name)
@@ -315,18 +358,64 @@ def check_sensors(m, R):
 PER_UNIT_FIELDS = ["k_u", "k_e", "R", "J_m", "tau_c", "b_v", "mu_load", "kp",
                    "deadband", "punch"]
 
+#: Per-unit fields that are NOT in the per-episode draw because the law does not
+#: read them — they are model fields, and env/randomize.py randomises them there.
+#: `J_m` is inertia; MuJoCo owns the mass matrix and calls it `dof_armature`.
+MODEL_SIDE_FIELDS = {"J_m": "env/randomize.py, as sys.dof_armature"}
+
+#: Operating points the consumption probe below evaluates the law at.  Three,
+#: because no single one exercises every register: the first sits just outside
+#: the dead zone where `deadband` and `punch` decide the drive, the second is a
+#: large error at speed where k_u/k_e/R/b_v dominate, the third is a reversal
+#: where the Coulomb terms do.  (err rad, w rad/s)
+PROBE_POINTS = ((0.010, 1.0), (0.300, -3.0), (0.002, 0.05))
+
+
+def _law_moves(base, field, lo, hi, absolute):
+    """Does the TRAINING PATH's output move when this field moves across its range?
+
+    `actuator.bus_torque` is that path — inner loop, pack sag, motor torque — and
+    it is the same function rl/env/walk.py calls inside its physics scan, which
+    is the point: a probe that reimplemented it could drop a term and then report
+    the parameter that term reads as unconsumed.
+    """
+    import dataclasses
+    import actuator
+    nom = getattr(base, field)
+    a, b = (lo, hi) if absolute else (lo * nom, hi * nom)
+    for err, w in PROBE_POINTS:
+        t = [actuator.bus_torque(dataclasses.replace(base, **{field: v}),
+                                 err, w, 12.0, 0.03, xp=np) for v in (a, b)]
+        if abs(float(t[0]) - float(t[1])) > 1e-9:
+            return True
+    return False
+
 
 def check_randomisation(R):
-    """Every per-unit servo parameter must come back BATCHED, not shared.
+    """Every per-unit servo parameter must be drawn per episode AND consumed.
 
-    This exists because `mu_load` shipped unrandomised.  It was in the fit, in
+    Two questions, and this check used to ask only half of the first.
+
+    BATCHED exists because `mu_load` shipped unrandomised.  It was in the fit, in
     actuator.Params and in the jax pytree, and every environment still trained
     against one shared value while `tau_c` beside it - the SMALLER of the two
     friction terms - got a per-joint draw.  Nothing caught it: the field exists
     everywhere it is looked for, so the only symptom was a shape, `()` where its
-    neighbour was `(n, 12)`, and it took reading `_params()` live on the training
-    box to see it.  A missing entry is not a crash and never will be, which is
-    exactly why it needs a probe rather than a test of something else.
+    neighbour was `(n, 12)`.
+
+    CONSUMED exists because the shape test passed two defects that shipped
+    anyway.  `J_m` was drawn per joint and fed into an actuator.Params field that
+    no function on the training path reads - the inertia the physics uses is
+    `dof_armature` - and the bus delay was drawn in seconds and truncated to
+    whole ticks, which made all 2000 of 2000 draws zero.  Both came back
+    correctly shaped.  So the probe now moves each field across its own range and
+    asks whether the law's output moves with it, and looks at the delay in TICKS
+    rather than in the seconds nothing downstream uses.
+
+    The draw it probes is the one training uses: `model.EPISODE_DRAW` is walked
+    by both `sample_actuator_params` here and `Walk._sample_episode` there.  It
+    used to be a second, hand-written copy, which is how a check could be green
+    about a draw the environment never called.
     """
     R.head("domain randomisation — is every per-unit servo parameter batched")
     try:
@@ -337,24 +426,58 @@ def check_randomisation(R):
         R.say(WARN, f"could not import the rl tree: {e}")
         return
 
-    ranges = model_mod.domain_ranges()["actuator"]
-    draw = model_mod.sample_actuator_params(np.random.default_rng(0), 4)
+    all_ranges = model_mod.domain_ranges()
+    ranges = all_ranges["actuator"]
+    base = actuator.load(quiet=True)
+    n = 256
+    draw = model_mod.sample_actuator_params(np.random.default_rng(0), n)
     for f in PER_UNIT_FIELDS:
         key = f if f in ranges else f + "_abs"
         if key not in ranges:
             R.say(FAIL, f"{f:<9} has no range in params/domain_rand.json — every "
                         f"environment will share one value")
             continue
+        lo, hi = ranges[key]["range"]
         a = draw.get(f)
+        if f in MODEL_SIDE_FIELDS:
+            if a is not None:
+                R.say(FAIL, f"{f:<9} is drawn per episode, but nothing on the "
+                            f"training path reads it — it belongs in "
+                            f"{MODEL_SIDE_FIELDS[f]}")
+            else:
+                R.say(INFO, f"{f:<9} {'(model)':<9} x{lo:.2f}..{hi:.2f}  "
+                            f"{ranges[key]['evidence']} — randomised in "
+                            f"{MODEL_SIDE_FIELDS[f]}")
+            continue
         if a is None:
-            R.say(FAIL, f"{f:<9} has a range but sample_actuator_params does not "
-                        f"draw it — the range is dead and the value is shared")
+            R.say(FAIL, f"{f:<9} has a range but the episode draw does not "
+                        f"produce it — the range is dead and the value is shared")
         elif np.ndim(a) == 0 or np.size(a) == 1:
             R.say(FAIL, f"{f:<9} came back shape {np.shape(a)} — shared, not sampled")
+        elif not _law_moves(base, f, lo, hi, key.endswith("_abs")):
+            R.say(FAIL, f"{f:<9} is drawn but the law's output does not move "
+                        f"across x{lo:g}..{hi:g} — the draw is dead, like J_m's was")
         else:
-            lo, hi = ranges[key]["range"]
             R.say(INFO, f"{f:<9} {str(np.shape(a)):<9} "
                         f"x{lo:.2f}..{hi:.2f}  {ranges[key]['evidence']}")
+
+    # The bus delay, in the unit the env actually indexes its action buffer with.
+    # In seconds it always looked fine; it was the conversion that was dead.
+    lo_s, hi_s = all_ranges["bus"]["delay_s_abs"]["range"]
+    u = np.random.default_rng(1).uniform(0.0, 1.0, n)
+    ticks = model_mod.delay_ticks(draw["delay_s"], u, 50.0, xp=np).astype(int)
+    share = float(np.mean(ticks > 0))
+    R.data["bus_delay"] = {"range_s": [lo_s, hi_s], "share_one_tick_late": share}
+    if len(np.unique(ticks)) < 2:
+        R.say(FAIL, f"bus delay: {n} draws all came back {ticks[0]} tick(s) — the "
+                    f"latency axis is dead. It was, for the whole of step 4: "
+                    f"uniform(0, 0.020) s x 50 Hz is [0, 1.0) and int() is 0.")
+    else:
+        R.say(INFO, f"bus delay  {str(np.shape(ticks)):<9} "
+                    f"{lo_s*1000:.2f}..{hi_s*1000:.2f} ms measured "
+                    f"(params/bus_timing.json, sync_read + sync_write p50/p95) — "
+                    f"{share*100:.0f} % of episodes run one tick late")
+
     extra = [k for k in ranges if k not in PER_UNIT_FIELDS
              and k.removesuffix("_abs") not in PER_UNIT_FIELDS]
     for k in extra:
@@ -377,11 +500,12 @@ def ledger(R):
         ("no-load speed", "3d/mini_dog.py SERVO_NOLOAD_RADS",
          "MEASURED 2026-09-11, 3.86 rad/s — actuator.py's law gives 5.9"),
         ("foot friction", "3d/export_sim.py", "GUESSED"),
-        ("foot solref/solimp", "3d/export_sim.py", "GUESSED, and diluted (above)"),
+        ("foot solref/solimp", "3d/export_sim.py",
+         "GUESSED, but no longer diluted — priority=1 ships"),
         ("backlash", "not in the model at all", "ABSENT"),
-        ("encoder quantisation", "not in the model at all",
-         f"ABSENT ({math.degrees(ENCODER_STEP_RAD):.3f} deg/step)"),
-        ("bus delay", "not in the model at all", "ABSENT — measure with bus_probe"),
+        ("encoder quantisation", "actuator.duty() only, not the observation",
+         f"HALF ABSENT ({math.degrees(ENCODER_STEP_RAD):.3f} deg/step)"),
+        ("bus delay", "rl/params/bus_timing.json", "MEASURED 2026-09-07, 12 servos"),
     ):
         R.say(INFO, f"{what:<24} {status:<34} {where}")
 
@@ -492,7 +616,7 @@ def main():
     check_randomisation(R)
     ledger(R)
 
-    print(f"\n== result " + "=" * 68)
+    print("\n== result " + "=" * 68)
     print(f"  {R.n_fail} FAIL, {R.n_warn} warn")
     if a.json:
         json.dump({"scene": scene, "fail": R.n_fail, "warn": R.n_warn,

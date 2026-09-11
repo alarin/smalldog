@@ -22,17 +22,19 @@ Point it at two runs' checkpoints at the SAME step. Comparing a 33 M checkpoint
 against a 60 M one measures training, not the change you made.
 
 Runs on the CPU (JAX_PLATFORMS=cpu) so it can be used while a run holds the GPU.
+That is now set rather than claimed: jaxenv.configure(platforms="cpu").
 """
 import os, sys, json, numpy as np
 _RL = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, _RL); os.chdir(_RL)
-import jaxenv; jaxenv.configure(0.10)
+import jaxenv; jaxenv.configure(0.10, platforms="cpu")
 import jax, mujoco
 from brax.io import model as brax_io_model
 from brax.training.acme import running_statistics
 from brax.training.agents.ppo import networks as ppo_networks
 import actuator, model as model_mod
 from env import Walk, assemble_obs, stack_obs, init_hist
+from env.walk import ACTION_SCALE, CTRL_HZ
 
 RUN = os.environ.get("RUN")
 if not RUN:
@@ -66,7 +68,7 @@ sadr = lambda n: int(mj.sensor_adr[mujoco.mj_name2id(mj, mujoco.mjtObj.mjOBJ_SEN
 aq, ag, aa = sadr("imu_quat"), sadr("imu_gyro"), sadr("imu_accel")
 LEGS = ["fl", "fr", "rl", "rr"]
 fsid = [mujoco.mj_name2id(mj, mujoco.mjtObj.mjOBJ_SITE, f"{l}_foot_site") for l in LEGS]
-dt = 1 / 50.0
+dt = 1 / CTRL_HZ
 n_sub = int(round(dt / mj.opt.timestep))
 
 
@@ -100,12 +102,12 @@ def model_cache(tops, x, y):
     return _CACHE[key]
 
 
-def rollout(cmd, seed):
+def rollout(cmd, seed, perturb=True):
     """-> (foot heights, actions, distance, seconds) after the settle window."""
     rng = np.random.default_rng(seed)
     mjs = model_for(rng) if BOXES else mj
     d = mujoco.MjData(mjs); d.qpos[:] = q0
-    if seed is not None:
+    if perturb:
         d.qpos[qadr] += rng.normal(0, 0.02, 12)     # 1.1 deg of joint scatter
         d.qpos[2] += rng.normal(0, 0.003)           # 3 mm of drop height
     mujoco.mj_forward(mjs, d)
@@ -120,7 +122,7 @@ def rollout(cmd, seed):
         else:
             obs, hist = stack_obs(hist, fr_, xp=np)
         a_, _ = pol(obs, jax.random.PRNGKey(0)); a_ = np.asarray(a_); la = a_
-        tgt = np.clip(st_j + a_ * 0.35, lo, hi)
+        tgt = np.clip(st_j + a_ * ACTION_SCALE, lo, hi)
         for _ in range(n_sub):
             q, w = d.qpos[qadr], d.qvel[vadr]
             d.ctrl[act] = actuator.motor_torque(
@@ -136,7 +138,14 @@ def rollout(cmd, seed):
     return np.array(FZ), np.array(ACT), (d.qpos[0] - x0 if n else 0.0), n * dt
 
 
-def spectrum(FZ, ACT, T):
+def spectrum(FZ, ACT):
+    """Dominant foot-height frequency and the share of action power above 10 Hz.
+
+    The bin spacing comes from `dt` and the sample count, not from the rollout's
+    wall duration: a run that ended early has fewer samples, and rfftfreq already
+    knows that. It used to take a `T` argument and ignore it, which is the kind
+    of parameter that looks like it is doing the thing it is named for.
+    """
     n = len(FZ); ff = np.fft.rfftfreq(n, dt)
     dom = []
     for i in range(4):
@@ -154,11 +163,17 @@ for cmd_v in CMDS:
     cmd = np.array([cmd_v, 0.0, 0.0])
     L, F, V, H, fell = [], [], [], [], 0
     for s in range(SEEDS):
-        FZ, ACT, dx, T = rollout(cmd, s if SEEDS > 1 else None)
+        # A fixed seed even at SEEDS=1. `None` used to be passed there, which
+        # skipped the joint scatter -- fine -- but also handed
+        # np.random.default_rng(None) to the box placement, so a single-seed run
+        # with BOXES>0 scattered a different course every time and was not
+        # comparable with itself. Seed 0 is the unperturbed pose either way;
+        # `perturb` is what says whether to scatter the joints.
+        FZ, ACT, dx, T = rollout(cmd, s, perturb=SEEDS > 1)
         if len(FZ) < 20:
             fell += 1; continue
         L.append((FZ.max(0) - FZ.min(0)) * 1000)
-        f, hf = spectrum(FZ, ACT, T)
+        f, hf = spectrum(FZ, ACT)
         F.append(f); V.append(dx / T); H.append(hf)
     if not L:
         print(f"\n=== command vx {cmd_v} m/s: fell on {fell}/{SEEDS} seeds"); continue

@@ -62,12 +62,16 @@ where privileged information is free. The observation may not.
 The mount is no longer the open question it was. `checks/imu_placement.py`
 measured the old `imu` site at the base_link origin, where no board physically
 fits, and rl/CLAUDE.md required the mount to reach the CAD before the observation
-was frozen; 1046e06 put it there and both exporters read it, so the site is now
-at [0, 0, 0.0234] — between the pack top at 21.4 mm and the deck underside at 25,
-where the BMI088 actually sits. This env still reads whatever site the generated
-model calls `imu`; when that site moves, the policy is retrained, not patched.
-That matters more now than it did, because the accelerometer is in the
-observation and it is the channel the offset corrupts.
+was frozen; 1046e06 put it there and both exporters read it. It has MOVED since,
+which is the point of not writing the number here any more: the CAD put the
+battery in a case, the IMU went from under the deck to on top of it, and the site
+went 23.4 -> 31.0 mm (3d/CLAUDE.md, 2026-09-09). `model.build()` prints the live
+`site_pos` in its build notes, and train_ppo.py logs those, so the height a run
+was trained at is in the run's own record rather than in a docstring that goes
+stale in silence. This env reads whatever site the generated model calls `imu`;
+when that site moves, the policy is retrained, not patched. That matters more now
+than it did, because the accelerometer is in the observation and it is the
+channel the offset corrupts.
 
 The servo is in the loop, not around it
 ---------------------------------------
@@ -117,29 +121,31 @@ OBS_FRAME = 3 + 3 + 3 + 12 + 12 + 12 + 3
 OBS_SIZE = OBS_FRAME * OBS_HIST
 
 # Time constant of the heading-error integral the reward reads (rewards.py,
-# heading_drift). It LEAKS, and the leak is not a refinement -- it is the only
-# thing that makes the quantity safe.
+# heading_drift). It LEAKS, and the leak was once the only thing that made the
+# quantity safe.
 #
 # brax's AutoResetWrapper.step resets `pipeline_state` and `obs` and NOTHING
 # ELSE: a custom field in `info` survives the episode boundary. Every other
-# field here is either overwritten every step (foot_xy, last_action) or clamped
+# field here was either overwritten every step (foot_xy, last_action) or clamped
 # by contact (air_time), so none of them noticed. A plain integral would not
 # have been: it would accumulate across every episode in a rollout and grow
 # without bound, which is exactly what it did -- ep_len fell to 397 against the
 # 465-480 of every previous run.
 #
-# Resetting it on this env's own `done` is not enough either. Truncation at
+# Resetting it on this env's own `done` was not enough either. Truncation at
 # episode_length happens in EpisodeWrapper, OUTSIDE this step(), and with ep_len
 # near 480 of 500 truncation is the COMMON ending, not the rare one.
 #
-# So it leaks instead, and inherits nothing that a leak does not erase: 5 s is
-# half an episode, so anything carried across a boundary is down to 13 % before
-# the next one ends. Measured cost of the choice, on the two recorded policies:
-# a plain integral separates their drift 1.77x against a true 1.78x, and this
-# separates it 1.55x, flat in tau from 2 s to 10 s. 14 % of fidelity for a
-# quantity that cannot be broken by wrapper semantics is the right trade twice
-# over, having now spent two runs on reward terms that were wrong in ways that
-# were never checked.
+# `_new_episode` below now sees truncation too — EpisodeWrapper writes
+# `info["episode_done"]` and this env reads it — so the integral IS zeroed at
+# every boundary and the leak is no longer load-bearing. It stays anyway, and on
+# its own merits: drift is a LOW-FREQUENCY property (rewards.py, bias_ang), and
+# a leak with tau = 5 s is the low-pass that makes it one. Measured cost of the
+# choice, on the two recorded policies: a plain integral separates their drift
+# 1.77x against a true 1.78x, and this separates it 1.55x, flat in tau from 2 s
+# to 10 s. Keeping 14 % of fidelity on the table for a quantity that cannot be
+# broken by wrapper semantics was the right trade when the wrapper was the only
+# defence, and it is a cheap one now that it is the second.
 HEADING_TAU = 5.0
 
 
@@ -252,17 +258,29 @@ class Commands:
     The top of vx is above what the actuator can deliver, and this is measured,
     not suspected. Commanding a trained policy 0.2 / 0.4 / 0.6 / 0.8 m/s on the
     CPU engine, nominal servo, it answers 0.236 / 0.432 / 0.426 / 0.423 -- pinned
-    from 0.4 upward. At the pin, the 95th percentile joint speed is 4.51 rad/s
-    against the 4.71 rad/s no-load speed in params/st3215.json: 96 % of it, and
-    the p95 does not move between the 0.6 and the 0.8 command. The robot is not
+    from 0.4 upward. At the pin the 95th percentile joint speed was 4.51 rad/s
+    and did not move between the 0.6 and the 0.8 command. The robot is not
     failing to learn 0.8 m/s, it is geared out of it.
 
     So roughly (0.8 - 0.43) / 1.2 = 31 % of sampled vx commands are unreachable,
     and about 0.057 m/s of the ~0.184 m/s track_err a run reports is arithmetic
-    rather than skill. Do NOT narrow this range on the strength of that: 4.71
-    rad/s is the datasheet, params/st3215.json still says "fitted": false, and
-    the whole ceiling is a property of an unfitted model. Fit the servo on the
-    bench, then set this range from the fit.
+    rather than skill.
+
+    What that 4.51 is 96 % of has since changed twice, and the two numbers now
+    disagree, which is the reason to re-measure rather than to narrow this range
+    from the paragraph above. params/st3215.json is a FIT (44 runs, three
+    voltages) and its derived free speed at 12 V is 5.899 rad/s, so the law would
+    let the joint run half as fast again as that p95. The HARDWARE does not:
+    robot/bench/noload_speed.py read 3.86 rad/s on a free hub on 2026-09-11, and
+    it is a firmware plateau rather than d*U/k_e, which is why the law overshoots
+    it and why rewards.py's joint_vel penalty is the only thing holding the
+    policy under the real ceiling (PLAN.md 3c). So the pin above sat at 117 % of
+    what the servo can actually do and 76 % of what the sim would allow.
+
+    Re-run tools/ceiling.py against the current model before touching this range.
+    The 4.51 was measured on a pre-fit actuator and every constant under it has
+    moved since; a range narrowed against a stale pin is a range narrowed against
+    a servo that no longer exists in either direction.
     """
     vx: tuple = (-0.4, 0.8)
     vy: tuple = (-0.3, 0.3)
@@ -304,6 +322,10 @@ class Walk(PipelineEnv):
 
         qadr, vadr, act = model_mod.joint_order(mj_model, P)
         self._qadr, self._vadr, self._act = jnp.array(qadr), jnp.array(vadr), jnp.array(act)
+        # Public, like box_geoms, and for the same reason: env/randomize.py needs
+        # to know which twelve of the eighteen dofs have a rotor behind them, and
+        # joint_order() is the only thing that does.
+        self.joint_dofs = vadr
         lo, hi = model_mod.limits(P, soft=True)
         self._soft_lo, self._soft_hi = jnp.array(lo), jnp.array(hi)
         self._vel_limit = float(P["joint_velocity_limit"])
@@ -345,9 +367,22 @@ class Walk(PipelineEnv):
             for leg in P["legs"]])
 
         # One control tick is the delay quantum: the bus either delivers this
-        # tick's target or the last one. params/bus_timing.json does not exist,
-        # so 0..20 ms is one whole tick of honest ignorance.
-        self._n_delay = 2
+        # tick's target or the last one. What sets the odds is MEASURED, and has
+        # been since 2026-09-07 -- params/bus_timing.json, written by
+        # robot/bench/bus_probe.py over twelve servos. model.domain_ranges()
+        # reads the composite out of it: sync_read p50 3.24 + sync_write p50 0.01
+        # = 3.25 ms at the median, and their p95s = 8.90 ms at the tail, of a
+        # 20 ms tick. The comment this replaces said the file "does not exist",
+        # and the range it justified -- a whole flat control period -- both
+        # overstated the tail and, truncated to whole ticks, produced a delay of
+        # zero on every draw. See model.delay_ticks for how a fraction of a tick
+        # becomes a whole one.
+        #
+        # n_delay is the buffer depth, so it has to cover the WORST band, not the
+        # median: one tick per whole tick of latency, plus the one this tick's
+        # own target occupies.
+        self._delay_s = tuple(self._ranges["bus"]["delay_s_abs"]["range"])
+        self._n_delay = 1 + int(np.ceil(self._delay_s[1] * ctrl_hz))
 
     # ------------------------------------------------------------------ obs
     def _sensor(self, ps, adr_dim):
@@ -371,36 +406,19 @@ class Walk(PipelineEnv):
     # --------------------------------------------------------------- torque
     def _params(self, info):
         """A Params whose fields are this environment's draw. One copy of the law:
-        these feed actuator.py's own functions with xp=jnp."""
+        these feed actuator.py's own functions with xp=jnp.
+
+        `J_m` is absent on purpose and keeps its nominal value here. It is
+        inertia; MuJoCo owns the mass matrix, no function in actuator.py's array
+        API reads it, and it is randomised as `dof_armature` in env/randomize.py
+        where the physics can see it. A draw placed here moved nothing at all.
+        """
         return dataclasses.replace(
             self._p0,
-            k_u=info["k_u"], k_e=info["k_e"], R=info["R"], J_m=info["J_m"],
+            k_u=info["k_u"], k_e=info["k_e"], R=info["R"],
             tau_c=info["tau_c"], b_v=info["b_v"], mu_load=info["mu_load"],
             kp=info["kp"],
             deadband=info["deadband"], punch=info["punch"])
-
-    def _torque(self, p, target, q, w, u_bat, sag):
-        d = actuator.duty(p, target - q, w, xp=jnp)
-        # The pack sags under the current the servos are drawing. One pass, the
-        # same order actuator.simulate() does it in — except that the current
-        # here is the sum over all twelve, because there is one pack and one
-        # harness, and that is the load case robot/README.md's 50 Hz budget is
-        # about.
-        #
-        # The clamp is not cosmetic, and the arithmetic is worth writing down
-        # because it is reachable rather than hypothetical: at duty 1 and a
-        # joint running backwards at 10 rad/s, i = (12 + 3.06*10)/3.33 = 12.8 A
-        # per servo, and twelve of those into the original 0.18 ohm range is a
-        # 27.7 V sag on a 12 V pack. `volt` would go NEGATIVE, k_u*duty*volt
-        # would flip sign, and the torque would drive the joint harder in the
-        # direction it was already going — positive feedback. A discharged pack
-        # delivers less voltage; it never delivers negative voltage. (The range
-        # has since been narrowed to 0-0.06 ohm as well, which makes the clamp
-        # unreachable in normal operation. Both, not either: a floor that is
-        # only satisfied by accident is not a floor.)
-        i = (d * u_bat - p.k_e * w) / p.R
-        volt = jnp.clip(u_bat - sag * jnp.sum(jnp.abs(i)), 0.0, u_bat)
-        return actuator.motor_torque(p, d * volt, w, xp=jnp)
 
     # ---------------------------------------------------------------- reset
     def reset(self, rng: jax.Array) -> State:
@@ -412,9 +430,30 @@ class Walk(PipelineEnv):
             jax.random.uniform(k_v, (6,), minval=-0.05, maxval=0.05))
         ps = self.pipeline_init(q, qd)
 
-        draw = self._sample_episode(k_a)
-        info = {
-            "rng": rng,
+        info = {"rng": rng, **self._episode_fields(ps, k_a)}
+        frame, _, _ = self._frame(ps, info, k_obs)
+        hist = init_hist(frame, xp=jnp)
+        obs = hist.reshape(-1)
+        info["obs_hist"] = hist
+        metrics = {k: jnp.zeros(()) for k in self._w.asdict()}
+        metrics.update({"vx_body_per_step": jnp.zeros(()),
+                        "track_err_xy_per_step": jnp.zeros(())})
+        return State(ps, obs, jnp.zeros(()), jnp.zeros(()), metrics, info)
+
+    def _episode_fields(self, ps, rng) -> dict:
+        """Everything one EPISODE owns, for a robot standing at `ps`.
+
+        One function and two callers — `reset` and `_new_episode` below — because
+        the second of those did not exist for the whole of step 4, and what went
+        wrong is exactly what happens when a reset lives in only one of the two
+        places an episode can begin. See `_new_episode`.
+
+        `obs_hist` is deliberately NOT here: it needs a frame, a frame needs the
+        command, and the command is drawn in this function. The caller stacks it.
+        """
+        k_cmd, k_a, k_push = jax.random.split(rng, 3)
+        gap_lo, gap_hi = self._ranges["push"]["interval_s_abs"]["range"]
+        return {
             "command": self._cmd.sample(k_cmd),
             "last_action": jnp.zeros(12),
             "action_buf": jnp.zeros((self._n_delay, 12)),
@@ -425,64 +464,98 @@ class Walk(PipelineEnv):
             "heading_err": jnp.zeros(()),
             "foot_xy": ps.site_xpos[self._foot_site][:, :2],
             "step": jnp.array(0, jnp.int32),
-            "next_push": jax.random.uniform(
-                k_push, (), minval=self._ranges["push"]["interval_s_abs"]["range"][0],
-                maxval=self._ranges["push"]["interval_s_abs"]["range"][1]),
-            **draw,
+            "next_push": jax.random.uniform(k_push, (), minval=gap_lo, maxval=gap_hi),
+            **self._sample_episode(k_a),
         }
-        frame, _, _ = self._frame(ps, info, k_obs)
-        hist = init_hist(frame, xp=jnp)
-        obs = hist.reshape(-1)
-        info["obs_hist"] = hist
-        metrics = {k: jnp.zeros(()) for k in self._w.asdict()}
-        metrics.update({"vx_body_per_step": jnp.zeros(()),
-                        "track_err_xy_per_step": jnp.zeros(())})
-        return State(ps, obs, jnp.zeros(()), jnp.zeros(()), metrics, info)
 
     def _sample_episode(self, rng):
         """The servo, the pack and the bus, drawn once per episode.
 
         Per joint where the spread is per-servo — twelve motors out of one bag —
-        and per robot where it is not: one pack, one bus. The ranges and the
-        evidence behind each are in params/domain_rand.json.
+        and per robot where it is not: one pack, one bus. WHICH fields are drawn
+        and from which range is `model.EPISODE_DRAW`, walked here with jax keys
+        and in `model.sample_actuator_params` with a numpy Generator, so the
+        training draw and the draw checks/check_model.py probes cannot be two
+        different draws again. The ranges and the evidence behind each are in
+        params/domain_rand.json.
         """
-        R = self._ranges
-        A, S, B = R["actuator"], R["supply"], R["bus"]
-        keys = jax.random.split(rng, 13)
+        keys = jax.random.split(rng, len(model_mod.EPISODE_DRAW) + 1)
 
-        def per_joint(key, name, nominal):
-            lo, hi = A[name]["range"]
-            return jax.random.uniform(key, (12,), minval=lo, maxval=hi) * nominal
+        def uniform(i, lo, hi, shape):
+            return jax.random.uniform(keys[i], shape, minval=lo, maxval=hi)
 
-        def scalar(key, d, name):
-            lo, hi = d[name]["range"]
-            return jax.random.uniform(key, (), minval=lo, maxval=hi)
+        d = model_mod.sample_episode(uniform, self._ranges, self._p0)
+        # Seconds of latency into whole ticks of action buffer. The fractional
+        # tick becomes the probability of the extra one — model.delay_ticks says
+        # why, and what the arithmetic that shipped before it did instead.
+        d["delay"] = model_mod.delay_ticks(
+            d.pop("delay_s"), jax.random.uniform(keys[-1], ()), CTRL_HZ,
+            xp=jnp).astype(jnp.int32)
+        return d
 
-        def per_joint_abs(key, name):
-            lo, hi = A[name]["range"]
-            return jax.random.uniform(key, (12,), minval=lo, maxval=hi)
+    def _new_episode(self, info, ps, rng):
+        """Re-draw everything an episode owns, where the last step ended one.
 
-        return {
-            "k_u": per_joint(keys[0], "k_u", self._p0.k_u),
-            "k_e": per_joint(keys[1], "k_e", self._p0.k_e),
-            "R": per_joint(keys[2], "R", self._p0.R),
-            "J_m": per_joint(keys[3], "J_m", self._p0.J_m),
-            "tau_c": per_joint(keys[4], "tau_c", self._p0.tau_c),
-            "b_v": per_joint(keys[5], "b_v", self._p0.b_v),
-            "mu_load": per_joint(keys[12], "mu_load", self._p0.mu_load),
-            "kp": per_joint(keys[6], "kp", self._p0.kp),
-            "deadband": per_joint_abs(keys[7], "deadband_abs"),
-            "punch": per_joint_abs(keys[8], "punch_abs"),
-            "u_bat": scalar(keys[9], S, "u_bat_abs"),
-            "sag": scalar(keys[10], S, "sag_ohm_abs"),
-            "delay": (scalar(keys[11], B, "delay_s_abs") * CTRL_HZ).astype(jnp.int32),
-        }
+        THE EPISODE BOUNDARY IS NOT IN THIS FILE, and that is the whole problem
+        this function exists for. brax's `AutoResetWrapper.step` restores
+        `pipeline_state` and `obs` and nothing else, and `ppo.train` calls
+        `env.reset` ONCE for the entire run (`num_resets_per_eval` is 0). So
+        every field of `info` was drawn once, at step zero, and then held for
+        60 M steps: `command` meant ~15 % of environments stood still forever and
+        never learned to walk, the servo/pack/bus draw was per ENVIRONMENT rather
+        than per episode — the opposite of what env/randomize.py's docstring says
+        the split is — `obs_hist` carried four frames of the previous, fallen
+        robot into the first frame of each new episode, and `foot_xy` differenced
+        the new pose against the old one and charged the foot_slip reward for a
+        metre of skid that never happened.
+
+        `EpisodeWrapper` writes `info["episode_done"]` at the end of its own step
+        (brax/envs/wrappers/training.py), which is 1 exactly when the previous
+        step ended the episode — TRUNCATION INCLUDED, which is the case this env
+        cannot see for itself and the common one at ep_len 480 of 500. That is
+        the gate. Callers that step the env without those wrappers — eval.py,
+        replay.py, the battery — have no such key and get no resampling, which is
+        what their held-command premise requires.
+
+        Written as `jnp.where` over every field rather than a `lax.cond`, because
+        under `jax.vmap` the gate is a traced per-environment scalar: it is data,
+        not control flow, and the step has to stay one jitted graph.
+
+        One thing it cannot fix, and it is worth knowing: AutoReset also replaces
+        `obs` with `first_obs`, so the FIRST action of a new episode was computed
+        from an observation carrying the previous episode's command. One step in
+        five hundred, and unfixable from inside the env — the wrapper owns that
+        substitution. The history re-seeded here is the honest one from the step
+        after it.
+        """
+        fresh = info["episode_done"] > 0.5
+        k_ep, k_obs = jax.random.split(rng, 2)
+        fields = self._episode_fields(ps, k_ep)
+        out = dict(info)
+        for k, v in fields.items():
+            out[k] = jnp.where(fresh, v, info[k])
+        # The history is re-seeded from the RESTORED pose and the NEW command,
+        # the same way reset() seeds it: OBS_HIST copies of one frame. Zeros
+        # would be a robot reporting no gravity; the old frames would be the
+        # robot that just fell over.
+        frame, _, _ = self._frame(ps, out, k_obs)
+        out["obs_hist"] = jnp.where(fresh, init_hist(frame, xp=jnp),
+                                    info["obs_hist"])
+        return out
 
     # ----------------------------------------------------------------- step
     def step(self, state: State, action: jax.Array) -> State:
         info = dict(state.info)
-        rng, k_obs, k_push, k_dir = jax.random.split(info["rng"], 4)
+        rng, k_obs, k_push, k_gap, k_dir, k_new = jax.random.split(info["rng"], 6)
         info["rng"] = rng
+
+        # An episode may have ended on the step before this one. If it did, the
+        # wrappers have already put the reset pose back under us and left every
+        # custom field of `info` belonging to the robot that fell. See
+        # _new_episode — and note the key: it is present only under
+        # EpisodeWrapper, which is what makes this a no-op for eval.py.
+        if "episode_done" in info:
+            info = self._new_episode(info, state.pipeline_state, k_new)
 
         # The bus delivers this tick's target or the previous one. Not noise —
         # a latency, and one the FTDI adapter alone can spend (robot/README.md).
@@ -498,7 +571,11 @@ class Walk(PipelineEnv):
         def one(ps, _):
             q = ps.qpos[self._qadr]
             w = ps.qvel[self._vadr]
-            tau = self._torque(p, target, q, w, u_bat, sag)
+            # One pack and one harness, so the sag is applied to the SUMMED
+            # current of all twelve — actuator.bus_torque is that whole chain,
+            # stated once and shared with eval.py's CPU pass and with
+            # check_model.py's probe that every drawn parameter is consumed.
+            tau = actuator.bus_torque(p, target - q, w, u_bat, sag, xp=jnp)
             return self._pipeline.step(self.sys, ps, tau, self._debug), tau
 
         ps, taus = jax.lax.scan(one, state.pipeline_state, (), self._n_frames)
@@ -514,9 +591,16 @@ class Walk(PipelineEnv):
             mag = jax.random.uniform(k_push, (), minval=lo, maxval=hi) * due
             ps = ps.replace(qvel=ps.qvel.at[0:2].add(
                 mag * jnp.array([jnp.cos(ang), jnp.sin(ang)])))
+            # k_gap, NOT k_push. Two uniforms off one key are the SAME uniform,
+            # so the gap to the next shove was a deterministic function of this
+            # shove's strength — gap = 3 + 6*mag/0.7 exactly, i.e. the hardest
+            # shove was always followed by the longest wait and a gentle one by
+            # the shortest. A schedule that anti-correlates with the disturbance
+            # is a schedule a policy can learn instead of a disturbance it has to
+            # survive.
             gap_lo, gap_hi = self._ranges["push"]["interval_s_abs"]["range"]
             info["next_push"] = jnp.where(
-                due, t + jax.random.uniform(k_push, (), minval=gap_lo, maxval=gap_hi),
+                due, t + jax.random.uniform(k_gap, (), minval=gap_lo, maxval=gap_hi),
                 info["next_push"])
 
         # ---- what happened
@@ -583,8 +667,11 @@ class Walk(PipelineEnv):
         # steps, as an earlier `travelled_x` here did, is meaningless at any
         # scaling — so the forward progress metric is a velocity, which means
         # something once divided.
-        # Belt as well as braces: the leak handles the truncation this env cannot
-        # see, and this handles the terminations it can.
+        # Belt as well as braces, and there are three of them now: _new_episode
+        # zeroes this at every boundary including truncation, the leak erases
+        # anything that somehow crosses one, and this catches the terminations
+        # this env can see for itself one step earlier than the wrapper reports
+        # them.
         info["heading_err"] = jnp.where(done > 0.5, 0.0, info["heading_err"])
 
         metrics["vx_body_per_step"] = jnp.nan_to_num(lin_vel_b[0])

@@ -148,7 +148,8 @@ def main():
     randomization = None
     if not a.no_randomize:
         randomization = functools.partial(
-            domain_randomize, n_boxes=a.boxes, box_geoms=env.box_geoms)
+            domain_randomize, n_boxes=a.boxes, box_geoms=env.box_geoms,
+            joint_dofs=env.joint_dofs)
 
     networks = functools.partial(
         ppo_networks.make_ppo_networks,
@@ -213,7 +214,12 @@ def main():
         note=("params/st3215.json is NOT a fit — this policy is trained against "
               "the datasheet servo. Run robot/bench/sweep.py and fit_bam.py, then "
               "retrain, before this goes anywhere near hardware."
-              if not p.fitted else "trained against a fitted actuator"),
+              if not p.fitted else
+              "trained against a FITTED actuator (fit_bam.py, 44 runs at three "
+              "voltages). The fit is under-determined — its analytic passes read "
+              "freeswing and hold only — and its free speed of 5.90 rad/s "
+              "overshoots the 3.86 the hardware does, so read p.source before "
+              "quoting this."),
     )
     with open(os.path.join(out, "run.json"), "w") as f:
         json.dump(meta, f, indent=2)

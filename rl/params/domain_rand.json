@@ -12,15 +12,22 @@
     "            trained on a narrow guess is trained on a fiction.",
     "",
     "Ranges are multiplicative on the nominal unless the key ends in _abs, which",
-    "means the range is the value itself in SI. Sampled once per environment at",
-    "reset, held for the episode: these are manufacturing and assembly spreads,",
-    "not noise, and a policy that sees them resampled every step learns to average",
-    "them away instead of being robust to them.",
+    "means the range is the value itself in SI. Drawn once per EPISODE and held",
+    "for it: these are manufacturing and assembly spreads, not noise, and a policy",
+    "that sees them resampled every step learns to average them away instead of",
+    "being robust to them. Per episode is not per run - brax calls env.reset once",
+    "for the whole of training, so until 2026-09-11 every one of these was drawn",
+    "at step zero and held for 60 M steps. env/walk.py's _new_episode is what",
+    "makes the sentence above true; model.EPISODE_DRAW is the list of which",
+    "fields it draws.",
     "",
-    "params/st3215.json is NOT a fit (actuator.load() says so out loud). Until",
-    "robot/bench/fit_bam.py has run, the actuator entries below are the width of",
-    "our ignorance about the servo, and they are deliberately wider than a fit",
-    "would justify. Narrow them when there is a fit, and not before."
+    "params/st3215.json IS a fit now - fit_bam.py, 44 runs at three voltages,",
+    "2026-09-10. The actuator entries below are still the pre-fit widths, and",
+    "that is deliberate rather than overlooked: the fit is of ONE servo, and",
+    "these ranges are the spread across TWELVE. A fit cannot narrow a",
+    "manufacturing spread; only three or four more servos through the bench can.",
+    "It is also under-determined in its own right (see its `source`), so narrow",
+    "nothing on the strength of it."
   ],
 
   "actuator": {
@@ -31,7 +38,7 @@
     "R": {"range": [0.75, 1.30], "evidence": "spec",
           "why": "4.44 ohm from the 2.7 A locked-rotor spec, at the terminals. Wiring, connector and the bus daisy-chain add series resistance the spec does not include, so the spread is asymmetric upward."},
     "J_m": {"range": [0.60, 1.60], "evidence": "guessed",
-            "why": "reflected rotor inertia, and check_model.py reports it dominates the leg at ~73x the knee link's own. The single most consequential guess in the model: it sets how fast the joint can change direction at all."},
+            "why": "reflected rotor inertia, and check_model.py reports it dominates the leg at ~151x the knee link's own (it read 73x against an earlier armature). The single most consequential guess in the model: it sets how fast the joint can change direction at all. NOTE WHERE IT IS APPLIED: this is the one actuator range that is NOT part of the per-episode draw, because no function on the training path reads actuator.Params.J_m - the inertia the physics uses is MuJoCo's dof_armature. env/randomize.py scales that, per environment, out of this range. It WAS in the per-episode draw, correctly shaped and completely inert, until 2026-09-11."},
     "tau_c": {"range": [0.40, 2.20], "evidence": "guessed",
               "why": "Coulomb friction. Varies servo to servo with grease and preload more than any other term, and it is what makes a leg stick near a reversal."},
     "mu_load": {"range": [0.40, 2.20], "evidence": "guessed",
@@ -54,8 +61,8 @@
   },
 
   "bus": {
-    "delay_s_abs": {"range": [0.0, 0.020], "evidence": "guessed",
-                    "why": "command latency from the policy writing a target to the servo acting on it, quantised to the 20 ms control tick. params/bus_timing.json does not exist yet — robot/bench/bus_probe.py writes it — so this is one whole control period of ignorance, which is the honest width. robot/README.md 'The 50 Hz budget' shows the FTDI latency timer alone ships at 16 ms."}
+    "delay_s_abs": {"range": [0.00325, 0.00890], "evidence": "measured",
+                    "why": "command latency from the policy writing a target to the servo acting on it. THE RANGE HERE IS A COPY FOR READING: model.domain_ranges() overwrites it from params/bus_timing.json, so the measurement is the only authority and this file cannot go stale against it. The composite is sync_read + sync_write, p50 and p95: the feedback the target was computed from is already one SyncRead old (p50 3.24 ms) and the target is one SyncWrite away from the servo acting on it (p50 0.01, p95 5.15), which is 3.25..8.90 ms of a 20 ms tick. Measured 2026-09-07 over twelve servos, mac + CDC adapter; re-measure on the Orange Pi, where robot/README.md says the number to trust lives. It is a FRACTION of a tick and the action buffer's quantum is a whole one, so model.delay_ticks turns the fraction into the probability of the extra tick. The previous entry here was a guessed 0..20 ms justified by 'bus_timing.json does not exist yet' - it had existed for four days - and truncating that band to whole ticks gave a delay of zero on every draw."}
   },
 
   "body": {

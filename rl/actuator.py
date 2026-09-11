@@ -22,8 +22,9 @@ So the chain is modelled as it is, in five stages:
   3. electrical     i = (U - k_e*w) / R.  The back-EMF term is what makes the
                     servo's speed limit emerge instead of being clamped on.
   4. mechanical     tau = k_u*U - k_w*w - friction, driving the reflected rotor
-                    inertia J_m, which for 1:345 is ~73x the knee link's own
-                    inertia (measured: rl/checks/check_model.py). The friction
+                    inertia J_m, which for 1:345 is ~151x the knee link's own
+                    inertia (measured: rl/checks/check_model.py prints the
+                    ratio; it read 73x against an earlier armature). The friction
                     is (tau_c + mu_load*|tau_transmitted|)*sign(w) + b_v*w, and
                     the middle term is not a refinement: on this gearbox it is
                     0.28 N*m per N*m carried against a 0.19 N*m floor, so at the
@@ -324,6 +325,37 @@ def motor_torque(p: Params, u_volt: float, w: float, driven=True, tau_t=None,
         tau_t = p.k_u * u_volt / (1.0 + p.mu_load)
     return (p.k_u * u_volt - xp.where(driven, p.k_w * w, 0.0)
             - friction(p, w, tau_t, xp))
+
+
+def bus_torque(p: Params, err, w, u_bat, sag, xp=np):
+    """The whole chain a ROBOT joint sees: inner loop, pack sag, motor torque.
+
+    One statement of it, because it was written out three times — rl/env/walk.py
+    inside the physics scan, rl/eval.py's vanilla-MuJoCo pass, and
+    rl/checks/check_model.py's probe that every randomised servo parameter is
+    actually consumed. The probe is the reason it matters that they are the same
+    arithmetic: a copy that drops `R` reads `R` as unconsumed and says so.
+
+    `err`, `w` are per joint and may be arrays; `u_bat` and `sag` are per ROBOT,
+    because there is one pack and one harness. That is why the sag is applied to
+    the SUMMED current and not to each joint's own — see simulate()'s `sag` note
+    for the factor of twelve between the two conventions.
+
+    The clamp on `volt` is not cosmetic, and the arithmetic is worth writing down
+    because it is reachable rather than hypothetical: at duty 1 and a joint
+    running backwards at 10 rad/s, i = (12 + 3.06*10)/3.33 = 12.8 A per servo,
+    and twelve of those into the original 0.18 ohm range is a 27.7 V sag on a
+    12 V pack. `volt` would go NEGATIVE, k_u*duty*volt would flip sign, and the
+    torque would drive the joint harder in the direction it was already going —
+    positive feedback. A discharged pack delivers less voltage; it never delivers
+    negative voltage. (The range has since been narrowed to 0-0.06 ohm as well,
+    which makes the clamp unreachable in normal operation. Both, not either: a
+    floor that is only satisfied by accident is not a floor.)
+    """
+    d = duty(p, err, w, xp=xp)
+    i = current(p, d * u_bat, w, xp=xp)
+    volt = xp.clip(u_bat - sag * xp.sum(xp.abs(i)), 0.0, u_bat)
+    return motor_torque(p, d * volt, w, xp=xp)
 
 
 def transmitted(p: Params, delta: float, dw: float, xp=np) -> float:

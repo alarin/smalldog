@@ -54,9 +54,15 @@ the already-generated description.
   fits its parameters into `params/st3215.json`; `model.py` installs them into
   MuJoCo. Neither side keeps a second copy of the equations. After editing it,
   run `python -c "import actuator; actuator._selftest()"`.
-- **`params/st3215.json` currently holds vendor priors, not a fit**, and
-  `actuator.load()` says so out loud. Do not silence that warning; it is
-  discharged by running the bench, not by editing the JSON.
+- **`params/st3215.json` is a FIT** — `fit_bam.py`, 44 runs at three voltages,
+  2026-09-10 — so `actuator.load()` no longer warns. That is not the same as
+  solved, and the two things it does not cover are both in its `source` string:
+  the analytic passes read only freeswing/hold/holdbi, so ten of the trajectories
+  reach the fit only under `--refine`; and its derived free speed is 5.90 rad/s
+  against the 3.86 the hardware does, because the real servo stops at a firmware
+  plateau the law does not carry (PLAN.md 3c). Read `p.source`, and do not narrow
+  `params/domain_rand.json` on the strength of a fit of ONE servo — those ranges
+  are the spread across twelve.
 - **Units cross a boundary here.** `3d/` is millimetres everywhere; MJCF and
   URDF are SI (metres, kg, radians). `robot_params.json` names the unit in every
   key — `hip_xyz_mm`, `l_thigh_mm`, `joint_limits_rad`, `stance_base_height_m`,
@@ -66,6 +72,15 @@ the already-generated description.
   `joint_velocity_limit`. `check_model.py` reports all three because conflating
   them is the easy mistake. An action space clipped to the hard limits is not the
   same policy as one clipped to the soft ones.
+- **A randomisation axis is not alive because it is drawn.** Three of them were
+  drawn, correctly shaped, and dead: `J_m` went into an `actuator.Params` field
+  no function on the training path reads (the inertia is `dof_armature`), the bus
+  delay was drawn in seconds and truncated to whole ticks so all 2000 draws came
+  back 0, and the whole per-episode draw was per-RUN because brax calls
+  `env.reset` once. `checks/check_model.py` asks the second question now — does
+  the law's output MOVE across this range — and `model.EPISODE_DRAW` is the one
+  declaration both the check and the env walk. Add an axis by adding a row there,
+  and expect the check to tell you if nothing consumes it.
 - **Run `checks/check_model.py` before training against a changed model.** It is
   not a second copy of `export_sim.py --check`, which asks whether the model is
   still the robot. This one asks whether the model is fit to train against: the
@@ -97,6 +112,43 @@ the already-generated description.
    pushing something the 3070 will spend an hour on.
 4. `eval.py` is the honest number: deterministic rollouts and a sim-to-sim pass in
    vanilla MuJoCo, not the MJX training environment reporting on itself.
+
+## Re-baselines
+
+Every entry here is a change to the ENVIRONMENT, which means checkpoints from
+before it cannot be compared with ones from after it and the next run is a
+retrain rather than a fine-tune. `eval.py` numbers move with them.
+
+- **2026-09-11 — the joint limits widened to the CAD ROM scan.** `ros2/.../
+  generate_model.py` carried a hand-typed `J_LIM` of roll 0.90 / pitch 1.30 /
+  knee 1.85 rad with a comment claiming it came from the CAD scan; it did not.
+  `3d/out/bom.json` reads ±90° / ±90° / ±110°, so the model this tree loads now
+  ships roll/pitch **1.5708** and knee **1.9199**, with
+  `joint_soft_limits_rad` at 1.4508 / 1.4508 / 1.7999 (was 0.78 / 1.18 / 1.73).
+  `model.py`'s action range and the safety clip both scale off those, so the
+  policy's action space is a different space — **retrain, do not fine-tune**.
+  `checks/check_model.py` stays 0 FAIL and its limit ladder now reads soft <
+  MuJoCo stop <= CAD ROM with the real scan in the CAD ROM column. Nothing else
+  moved: same 2.493 kg, same `MJ_*`, same meshes.
+
+- **2026-09-11 — the episode boundary, and four dead randomisation axes.** No
+  reward weight, no observation and no CAD moved; what moved is that an episode
+  is now an episode. `Walk.step` redraws the command, the servo/pack/bus draw,
+  the observation history and the foot positions on
+  `info["episode_done"]`, which brax's `EpisodeWrapper` writes and which includes
+  truncation. Before it, all of those were drawn once at step zero and held for
+  the whole run: ~15 % of environments stood still for 60 M steps, the "per
+  episode" draw was per environment, each new episode began with four frames of
+  the previous fallen robot in its observation, and `foot_slip` was charged an
+  85x spike on the first step of every episode (measured, CPU, four envs). Also
+  in the same pass: the box-height curriculum reached 12.1 mm of its declared
+  22 mm because one key drew both the raise coin and the height; the bus delay
+  was 0 ticks on every draw and now runs one tick late on ~32 % of episodes from
+  the measured `params/bus_timing.json`; `J_m` moved from the inert per-episode
+  draw to `dof_armature`; the push magnitude and the gap to the next push shared
+  a key, so the hardest shove was always followed by the longest wait; and the
+  torque ceiling handed to MuJoCo went 5.0 -> 7.5 N*m, derived, because 13.2 % of
+  `(k_u, u_bat)` draws asked for more than 5.0 and were silently clipped.
 
 ## Notes
 

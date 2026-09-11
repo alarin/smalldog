@@ -15,17 +15,19 @@ Written after a run was launched to fix a "0.6 m/s tops out at 0.406" defect
 that turned out to be arithmetic. See the Commands docstring in env/walk.py.
 
 Runs on the CPU (JAX_PLATFORMS=cpu) so it can be used while a run holds the GPU.
+That is now set rather than claimed: jaxenv.configure(platforms="cpu").
 """
 import os, sys, json, numpy as np
 _RL = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, _RL); os.chdir(_RL)
-import jaxenv; jaxenv.configure(0.10)
+import jaxenv; jaxenv.configure(0.10, platforms="cpu")
 import jax, mujoco
 from brax.io import model as brax_io_model
 from brax.training.acme import running_statistics
 from brax.training.agents.ppo import networks as ppo_networks
 import actuator, model as model_mod
 from env import Walk, assemble_obs, stack_obs, init_hist
+from env.walk import ACTION_SCALE, CTRL_HZ
 RUN=os.environ["RUN"]; SECONDS=6.0
 targs=json.load(open(f"{RUN}/run.json"))["args"]
 env=Walk(terrain=targs["terrain"],n_boxes=targs["boxes"])
@@ -46,7 +48,7 @@ print(f"{'cmd':>5}{'got':>8}{'ratio':>7}{'|w|p50':>8}{'p95':>7}{'max':>7}{'over%
 for CMDV in (0.2,0.4,0.6,0.8):
     CMD=np.array([CMDV,0.0,0.0])
     d=mujoco.MjData(mj); d.qpos[:]=q0; mujoco.mj_forward(mj,d)
-    dt=1/50.0; n_sub=int(round(dt/mj.opt.timestep)); la=np.zeros(12); hist=None
+    dt=1/CTRL_HZ; n_sub=int(round(dt/mj.opt.timestep)); la=np.zeros(12); hist=None
     W=[]; BX0=None; alive=True
     for k in range(int(SECONDS/dt)):
         fr_,_=assemble_obs(quat=d.sensordata[aq:aq+4],gyro=d.sensordata[ag:ag+3],
@@ -55,7 +57,7 @@ for CMDV in (0.2,0.4,0.6,0.8):
         if hist is None: hist=init_hist(fr_,xp=np); obs=hist.reshape(-1)
         else: obs,hist=stack_obs(hist,fr_,xp=np)
         a_,_=pol(obs,jax.random.PRNGKey(0)); a_=np.asarray(a_); la=a_
-        tgt=np.clip(st_j+a_*0.35,lo,hi)
+        tgt=np.clip(st_j+a_*ACTION_SCALE,lo,hi)
         for _ in range(n_sub):
             q,w=d.qpos[qadr],d.qvel[vadr]
             d.ctrl[act]=actuator.motor_torque(p,actuator.duty(p,tgt-q,w,xp=np)*12.0,w,xp=np)

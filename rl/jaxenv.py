@@ -111,12 +111,23 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 CACHE_DIR = os.path.join(HERE, ".jax_cache")
 
 
-def configure(mem_fraction: float = 0.60, cache_dir: str | None = None) -> str:
-    """Set both, and return the cache directory actually in force.
+def configure(mem_fraction: float = 0.60, cache_dir: str | None = None,
+              platforms: str | None = None) -> str:
+    """Set them, and return the cache directory actually in force.
 
     Must be called before anything imports jax: XLA reads the memory fraction
-    once, at the first device call.
+    once, at the first device call, and the backend list once, at the first
+    import.
+
+    `platforms` sets JAX_PLATFORMS. The three scripts in tools/ pass "cpu",
+    because their whole premise is that they can be run while a training run
+    holds the card — their docstrings SAID "runs on the CPU (JAX_PLATFORMS=cpu)"
+    for as long as nothing set it, and the effect of that was a diagnostic
+    quietly taking 10 % of the VRAM out from under the run it was diagnosing.
+    `setdefault` like everything else here, so an exported value still wins.
     """
+    if platforms:
+        os.environ.setdefault("JAX_PLATFORMS", platforms)
     os.environ.setdefault("XLA_PYTHON_CLIENT_MEM_FRACTION", str(mem_fraction))
     os.environ.setdefault("JAX_COMPILATION_CACHE_DIR", cache_dir or CACHE_DIR)
     # jax's own default, restated because it is the load-bearing one: graphs

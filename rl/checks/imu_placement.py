@@ -137,6 +137,15 @@ def main():
     print(f"trot    {a.speed:g} m/s, {a.seconds:g} s, travelled {x*1000:.0f} mm"
           + ("   !! it fell" if fell else ""))
     print(f"samples {len(acc)} at 100 Hz\n")
+    # No samples means it went over before the recording window opened at
+    # settle + 0.5 s. Say that, rather than reaching into an empty array and
+    # reporting an IndexError three frames deep in numpy — which is what it did,
+    # and which reads as a bug in this script rather than as a robot on its back.
+    if acc.size == 0:
+        print("No samples: the robot fell before the recording window opened at "
+              f"{a.settle + 0.5:g} s. Lower --speed, raise --settle, or fix the "
+              "gait — there is nothing to measure until it stays up.")
+        return 1
 
     ref = acc[:, 0, :]
     print(f"{'mount point':<20}{'offset mm':<18}{'|d a| p50':>10}{'p95':>8}{'max':>8}"
@@ -157,7 +166,8 @@ def main():
     if a.json:
         json.dump(out, open(a.json, "w"), indent=2)
         print(f"\nwrote {a.json}")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

@@ -33,16 +33,23 @@ What gets changed, and why each one is a training concern rather than a model fi
    supplies Coulomb friction (tau_c), viscous friction (b_v) and back-EMF damping
    (k_w = k_u*k_e), leaving MuJoCo's own damping and frictionloss in place counts
    the same physics twice. The reflected inertia J_m has to stay in MuJoCo — it
-   is inertia, it belongs in the mass matrix, and at 1:345 it is ~73x the knee
+   is inertia, it belongs in the mass matrix, and at 1:345 it is ~151x the knee
    link's own, which check_model.py measures and calls the dominant term.
+   It is also where J_m is RANDOMISED, for the same reason: `env/randomize.py`
+   scales `dof_armature` per environment, because that field is what the physics
+   reads. A per-episode draw on `actuator.Params.J_m` moved nothing at all — no
+   function on the training path reads it — and it shipped that way until
+   check_model.py's probe was taught to ask whether a drawn field is consumed.
 
-3. THE FEET GET priority=1.
-   check_model.py's first warning: the foot declares solref 0.008 s, the floor
-   declares 0.02 s, geom priority is equal, so MuJoCo averages them and the
-   touchdown stiffness that actually runs is 0.014 s — the mean of two unrelated
-   choices, chosen by neither. Priority makes the foot's own number win. The
-   proper fix is a deliberate contact pair in the CAD's exporter; until it is
-   there, training against an accident is worse than training against a choice.
+3. THE FEET KEEP priority=1.
+   The generated model already ships `priority="1"` on the foot geoms: the CAD's
+   MJ_FOOT_PRIORITY went in on 2026-09-08 (3d/CLAUDE.md, "The foot's contact
+   lives there too"), and check_model.py now reports the applied solref as the
+   foot's own 0.008 s rather than the 0.014 s average it used to warn about. So
+   this edit is a BELT, not a fix — it re-asserts the priority so a training
+   model built from a scene that lost it still gets the foot's own touchdown
+   stiffness instead of the solmix mean of two unrelated choices, and
+   `foot_priority=False` is there for anyone who wants to measure the difference.
 
 4. impratio GOES TO 10.
    check_model.py's second warning: at impratio=1 friction is no stiffer than the
@@ -95,13 +102,12 @@ DESC = os.path.abspath(os.path.join(HERE, "..", "ros2", "smalldog_description"))
 MJCF = os.path.join(DESC, "mujoco")
 PARAMS = os.path.join(DESC, "robot_params.json")
 DOMAIN_RAND = os.path.join(HERE, "params", "domain_rand.json")
+BUS_TIMING = os.path.join(HERE, "params", "bus_timing.json")
 
-# The torque ceiling handed to MuJoCo. Not a servo limit — the servo's own limit
-# emerges from the law (k_u*U falling with the pack, back-EMF capping the speed).
-# This is only a guard against a NaN driving the solver, set above the highest
-# torque the law can produce: k_u * 12.6 V at the top of a fresh 3S pack, with a
-# margin for the k_u randomisation range.
-TORQUE_CEILING_NM = 5.0
+# Margin on the derived torque ceiling below. 1.25 rather than a round number
+# because it has one job: leave the law's own arithmetic untouched at the top of
+# every randomisation range, and still be a wall a NaN cannot walk through.
+TORQUE_CEILING_MARGIN = 1.25
 
 BOX_HALF = (0.13, 0.13, 0.06)     # a procedural terrain box, half-extents, m
 BOX_PATCH_M = 4.0                 # boxes are scattered in +-this square
@@ -112,9 +118,58 @@ def robot_params() -> dict:
         return json.load(f)
 
 
+def bus_timing(path: str = BUS_TIMING) -> dict:
+    """What the bus actually costs, as robot/bench/bus_probe.py measured it."""
+    with open(path) as f:
+        return json.load(f)
+
+
 def domain_ranges() -> dict:
+    """The randomisation ranges, with the bus delay filled in from the bench.
+
+    Every range in params/domain_rand.json is a literal EXCEPT the bus delay,
+    which is read out of params/bus_timing.json here so that the measurement is
+    the only copy of it. Until 2026-09-11 the JSON carried a guessed 0..20 ms and
+    said the timing file "does not exist"; it has existed since 2026-09-07.
+
+    The composite is `sync_read` + `sync_write`: the feedback the policy computes
+    a target from is already one SyncRead old when it arrives, and the target is
+    one SyncWrite away from the servo acting on it. p50 and p95 of each, so the
+    band is [3.25, 8.90] ms of a 20 ms tick rather than the whole tick.
+    """
     with open(DOMAIN_RAND) as f:
-        return {k: v for k, v in json.load(f).items() if not k.startswith("_")}
+        r = {k: v for k, v in json.load(f).items() if not k.startswith("_")}
+    t = bus_timing()
+    d = r["bus"]["delay_s_abs"]
+    d["range"] = [(t["sync_read"][q] + t["sync_write"][q]) * 1e-3
+                  for q in ("p50_ms", "p95_ms")]
+    d["evidence"] = "measured"
+    return r
+
+
+def torque_ceiling(base: actuator.Params | None = None,
+                   ranges: dict | None = None,
+                   margin: float = TORQUE_CEILING_MARGIN) -> float:
+    """The torque ceiling handed to MuJoCo, in N*m.
+
+    Not a servo limit — the servo's own limit emerges from the law (k_u*U falling
+    with the pack, back-EMF capping the speed). This is only a guard against a
+    NaN driving the solver, and it has to sit above the highest torque the law
+    can produce or it stops being a guard and becomes a second, invisible servo
+    model.
+
+    Which is what it was. A hardcoded 5.0 was written as "k_u * 12.6 V with a
+    margin for the k_u randomisation range" and the margin was never done:
+    k_u * 1.35 * 12.6 V = 5.99 N*m, so 13.2 % of the (k_u, u_bat) draws asked for
+    more torque than `forcerange` would pass, and the environments that drew a
+    strong servo on a fresh pack were quietly given a weaker one. Derived here
+    from the same two ranges the draw uses, so it cannot fall behind them again.
+    """
+    base = base or actuator.load(quiet=True)
+    ranges = ranges or domain_ranges()
+    peak = (base.k_u * ranges["actuator"]["k_u"]["range"][1]
+            * ranges["supply"]["u_bat_abs"]["range"][1])
+    return float(np.ceil(peak * margin * 10.0) / 10.0)
 
 
 # ===================================================================== build
@@ -128,15 +183,17 @@ def build_spec(terrain: bool = False, n_boxes: int = 0, p: actuator.Params | Non
     notes = [f"scene {os.path.basename(scene)}"]
 
     # 1. position -> motor. The law computes the torque; MuJoCo just applies it.
+    ceiling = torque_ceiling(p)
     for a in spec.actuators:
         a.set_to_motor()
         a.gear = [1.0, 0.0, 0.0, 0.0, 0.0, 0.0]
         a.ctrllimited = mujoco.mjtLimited.mjLIMITED_TRUE
-        a.ctrlrange = [-TORQUE_CEILING_NM, TORQUE_CEILING_NM]
+        a.ctrlrange = [-ceiling, ceiling]
         a.forcelimited = mujoco.mjtLimited.mjLIMITED_TRUE
-        a.forcerange = [-TORQUE_CEILING_NM, TORQUE_CEILING_NM]
+        a.forcerange = [-ceiling, ceiling]
     notes.append(f"{len(spec.actuators)} position actuators -> torque motors, "
-                 f"+-{TORQUE_CEILING_NM:g} N*m ceiling")
+                 f"+-{ceiling:g} N*m ceiling (derived: k_u x the top of its own "
+                 f"range x a full pack, x{TORQUE_CEILING_MARGIN:g})")
 
     # 2. armature <- J_m; damping and frictionloss go to the law.
     n = 0
@@ -198,6 +255,18 @@ def build_spec(terrain: bool = False, n_boxes: int = 0, p: actuator.Params | Non
             g.group = 3
         notes.append(f"{n_boxes} procedural boxes, {2*BOX_HALF[0]*1000:.0f} mm square, "
                      f"buried at z={-BOX_HALF[2]-1.0:.2f} m until randomisation raises them")
+
+    # Not an edit — a reading, and it is in the notes because the observation
+    # hangs off it. The `imu` site is generated out of 3d/mini_dog.py's IMU_*
+    # block and it MOVES: it was at the base_link origin, then 23.4 mm, and since
+    # 2026-09-09 it is on top of the deck. A policy trained at one height saw a
+    # different accelerometer signal from one trained at another (rl/CLAUDE.md's
+    # re-baseline rule), so the number the run was trained against belongs in the
+    # run's own log rather than in a docstring that goes stale in silence.
+    imu = spec.site("imu")
+    notes.append(f"imu site at {tuple(round(float(v), 4) for v in imu.pos)} m of "
+                 f"base_link — read off the model, not assumed; the observation's "
+                 f"accelerometer channel is measured HERE")
 
     return spec, notes
 
@@ -320,43 +389,103 @@ def limits(P: dict, soft: bool = True) -> tuple[np.ndarray, np.ndarray]:
 
 
 # ========================================================== randomisation
-def sample_actuator_params(rng, n: int, ranges: dict | None = None,
-                           base: actuator.Params | None = None) -> dict:
-    """Per-environment servo, supply and bus draws, as plain arrays.
+N_JOINTS = 12
 
-    Returns a dict of (n,) or (n, 12) arrays rather than an actuator.Params,
-    because these are sampled per EPISODE and live in the env state, while the
-    things brax's randomization_fn can touch live in the model and are fixed for
-    the whole run. Both feed the same equations in actuator.py — there is still
-    exactly one copy of the law.
+#: The per-episode draw, declared ONCE: (field, block, range key, per joint).
+#:
+#: Two RNGs walk this table — `sample_actuator_params` below on numpy, for
+#: checks/check_model.py's probe, and `Walk._sample_episode` on jax keys, inside
+#: the training step. They used to be two hand-written dicts and they diverged
+#: exactly the way two hand-written dicts do: the check probed a draw the
+#: training environment never called, so it reported green while the bus delay
+#: was dead (every draw truncated to 0 ticks) and `J_m` was being drawn into a
+#: field no function on the training path reads.
+#:
+#: `J_m` is deliberately NOT here. It is inertia, the physics reads it as
+#: `dof_armature`, and that is where env/randomize.py randomises it — see the
+#: module docstring, item 2.
+#:
+#: A key ending in `_abs` means the range is the value itself in SI; otherwise it
+#: multiplies the nominal in params/st3215.json.
+EPISODE_DRAW = (
+    # field      block       range key       per joint
+    ("k_u",      "actuator", "k_u",          True),
+    ("k_e",      "actuator", "k_e",          True),
+    ("R",        "actuator", "R",            True),
+    ("tau_c",    "actuator", "tau_c",        True),
+    ("b_v",      "actuator", "b_v",          True),
+    ("mu_load",  "actuator", "mu_load",      True),
+    ("kp",       "actuator", "kp",           True),
+    ("deadband", "actuator", "deadband_abs", True),
+    ("punch",    "actuator", "punch_abs",    True),
+    ("u_bat",    "supply",   "u_bat_abs",    False),
+    ("sag",      "supply",   "sag_ohm_abs",  False),
+    ("delay_s",  "bus",      "delay_s_abs",  False),
+)
 
-    Per-joint where the spread is per-servo (twelve different motors out of one
-    bag), per-environment where it is not (one pack, one bus).
+#: What `dof_armature` is scaled by, per environment. The same range the old
+#: per-episode `J_m` draw read, applied where the physics can see it.
+ARMATURE_RANGE = ("actuator", "J_m")
+
+
+def sample_episode(uniform, ranges: dict | None = None,
+                   base: actuator.Params | None = None) -> dict:
+    """The per-episode servo, pack and bus draw, from whatever RNG is handed in.
+
+    `uniform(i, lo, hi, shape)` draws uniforms on [lo, hi) of that shape; `i` is
+    the field's index in EPISODE_DRAW, so a keyed RNG can split on it and an
+    unkeyed one can ignore it. Everything else — which fields exist, which range
+    each reads, which are per joint — is EPISODE_DRAW, which is what keeps the
+    numpy caller and the jax caller describing the same draw.
+
+    Per joint where the spread is per-servo (twelve different motors out of one
+    bag), per robot where it is not (one pack, one bus).
     """
     ranges = ranges or domain_ranges()
     base = base or actuator.load(quiet=True)
-    A, S, B = ranges["actuator"], ranges["supply"], ranges["bus"]
+    out = {}
+    for i, (field, block, key, per_joint) in enumerate(EPISODE_DRAW):
+        lo, hi = ranges[block][key]["range"]
+        shape = (N_JOINTS,) if per_joint else ()
+        u = uniform(i, lo, hi, shape)
+        out[field] = u if key.endswith("_abs") else u * getattr(base, field)
+    return out
 
-    def mul(key, shape):
-        lo, hi = A[key]["range"]
-        return np.asarray(rng.uniform(lo, hi, shape)) * getattr(base, key)
 
-    def absolute(d, key, shape):
-        lo, hi = d[key]["range"]
-        return np.asarray(rng.uniform(lo, hi, shape))
+def sample_actuator_params(rng, n: int, ranges: dict | None = None,
+                           base: actuator.Params | None = None) -> dict:
+    """`n` per-episode draws on a numpy Generator, as plain (n,) / (n, 12) arrays.
 
-    return dict(
-        # per servo
-        k_u=mul("k_u", (n, 12)), k_e=mul("k_e", (n, 12)), R=mul("R", (n, 12)),
-        J_m=mul("J_m", (n, 12)), tau_c=mul("tau_c", (n, 12)), b_v=mul("b_v", (n, 12)),
-        mu_load=mul("mu_load", (n, 12)), kp=mul("kp", (n, 12)),
-        deadband=absolute(A, "deadband_abs", (n, 12)),
-        punch=absolute(A, "punch_abs", (n, 12)),
-        # per robot
-        u_bat=absolute(S, "u_bat_abs", (n,)),
-        sag=absolute(S, "sag_ohm_abs", (n,)),
-        delay_s=absolute(B, "delay_s_abs", (n,)),
-    )
+    The numpy half of `sample_episode` above, and the only caller is
+    checks/check_model.py's probe — which is the point of it existing: that check
+    runs with mujoco and numpy alone, on the robot and on the mac, and must not
+    drag jax in to ask whether the training draw is sane.
+    """
+    def uniform(_i, lo, hi, shape):
+        return np.asarray(rng.uniform(lo, hi, (n,) + shape))
+
+    return sample_episode(uniform, ranges, base)
+
+
+def delay_ticks(latency_s, frac_u, ctrl_hz: float, xp=np):
+    """A whole-tick command delay from a latency in seconds. Stochastic rounding.
+
+    The action buffer's quantum is one control tick: the bus delivers this tick's
+    target or the last one. The measured latency is a FRACTION of a tick — 0.16
+    to 0.44 of 20 ms, params/bus_timing.json — and neither of the two obvious
+    roundings survives contact with that. Truncating deletes the axis outright,
+    which is what shipped: `uniform(0, 0.020) * 50` is [0, 1.0) and `.astype(int)`
+    made every one of 2000 draws a zero. Rounding to nearest deletes it just as
+    thoroughly in the other direction, and would put the whole band at 0 anyway.
+
+    So the fractional tick becomes the PROBABILITY of the extra tick: an episode
+    whose latency is 0.30 ticks has a 30 % chance of running one tick late for
+    all of it. Unbiased in the mean, and it leaves the policy meeting both cases
+    often enough to be robust to either. `frac_u` is one uniform on [0, 1).
+    """
+    t = latency_s * ctrl_hz
+    whole = xp.floor(t)
+    return whole + (frac_u < (t - whole))
 
 
 # ======================================================================= cli
@@ -389,11 +518,23 @@ def main():
     print(f"  stance holds at z = {d.qpos[2]*1000:.1f} mm with zero torque applied")
 
     print("\n== what the law will produce, at the ends of the supply range ======")
+    # The nominal servo is NOT the case the ceiling has to clear. Every episode
+    # draws k_u out of its own range, so the torque the law can ask for is the
+    # nominal times the top of that range — which is why this row is here and why
+    # the ceiling is derived rather than typed. Checking the nominal alone is how
+    # a 5.0 N*m ceiling sat under a 5.99 N*m draw for the whole of step 4.
+    ranges = domain_ranges()
+    ceiling = torque_ceiling(p, ranges)
+    k_u_hi = ranges["actuator"]["k_u"]["range"][1]
     for u in (12.6, 12.0, 9.9):
         tau = p.stall_torque(u)
         w = p.no_load_speed(u)
+        worst = tau * k_u_hi
         print(f"  {u:5.1f} V   stall {tau:5.2f} N*m   no-load {w:5.2f} rad/s"
-              f"   ({'ceiling ok' if tau < TORQUE_CEILING_NM else 'CEILING TOO LOW'})")
+              f"   randomised peak {worst:5.2f} N*m"
+              f"   ({'ceiling ok' if worst < ceiling else 'CEILING TOO LOW'})")
+    print(f"  the ceiling handed to MuJoCo is {ceiling:g} N*m: k_u x{k_u_hi:g} at "
+          f"{ranges['supply']['u_bat_abs']['range'][1]:g} V, x{TORQUE_CEILING_MARGIN:g}")
     print(f"  the joint velocity limit the CAD reports is "
           f"{P['joint_velocity_limit']:.2f} rad/s, MEASURED on the free hub; the "
           f"law's free speed above OVERSHOOTS it, because the real servo stops "
