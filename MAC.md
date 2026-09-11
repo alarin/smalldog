@@ -561,62 +561,138 @@ The general lesson is the one worth keeping — a vendor listing's photo is not 
 and this repo's own rule about measured-beats-catalogue applies to what is printed on a
 board as much as to its outline.
 
-## Open CAD defects found 2026-09-11
+## CAD defects found and fixed 2026-09-11
 
-A read-only review of `3d/` turned up three defects that are **geometry** — fixing any of
-them moves printed material, so a review pass that was otherwise confined to code and
-comments deliberately did not touch them. Everything below is measured on the real solids
-of the current tree, not argued. They are recorded here rather than only in the source
-because this file is the mac's queue, and these three are the queue.
+A read-only review of `3d/` turned up three defects that were **geometry** — fixing any of
+them moves printed material, so the review pass that found them deliberately stopped at
+recording them. They were all three fixed later the same day and everything below is
+measured on the real solids, before and after.
 
 The reason all three survived is the same one, and it is worth reading before adding a
 part: **every check in `3d/` is blind to a feature that does not share volume with
 something else.** `interference()` pairs the static body parts, so a part cannot interfere
 with itself; `rom_scan()` only covers what moves; `isValid()` and `Volume() > 0` pass
 happily on a body that fell off; and `PART_SOLIDS` only checks the count against a number
-a human typed. Two of the three below are *permitted* by that `PART_SOLIDS` entry.
+a human typed. Two of the three were *permitted* by that `PART_SOLIDS` entry, which is why
+that table is down to one row now and why raising an entry in it has to be argued.
 
-### 1. The GPS mast's feet no longer land on the deck screws — 3 mm out
+### 1. The GPS mast's feet no longer landed on the deck screws — fixed 2026-09-11
 
-`GPS_X, GPS_Y = -52.0, 38.0`, so `gps_mount()` cuts its two `M3_CLR` feet at (−52, ±38).
-`DECK_SCREWS` puts **all four** pairs at |y| = **41** — they moved from 38 when the
-battery module went in, because at 38 the bosses took a 1.9 mm bite out of the module's
-corners. `chassis_top()` therefore drills (−52, ±41). The feet and the boss screws are
-**3 mm apart**, so the M3 × 24 that `README.md` and the BOM describe as replacing the rear
-two deck screws cannot go through both parts.
+`GPS_X, GPS_Y` was typed as `-52.0, 38.0` beside a `DECK_SCREWS` that had moved all four
+pairs to |y| = **41** when the battery module went in, so `gps_mount()` drilled its feet at
+(−52, ±38) against `chassis_top()`'s (−52, ±41) — 3 mm apart, and the M3 × 24 that is
+supposed to replace the rear two deck screws could pass neither part. No check could see
+it: the two parts share zero solid, so `interference()` read clear.
 
-No check can see this: the two parts share zero solid, so `interference()` reads clear.
+**Fixed by reading the pair instead of typing it** — `GPS_X, GPS_Y = DECK_SCREWS[0][0],
+DECK_SCREWS[0][1]` — so the mast now follows the deck wherever the deck goes. What that
+cost is the deck's stiffening lip, not the pad: `GPS_PAD_R` = 4.8 at |y| = 41 reaches 45.8
+into a lip whose inner face is at 43, and a pad clipped to 42.8 would leave **0.05 mm** of
+wall outboard of an M3 clearance hole. So the head relief `chassis_top` already cuts in the
+lip at every deck screw (`DECK_LIP_NOTCH` = 2 mm deep, ±6 mm long) goes **full depth**
+(`DECK_LIP_H` = 6) at that one pair and runs out to the deck's rear end, taking the useless
+5 mm stub behind x = −58 with it: 432 mm³ of lip, at the very end of a 126 mm run.
+Measured after: pad against `chassis_top` **0.0 mm³** at both feet (it was 70.2 at |y| = 41
+before the notch), `gps_mount` against `chassis_top` 0.0 mm³, `gps clear:` green, mast
+`lidar fov +48.1°` unchanged. The first arm run is no longer vertical — it leans **18.4°**
+(3 mm inboard over 9 mm of rise), well inside the 45° print rule; `GPS_KNEE` stays at 38,
+because taking it to 41 would buy 3 mm of inboard reach for 3 mm of extra mast height.
+`gps_mount` 9471.2 → **9511.9 mm³** (+0.05 g).
 
-**The fix is not free.** `GPS_PAD_R` = 4.8, so a pad moved out to y = 41 reaches 45.8,
-into the stiffening lip at 43. Moving the mast means either shrinking the pad, moving the
-lip, or giving the mast its own two screws and dropping the "it drills nothing" property
-that is the whole argument for where it sits. That is a design decision, not an edit.
+### 2. `camera_mount`'s front retaining wall came off as two loose pieces — fixed 2026-09-11
 
-### 2. `camera_mount`'s front retaining wall comes off as two loose pieces
+The board-pocket cut ran the full length of the part and severed the front wall from the
+skirt: three bodies, 2896.3 mm³ (the channel) plus **529.3** (x 66.37…68.00, y −73…−9) and
+**104.9 mm³** (y 9…31), split by the lens relief. `PART_SOLIDS["camera_mount"] = 3` allowed
+it and its comment called the extras "the channel plus its two rails", which they were not.
+The one feature that stops the IMX415 board falling out forward printed as two chips of
+plastic.
 
-The board-pocket cut in `camera_mount()` runs the full length of the part and severs the
-front wall from the skirt. Measured on the solid: three bodies, **2896.3 mm³** (the
-channel), **529.3 mm³** (x 66.37…68.00, y −73…−9, z 25.53…31.96) and **104.9 mm³**
-(same x and z, y 9…31). The two small ones are the wall.
+**Fixed with two ties, both the same idea — the pocket stops where the board is not.** At
+the far end the pocket now ends `CLR` short of the board's own end instead of 1 mm past the
+channel's, which leaves **2.06 mm** of end wall and also gives the board the positive stop
+in y it never had. At the near end the board is inserted through, so nothing may close
+across it and the tie goes **over** the board: the channel's top rises `CAM_CAP` = 1.2 mm
+above the pocket's own ceiling from the lens relief to the board's near end, **10.41 mm**
+of roof (y 9.00…19.41) clear of both `CAM_FOOT_Y` screws at 23 and 29, so neither
+counterbore moves and the M3 × 20 in the BOM is unchanged. Measured after: **1 solid**,
+3530.5 → **3657.1 mm³** (+0.15 g), part top z 31.96 → **33.54**, 0.00 mm³ against
+`lidar_mount` (the ceiling here is `LIDAR_BASE_FLAT` = 63.5, i.e. the pedestal is cut away
+in front of the mount's back plane) and 0.00 against `camera_module`; `lidar fov` +23.1°
+and `camera view: out of frame`, both unchanged. The roof works as retention: lift the
+module 0.5 / 1.0 / 2.0 mm and it now fouls by 2.5 / 10.7 / 21.7 mm³ where the old part
+fouled by nothing.
 
-`PART_SOLIDS["camera_mount"] = 3` allowed it, and its comment said the extras were "the
-channel plus its two rails", which they are not. So the count check saw the number it had
-been told to expect. The consequence is real: the wall is the one feature that stops the
-IMX415 board falling out forward, `camera_mount()`'s docstring describes it as retention,
-and on the printed part it is two chips of plastic on the plate.
+*One thing measured and deliberately not chased:* "the board slides in endwise" does not
+survive a rigid straight-line slide and **did not before this change either** — slide the
+module +2 / +4 / +6 mm in y and 43.7 / 101.9 / 166.2 mm³ of mount is in the way, because
+the ⌀14 lens holder cannot pass the front wall. Those figures are **bit-identical** on the
+old part and the new one, so this fix neither caused it nor made it worse. Whatever the
+real assembly motion is, it is not a straight slide, and the docstring overstates it.
 
-### 3. The Orange Pi's rear standoff pair floats 0.2 mm off the deck
+### 3. The Orange Pi's rear standoff pair floated 0.2 mm off the deck — fixed 2026-09-11
 
 `OPI_HOLES` = (92, 54) at `OPI_X` = −22 puts the rear pair at x = −68 on a deck that ends
-at x = −63. With `OPI_STAND_R` = 4.8 the standoffs' nearest material is at **−63.2**, so
-the clearance is **0.2 mm** — not the 0.8 `3d/README.md` stated (that number was never
-measured; the README has been corrected). `chassis_top` comes back as three solids: the
-deck at 42575.3 mm³ and two standoffs of **383.8 mm³** each, x −72.80…−63.20, y ±22.20…
-±31.80, z 29…36, attached to nothing.
+at −63; at `OPI_STAND_R` = 4.8 the standoffs reached x = −63.20, so `chassis_top` came back
+as three solids — the deck at 42575.3 mm³ and two **383.8 mm³** bosses attached to nothing.
 
-This is the hole pattern being wrong and not the deck — `OPI_HOLES` is marked **verify**
-in `README.md` and has never met a real board. It is the cheapest of the three to fix and
-the one that should wait longest: measure a Pi first.
+**Fixed by giving the deck a local tab under each rear standoff, not by moving the hole
+pattern.** `OPI_HOLES` is still **verify** and has never met a real board, so adjusting it
+to make the geometry close would bake a guess into printed material; and moving `OPI_X`
+forward is not available either — the Pi would have to come 9.8 mm forward and `OPI_BOX`
+would then run into the LiDAR pedestal, which is the same clash `LIDAR_BASE_R` was shrunk
+to 26.0 to avoid. The tab is `OPI_TAB_X` = −74.0 out to the deck's end at −63, |y| =
+21.0…33.0, full `DECK_T`: measured, it supports **100 %** of the standoff's ⌀9.6 footprint,
+and it is guarded by `if OPI_TAB_X < -BODY_L/2`, so a re-measured hole pattern that puts
+the standoff back on the deck deletes it with no edit. Nothing objects behind the rear wall
+at deck height — measured **0.0 mm³** against `chassis_bottom`, `cradle_rear` (which tops
+out at z = 15.36), `battery_case` and `battery_lid` over x −80…−63, |y| ≤ 36, z 25…29, and
+the XT60 above the cradle tops out at the deck's underside. `chassis_top` is **1 solid**,
+43342.9 → **43930.9 mm³** (1056 mm³ of tab less 432 of lip notch less the M2.5 holes,
++0.60 g); its print bbox grows 126.0 → **137.0 mm** in x, still well inside a 256 bed.
+
+### The ladder
+
+| step | result |
+|---|---|
+| 0 baseline | `fea.py --all` and the three `standalone_sim.py` runs on the unchanged tree, kept for steps 4 and 6 |
+| 1 `mini_dog.py` | every part valid, volumes positive, **every solid count as declared with `PART_SOLIDS` down to `{"servo_gauge": 2}`**; ROM unmoved at −90/+90, −90/+90, −110/+110; `body clear` (nine parts + camera + imu), `imu clear +3.40`, `batt clear +0.60`, `module clear 0.0/0.0`, `holder clear 0.0/0.0`, `lidar clear +4.0`, `foot bolt` ok, `clamp clear +1.43`, `head clear +0.65`, `fork access: all six arms`, `panel clear`, `cradle bolts +5.15`, `gps clear`, `lidar fov` 34.0 / 48.1 / 23.1, `camera view` all out of frame |
+| 2 bboxes | only `chassis_top` moved: 126.0 × 92.0 × 11.0 → **137.0 × 92.0 × 11.0**. Printed mass **+0.79 g** total (chassis_top +0.60, camera_mount +0.15, gps_mount +0.05); `fea.robot_mass()` 2.4932 → **2.4940 kg** |
+| 3 render | three PNGs plus close-ups of the rear (mast foot in the notched lip, the two deck tabs) and of `camera_mount` beside the old one — the loose rail is visibly one part now |
+| 4 `fea.py --all` | **not one inter-layer SF moved.** `shin_A` 59.2 / 29.6 / 9.9 / 3.2, `thigh_A` 18.6 / 9.3 / 3.1 / 0.8, `hip_bracket_A` 46.2 / 23.1 / 7.7 / 1.6, `cradle_front` 4.0 / 2.0 / 0.7 / 1.9 — identical to the baseline. Three *in-plane* `stand4` figures moved by 0.1 (118.5 → 118.4, 37.2 → 37.1, 92.4 → 92.3): that is +0.79 g of robot arriving in the ground load cases at safety factors near 100. `--orient` not re-run and provably not needed — no `PRINT_ORIENT` entry changed and none of the four FEA parts was touched |
+| 5 `export_sim.py --check` | `4 feet down, upright +1.00`, base z 187 mm, **2.494 kg**, terrain the same, camera axis (+0.99 +0.00 +0.10), lidar 5195 rays → 1242 returns, urdf/mjcf leg mass agree, 13 STL |
+| 6 ROS 2 | regenerated; only `base_link.stl`, the base link's inertia and `robot_params.json` moved — **no leg mesh changed** |
+| 7 `rl/checks/check_model.py` | **0 FAIL, 3 warn** (all pre-existing GUESSED warnings) |
+
+### The gait, with two controls beside it
+
++0.79 g is a tenth of the 11 g `3d/CLAUDE.md` calls hypersensitive, but the terrain and
+course arms were read with a **Δm control** as well as an unchanged one, because this
+walker has been documented falling over on 7 g of dead mass. The Δm arm is 0.793 g parked
+in `ELECTRONICS_KG` on the *unchanged* geometry.
+
+| | control, 2.4927 kg | control **+0.79 g dead mass**, 2.4935 kg | after, 2.4935 kg |
+|---|---|---|---|
+| flat trot | 457.9 mm | — | **457.9 mm** |
+| terrain, default seed | 412.0 mm | 423.9 mm | 394.7 mm |
+| terrain, seeds 7…12 | 419 ±16 mm, **0/6 down** | 393 ±29 mm, **1/6 down** (seed 8) | **403 ±34 mm, 1/6 down** (seed 8) |
+| course, seeds 7 / 8 / 9 | 1/7 1663, 2/7 1733, 2/7 1836, all upright | 1/7 1654, 0/7 449 **down**, 2/7 1838 | 2/7 1791, 0/7 451 **down**, 2/7 1842 |
+
+**The middle column is the answer and it is the method `3d/CLAUDE.md` prescribes.** Seed 8
+goes on its back in the Δm arm and in the changed arm at the same distance to two
+millimetres (335.7 against 334.4 on terrain, 449 against 451 on the course) — so what put
+it down is 0.79 g of dead mass on the unchanged geometry, not where the plastic went. The
+flat trot is identical to the tenth of a millimetre, and the two terrain means differ by
+16 mm against a 15 mm standard error on the difference, i.e. one distribution. Nothing here
+moved outside the noise this repository already documents, so `3d/CLAUDE.md` step 6 gets no
+new re-baseline entry.
+
+*The control is worth a line of its own:* it reproduced `3d/CLAUDE.md` step 6's own
+2026-09-11 `settle()`-plus-CAD-limits row **exactly** — flat 457.9 mm, terrain seeds 7…12
+419 ±16 mm with 0/6 down, course 1/7 1663, 2/7 1733, 2/7 1836 all upright — off a clean
+regenerate of the unchanged tree. That is the second time a re-baseline in this file has
+been re-derived from scratch and come back bit-for-bit, and it is what makes the after
+column above readable at all: a drop here would have shown.
 
 ### What was fixed in the same pass
 

@@ -413,10 +413,19 @@ in the deck window, and both are gone. Redraw it before relying on it.
 - Orange Pi 5 Pro: four printed standoffs on the deck (92 × 54 pattern — **verify**).
   With that pattern the rear pair lands at x = −68 on a deck that ends at −63; with
   `OPI_STAND_R` = 4.8 the standoff's nearest material is at −63.2, i.e. **0.2 mm** clear
-  of the deck (it said 0.8 here and that was never measured), so `chassis_top` currently
-  comes out as three solids — two of them 384 mm³ of standoff floating on nothing. That is
-  the hole pattern being wrong, not the deck: fix `OPI_HOLES` / `OPI_X` once a real board
-  is measured. Open, and recorded in `../MAC.md`, "Open CAD defects found 2026-09-11".
+  of the deck (it said 0.8 here and that was never measured), so `chassis_top` used to come
+  out as three solids — two of them 383.8 mm³ of standoff floating on nothing. **The deck
+  grows a tab under each rear standoff rather than the hole pattern moving** (`OPI_TAB_*`,
+  fixed 2026-09-11): x −74.0 out to the deck's end, |y| = 21…33, full `DECK_T`, carrying
+  100 % of the ⌀9.6 footprint, and nothing is behind the rear wall at deck height to object
+  — measured 0.0 mm³ against `chassis_bottom`, `cradle_rear`, `battery_case` and
+  `battery_lid` over x −80…−63, |y| ≤ 36, z 25…29. **The hole pattern is still the number
+  that is wrong** and it keeps its **verify** marker; the tab is guarded by
+  `if OPI_TAB_X < -BODY_L/2`, so a measured `OPI_HOLES` that puts the standoff back on the
+  deck deletes it with no edit here. Moving `OPI_X` forward instead was not available: the
+  Pi would have to come 9.8 mm forward and `OPI_BOX` would then hit the LiDAR pedestal, the
+  same clash `LIDAR_BASE_R` was shrunk to 26.0 to avoid. Recorded in `../MAC.md`, "CAD
+  defects found and fixed 2026-09-11". The deck's print bbox is 137 × 92 × 11 with it.
   Its **envelope** is a separate number and a load-bearing one: `OPI_BOX` = 100 × 62 × 20
   over the deck (board, connector row, heatsink), the box every exporter hangs
   `ELECTRONICS_KG` on *and* the keep-out `gps_mount` arches over. It used to be a literal
@@ -529,7 +538,28 @@ OV5693 module for the sensor, not the megapixels: 1/2.8" is ~3× the area of the
   can be full size; the far end is keyed by a printed tongue in a pocket, which fastens
   nothing and so needs no nut. The screws come down into nuts in slots in the gusset,
   opening forward — open air under the chin, and the only face still reachable with the
-  board in. 4.1 g of part.
+  board in. 4.3 g of part.
+- **That wall has to be attached to something, and until 2026-09-11 it was not.** The
+  board-pocket cut ran the full length of the part and severed it from the skirt, so
+  `camera_mount` came back as three bodies — the channel at 2896.3 mm³ plus the wall in two
+  loose pieces of **529.3** (y −73…−9) and **104.9 mm³** (y 9…31), split by the lens relief
+  — and `PART_SOLIDS` said 3, so the count check saw the number it had been told to expect
+  rather than a wall that had fallen off. **Two ties put it back, both the same idea: the
+  pocket stops where the board is not.** At the far end it now ends `CLR` short of the
+  board's own end, which leaves 2.06 mm of end wall and gives the board the positive stop
+  in y it never had; at the near end the board is inserted through, so the tie goes *over*
+  it — the channel's top rises `CAM_CAP` = 1.2 mm above the pocket's ceiling for 10.41 mm
+  (y 9.00…19.41), clear of both `CAM_FOOT_Y` screws at 23 and 29, so neither counterbore
+  moves and the M3 × 20 in the BOM is unchanged. The part is **one solid** at 3657.1 mm³
+  and its top goes z 31.96 → 33.54, which the ceiling allows: `LIDAR_BASE_FLAT` cuts the
+  pedestal away in front of the mount's back plane, and the roof shares 0.00 mm³ with
+  `lidar_mount` and 0.00 with the module. It earns its keep as retention — lift the module
+  0.5 / 1.0 / 2.0 mm and it fouls by 2.5 / 10.7 / 21.7 mm³ where the old part fouled by
+  nothing. **One honest caveat:** "slides in endwise" does not survive a rigid straight
+  slide and did not before this change either — +2 / +4 / +6 mm of y puts 43.7 / 101.9 /
+  166.2 mm³ of mount in the module's way, bit-identical on the old part and the new one,
+  because the ⌀14 lens holder cannot pass the front wall. Whatever the real assembly motion
+  is, it is not a straight slide.
 - **`camera_clear()` is the camera's `lidar_fov_clear()`.** It reports the highest
   elevation at which a solid still shows inside the frame, and the build prints it per
   part. A 1.6 m face at 2.2…4 m sits at +19…+32° from this lens, so anything reaching into
@@ -566,14 +596,22 @@ OV5693 module for the sensor, not the megapixels: 1/2.8" is ~3× the area of the
   in front has 4 — and `lidar_fov_clear()` charges the real 96° NEGA cone against the part
   on every build: **+48.1° outside it**.
 - So the mount is a trestle over the deck's **rear** pair of boss screws, mirroring what
-  the removed `lidar_guard` used to play with the front pair: the intent is that it drills
-  nothing and those two M3 × 12 simply become M3 × 24. **It does not line up any more, and
-  that is an open defect**: `GPS_Y` is 38 and all four deck-screw pairs moved to |y| = 41
-  when the battery module went in, so the feet and the boss screws are 3 mm apart. Neither
-  `interference()` nor `rom_scan` can see it — the two parts share no solid. Recorded in
-  `../MAC.md`, "Open CAD defects found 2026-09-11"; the fix is not free, because
-  `GPS_PAD_R` = 4.8 at y = 41 reaches 45.8 into the stiffening lip at 43. The receiver lies on the platform and the patch sits on the receiver,
-  which is how the module ships.
+  the removed `lidar_guard` used to play with the front pair: it drills nothing and those
+  two M3 × 12 simply become M3 × 24. **The feet are read from `DECK_SCREWS`, not typed
+  beside it**, and that is the fix for a defect that shipped: `GPS_Y` was a literal 38 while
+  all four deck-screw pairs moved to |y| = 41 with the battery module, so feet and screws
+  sat 3 mm apart and one M3 could pass neither part. Neither `interference()` nor
+  `rom_scan` could see it — the two parts share no solid, and a fastener that lines up is
+  not a volume. **What it cost is the stiffening lip, not the pad**: `GPS_PAD_R` = 4.8 at
+  |y| = 41 reaches 45.8 into a lip whose inner face is at 43, and a pad clipped to 42.8
+  would leave 0.05 mm of wall outboard of an M3 clearance hole, so the head relief the deck
+  already cuts at every screw (`DECK_LIP_NOTCH`, 2 mm deep) goes **full depth** at this one
+  pair and runs out to the deck's rear end — 432 mm³ of lip, at the end of a 126 mm run.
+  Measured after: 0.0 mm³ of pad inside `chassis_top` at both feet, against 70.2 before the
+  notch. The first arm run leans 18.4° instead of standing vertical (3 mm inboard over 9 mm
+  of rise), well inside the 45° print rule, and `GPS_KNEE` stays at 38. Fixed 2026-09-11;
+  `../MAC.md`, "CAD defects found and fixed 2026-09-11". The receiver lies on the platform
+  and the patch sits on the receiver, which is how the module ships.
 - **The kink in the arms is derived, not styled.** Two constraints pull opposite ways: no
   run may lean more than 45° off vertical or the part stops printing without support (the
   rule that also shapes `lidar_mount`), and the arm has to be clear of `OPI_BOX`'s top

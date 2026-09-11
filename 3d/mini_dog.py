@@ -445,6 +445,19 @@ DECK_SCREWS  = ((-52.0, 41.0, (0.0, -1.0, 0.0)),
                 (-18.0, 41.0, (1.0,  0.0, 0.0)),
                 ( 18.0, 41.0, (1.0,  0.0, 0.0)),
                 ( 52.0, 41.0, (0.0, -1.0, 0.0)))
+# The deck's two stiffening lips, and the relief every deck screw needs through them.  An
+# ISO 7380 head at |y| = 41 stands 0.8 mm proud of its counterbore and reaches into the
+# lip, so chassis_top notches DECK_LIP_NOTCH out of it at all eight screws.
+# AT THE REAR PAIR THAT NOTCH GOES FULL DEPTH and runs out to the deck's own rear end,
+# and the reason is gps_mount: its two feet ARE that pair of screws, and a GPS_PAD_R pad
+# centred at |y| = 41 reaches 45.8 into a lip whose inner face is at 43.  Shrinking the
+# pad instead is not an option - clipped at 42.8 it would leave 0.05 mm of wall outboard
+# of an M3 clearance hole, i.e. an open slot - so the lip is what gives way.  It costs
+# 17 x 3 x 6 mm a side, at the very end of a 126 mm run, and it takes the useless 5 mm
+# stub the old x +-6 notch left behind x = -58 with it.  Added 2026-09-11.
+DECK_LIP_W, DECK_LIP_H = 3.0, 6.0     # the lip: width inboard of the deck edge, height
+DECK_LIP_NOTCH = 2.0                  # ... head relief at a deck screw, down from the top
+DECK_LIP_CUT   = 6.0                  # ... and its half length along x
 # The hip-roll cradles are BOLTED parts, not part of the tray.
 # ---------------------------------------------------------------------------------
 # There are TWO of them - cradle_front and cradle_rear - and each carries both of that
@@ -585,6 +598,25 @@ OPI_X        = -22.0                  # Orange Pi 5 Pro board centre on the deck
 OPI_HOLES    = (92.0, 54.0)
 OPI_STAND_R, OPI_STAND_H = 4.8, 7.0   # standoff: r fits an M2.5 nut slot, h clears the nut
 OPI_NUT_DZ   = 1.5                    # ... its floor, above the deck's top face
+# THE REAR PAIR HAS NO DECK UNDER IT, and the deck grows a tab rather than the hole
+# pattern moving.  OPI_HOLES at OPI_X puts that pair at x = -68 on a deck that ends at
+# -63: at OPI_STAND_R the standoff's nearest material is at -63.20, so it floated 0.2 mm
+# clear of the edge and chassis_top came back as THREE solids - the deck, and two 383.8
+# mm3 bosses attached to nothing.  isValid() and Volume() > 0 both pass on that, and
+# PART_SOLIDS said 3, so it shipped.  OPI_HOLES is still **verify** and has never met a
+# real board (README, "Orange Pi 5 Pro"), so it is deliberately NOT adjusted to make the
+# geometry close - that would bake a guess into printed material.  Moving OPI_X forward
+# is not available either: the Pi would have to come 9.8 mm forward and OPI_BOX would
+# then run into the LiDAR pedestal, which is the same clash LIDAR_BASE_R was shrunk to
+# 26.0 to avoid.  So the deck is extended locally under each rear standoff, and the tab
+# DISAPPEARS on its own the moment a measured hole pattern puts the standoff back on the
+# deck (chassis_top only unions it while OPI_TAB_X is outboard of the deck's end).
+# Nothing is behind the rear wall at deck height to object: measured 0.0 mm3 against
+# chassis_bottom, cradle_rear (z <= 15.36) and battery_case over x -80..-63, |y| <= 36,
+# z 25..29, and the XT60 above the cradle tops out at the deck's underside.
+OPI_TAB_RIM  = 1.2                    # ... rim of deck left round the standoff's foot
+OPI_TAB_X    = OPI_X - OPI_HOLES[0]/2 - OPI_STAND_R - OPI_TAB_RIM
+OPI_TAB_W    = OPI_STAND_R + OPI_TAB_RIM      # ... half width of the tab, in y
 # The Orange Pi as an ENVELOPE rather than as a hole pattern.  100 x 62 is the board;
 # 20 mm is the stack allowance over the deck's own standoffs - board, its connector row and
 # a heatsink.  It is here, in the model, because it is a keep-out that two other things
@@ -841,8 +873,12 @@ LIDAR_SIGMA  = 20.0                   # mm, 1-sigma range noise (+-2 cm spec) **
 #   * and the arm has to be clear of OPI_BOX, whose top corner is at (|y| = 31, z = 49),
 #     before it gets inboard of it.  A straight arm from the pad cannot: at 45 deg its
 #     lower edge passes that corner 8 mm too low, whatever the platform's width.
-# So the arm goes straight UP out of its pad first and makes exactly one 45 deg run
-# inboard, and where it turns is derived, not chosen.  A rod leaning 45 deg carries its
+# So the arm rises out of its pad first and makes exactly one 45 deg run inboard, and
+# where it turns is derived, not chosen.  (That first run was vertical while the feet sat
+# at |y| = 38; on the deck's real screws at 41 it leans 18.4 deg - 3 mm inboard over 9 mm
+# of rise, which is well inside the same 45 deg print rule and changes nothing else.
+# GPS_KNEE stays at 38: taking it out to 41 would buy 3 mm of inboard reach at 3 mm of
+# extra mast height, for nothing.)  A rod leaning 45 deg carries its
 # lower edge GPS_ROD/sqrt(2) = 2.47 mm below and inboard of its axis, which puts the edge
 # at z = knee + 2.06 as it crosses |y| = 31: the knee goes at 48 and the solid clears the
 # envelope by 1 mm.  That is checked and not asserted - gps_clear() intersects the real
@@ -859,8 +895,23 @@ LIDAR_SIGMA  = 20.0                   # mm, 1-sigma range noise (+-2 cm spec) **
 # fix that - the other sensor is bigger than this one and it was here first.  What the
 # height does buy is 28 mm of separation from the Pi, which is the part that matters at
 # 1.575 GHz: a USB 3 stack under a patch antenna is a well documented way to lose a fix.
-GPS_X, GPS_Y = -52.0, 38.0            # the deck's rear boss pair - the mast's two feet
-GPS_PAD_R, GPS_PAD_H = 4.8, 10.0      # r keeps the pad clear of the deck's stiffening lip
+# THE FEET ARE READ FROM DECK_SCREWS AND NOT TYPED BESIDE IT, and that is the whole fix
+# for a defect that shipped: this line was `GPS_X, GPS_Y = -52.0, 38.0`, and when the
+# battery module pushed all four deck pairs from |y| = 38 to 41 the mast stayed behind.
+# gps_mount then drilled its feet at (-52, +-38) and chassis_top drilled the deck at
+# (-52, +-41) - 3 mm apart, so the one M3 x 24 that is supposed to pass through both
+# parts could pass neither.  NO CHECK IN THIS FILE COULD SEE IT: the two parts share no
+# solid, so interference() reads clear, and a fastener that lines up is not a volume.
+# Reading the pair means the mast now follows the deck wherever it goes.  Fixed
+# 2026-09-11; recorded in ../MAC.md.
+GPS_X, GPS_Y = DECK_SCREWS[0][0], DECK_SCREWS[0][1]   # the deck's rear boss pair
+GPS_PAD_R, GPS_PAD_H = 4.8, 10.0      # r is 1 x D of wall round an M3 clearance hole,
+                                      # which is the whole job of the pad.  At |y| = 41
+                                      # it reaches 45.8 into the deck's stiffening lip
+                                      # (43 .. 46, z 29 .. 35) and it may not be shrunk
+                                      # to fit: clipped at 42.8 the wall outboard of the
+                                      # hole is 0.05 mm.  The lip gives way instead - see
+                                      # DECK_LIP_* - and the pad is unchanged.
 GPS_ROD      = 3.5                    # arm radius
 GPS_KNEE     = (38.0, 48.0)           # (|y|, z) the arms turn inboard at - derived, see above
 GPS_LAND     = 24.0                   # |y| where they meet the platform
@@ -950,6 +1001,32 @@ CAM_FOOT_Y   = (23.0, 29.0)
 CAM_NUT_DZ   = 8.0                    # nut-slot floor, below the ledge: 5 mm of gusset
                                       # over the nut, which is what takes the preload
 CAM_KEY      = (-45.0, 6.0, 3.0)      # locating tongue: y centre, length, depth
+CAM_LENS_REL = 2.0                    # relief round the @14 holder, on radius: the mount
+                                      # must not vignette its own camera
+# ... AND THE WALL IN FRONT OF THE BOARD HAS TO BE ATTACHED TO SOMETHING.  It was not.
+# The board pocket ran the full length of the channel, which severed that wall from the
+# skirt behind it, and camera_mount came back as three bodies: the channel, plus the wall
+# in two loose pieces of 529.3 and 104.9 mm3 (x 66.37..68.00, z 25.53..31.96), split by
+# the lens relief.  PART_SOLIDS said 3 - "the channel plus its two rails", which they
+# never were - so the count check saw the number it had been told to expect and the one
+# feature that stops the board falling out forward printed as two chips of plastic.
+# TWO TIES PUT IT BACK, and they are the same idea in two places: the pocket stops where
+# the board is not.
+#   * at the FAR end the pocket now ends CLR short of the board's own end instead of 1 mm
+#     past the channel's, which leaves 2.06 mm of end wall.  That ties the long piece and
+#     it also gives the board a positive stop in y, which it did not have;
+#   * at the NEAR end the board is inserted through, so nothing may close it - the tie
+#     goes OVER the board instead.  The channel's top rises CAM_CAP above the pocket's own
+#     ceiling from the lens relief to the board's near end, which is 10.4 mm of roof clear
+#     of both CAM_FOOT_Y screws (23 and 29), so neither counterbore moves and the M3 x 20
+#     in the BOM is unchanged.
+# There is room above: the ceiling here is LIDAR_BASE_FLAT = 63.5, i.e. the pedestal is
+# cut away in front of the mount's own back plane, and measured, a roof to z 33.9 shares
+# 0.0 mm3 with lidar_mount and leaves lidar_fov_clear at +22.6 deg outside the 96 deg
+# cone (it was +23.1).  Fixed 2026-09-11.
+CAM_CAP      = 1.2                    # roof over the board pocket at the near end: three
+                                      # 0.4 mm perimeters, and it carries nothing but a
+                                      # 4 g board that must not lift out of its slot
 
 STAND_PITCH, STAND_KNEE = -22.0, 46.0
 
@@ -1948,6 +2025,13 @@ def chassis_top():
     # in a slot opening outboard in y - fitted before the board goes on, and still the only
     # face you can reach once the deck is on the tray.  The M2.5 nut, not M3: the board's
     # own holes are 2.5, and its 5.0 across-flats leaves 2.2 mm of standoff wall.
+    # ... and the rear pair needs a deck to stand on before it gets one: see OPI_TAB_*.
+    # The guard is the point - the tab exists only while the hole pattern hangs the
+    # standoff off the end, so a re-measured OPI_HOLES deletes it with no edit here.
+    if OPI_TAB_X < -BODY_L/2:
+        for sy in (-1.0, 1.0):
+            ty = sy*OPI_HOLES[1]/2
+            s = s.union(bxc(OPI_TAB_X, -BODY_L/2, ty-OPI_TAB_W, ty+OPI_TAB_W, z0, z1))
     for sx in (-1, 1):
         for sy in (-1, 1):
             p = (OPI_X+sx*OPI_HOLES[0]/2, sy*OPI_HOLES[1]/2, z1)
@@ -1972,15 +2056,17 @@ def chassis_top():
         hx = sx*IMU_HOLE_P/2
         s = s.union(cyl(IMU_STAND_R, IMU_STAND_H, (hx, IMU_Y, z1)))
         s = s.cut(cyl(M25_TAP, IMU_TAP_L, (hx, IMU_Y, z1+IMU_STAND_H-IMU_TAP_L)))
-    for y in (-BODY_W/2, BODY_W/2-3.0):                       # stiffening lips
-        s = s.union(bxc(-BODY_L/2, BODY_L/2, y, y+3.0, z1, z1+6.0))
-    for x, ay, _ in DECK_SCREWS:                               # ... notched at every screw:
-        for sy in (-1.0, 1.0):                                # a socket head at |y| = 41
-            y0 = sy*(BODY_W/2-3.0)                            # stands 0.8 mm proud of its
-            s = s.cut(bxc(x-6.0, x+6.0, min(y0, y0+sy*3.0),   # counterbore and reaches
-                          max(y0, y0+sy*3.0), z1, z1+2.0))    # into the lip.  Used to be
-                                                              # the mid pair only; all four
-                                                              # sit at 41 now.
+    for y in (-BODY_W/2, BODY_W/2-DECK_LIP_W):               # stiffening lips
+        s = s.union(bxc(-BODY_L/2, BODY_L/2, y, y+DECK_LIP_W, z1, z1+DECK_LIP_H))
+    for x, ay, _ in DECK_SCREWS:              # ... notched at every screw: a socket head
+        foot = (x == GPS_X and ay == GPS_Y)   # at |y| = 41 stands 0.8 mm proud of its
+        dz = DECK_LIP_H if foot else DECK_LIP_NOTCH       # counterbore and reaches into
+        x0 = -BODY_L/2-1.0 if foot else x-DECK_LIP_CUT    # the lip.  It used to be the
+        for sy in (-1.0, 1.0):                            # mid pair only; all four sit at
+            y0 = sy*(BODY_W/2-DECK_LIP_W)                 # 41 now - and at the GPS mast's
+            s = s.cut(bxc(x0, x+DECK_LIP_CUT,             # own pair it goes FULL DEPTH,
+                          y0, y0+sy*DECK_LIP_W,           # out to the deck's rear end,
+                          z1, z1+dz))                     # for GPS_PAD_R.  See DECK_LIP_*.
     return s
 
 def lidar_pose():
@@ -2296,14 +2382,15 @@ def camera_mount():
     camera.  The board goes in from the +y end and the same two screws that hold the mount
     down close that end.
 
-    ** THE FRONT WALL IS NOT ATTACHED. **  The board-pocket cut below runs the full
-    length of the part, so it severs that wall from the skirt and camera_mount comes back
-    as three bodies: the channel, and the wall in two loose pieces of 529 and 105 mm3
-    (x 66.37..68, z 25.5..32).  PART_SOLIDS allows 3 for this part, which is what let it
-    ship - the count check sees a number it was told to expect, not a wall that fell off.
-    So the retention described above does not exist on the printed part.  Open, recorded
-    in ../MAC.md, "Open CAD defects found 2026-09-11"; the fix moves printed geometry and
-    was deliberately not made in the pass that found it.
+    THE FRONT WALL IS TIED AT BOTH ENDS, and until 2026-09-11 it was tied at neither:
+    the board pocket ran the full length of the part, severed the wall from the skirt, and
+    camera_mount came back as three bodies (the channel, plus the wall in two loose pieces
+    of 529.3 and 104.9 mm3).  PART_SOLIDS said 3, so the count check passed on a wall that
+    had fallen off.  The pocket now stops CLR short of the board's far end - 2.06 mm of
+    end wall, which is also the board's stop in y - and the channel's top rises CAM_CAP
+    over the pocket between the lens relief and the board's near end, where the board is
+    inserted through and nothing may close across it.  The argument, the measurements and
+    what else was tried are in the CAM_CAP block.
 
     IT PRINTS ON ITS BACK, on the skirt: that face is the part's one big flat, and stood
     up the right way the whole 90 mm channel is a 20 mm wall on a 4 mm foot."""
@@ -2311,18 +2398,27 @@ def camera_mount():
     o, n, _ = camera_frame()
     y0, y1 = cam_span()
     e0, e1 = min(CAM_END), max(CAM_END)
-    top  = CAM_Z + Wd/2*math.cos(math.radians(CAM_TILT))          # the board's upper edge
-    bot  = CAM_Z - Wd/2*math.cos(math.radians(CAM_TILT))          # ... and its lower one
-    deck = BODY_Z1 + DECK_T
-    s = bxc(CAM_BACK, CAM_FRONT, e0, e1, CAM_LEDGE, bot)          # shelf
+    ct, st = math.cos(math.radians(CAM_TILT)), math.sin(math.radians(CAM_TILT))
+    top  = CAM_Z + Wd/2*ct                                        # the board's upper edge
+    bot  = CAM_Z - Wd/2*ct                                        # ... and its lower one
+    ptop = CAM_Z + (Wd/2+CLR)*ct + CLR*st          # ... and the pocket's own ceiling, at
+    deck = BODY_Z1 + DECK_T                        # its front lip: the highest the cut
+    s = bxc(CAM_BACK, CAM_FRONT, e0, e1, CAM_LEDGE, bot)          # below reaches
     s = s.union(bxc(CAM_BACK, CAM_FRONT, e0, e1, bot, deck))      # ... and the skirt, in
     s = s.union(bxc(CAM_BACK_HI, CAM_FRONT, e0, e1, deck, top))   # two steps past the deck
+    # ... and the roof that ties the front wall's near half back to the skirt over the
+    # board, from the lens relief to the board's own end.  See the CAM_CAP block.
+    s = s.union(bxc(CAM_BACK_HI, CAM_FRONT, CAM_LENS_D/2+CAM_LENS_REL, y1,
+                    top, ptop+CAM_CAP))
     # everything in front of the board below its upper half has to go: 0.5 mm to the fork
     s = s.cut(cam_box(-CLR, 40.0, e0-1, e1+1, -Wd, 1.0))
     # ... and so does everything in front of the lens, all the way across the holder
-    s = s.cut(cam_box(-CLR, 40.0, -CAM_LENS_D/2-2.0, CAM_LENS_D/2+2.0, -Wd, Wd))
-    # the board's own pocket, open at both ends so it slides in
-    s = s.cut(cam_box(-T-CLR, CLR, e0-1, e1+1, -Wd/2-CLR, Wd/2+CLR))
+    s = s.cut(cam_box(-CLR, 40.0, -CAM_LENS_D/2-CAM_LENS_REL, CAM_LENS_D/2+CAM_LENS_REL,
+                      -Wd, Wd))
+    # the board's own pocket.  Open at the NEAR end, because that is the way the board
+    # goes in; closed CLR short of its FAR end, which is both the board's stop in y and
+    # what ties the long half of the front wall back to the skirt.
+    s = s.cut(cam_box(-T-CLR, CLR, y0-CLR, e1+1, -Wd/2-CLR, Wd/2+CLR))
     s = s.cut(cam_box(-T-CLR-CAM_CONN[1], -T-CLR, e0-1, y0+CAM_CONN[0]+CLR,
                       -Wd/2-CLR, Wd/2+CLR))                       # ... and its connector
     # two M3 down into nuts in the gusset, both past the board's short end
@@ -2785,16 +2881,16 @@ PARTS, REPORT = {}, {}
 # is the point: a boolean that orphans a piece leaves a part that `isValid()` and
 # `Volume() > 0` both pass and a slicer happily prints the debris of - cell_holder came
 # back as five before its corner crescents were dealt with, and nothing here could see it.
-# Of the three below only servo_gauge is deliberate.  The other two are DEFECTS this entry
-# currently permits, recorded in ../MAC.md, "Open CAD defects found 2026-09-11", because
-# fixing either moves printed geometry:
-#   chassis_top   3 - the deck, plus the Orange Pi's REAR standoff pair as two 384 mm3
-#                     blocks floating 0.2 mm off the deck's own edge (they reach x -63.2,
-#                     the deck ends at -63).  OPI_HOLES is the number that is wrong.
-#   camera_mount  3 - the channel, plus the front retaining WALL in two loose pieces
-#                     (529 and 105 mm3).  See camera_mount()'s docstring.
-#   servo_gauge   2 - two test coupons, and this one is on purpose
-PART_SOLIDS = {"chassis_top": 3, "camera_mount": 3, "servo_gauge": 2}
+# ONE ENTRY IS LEFT AND IT IS DELIBERATE.  Two others were here until 2026-09-11 and both
+# were DEFECTS this table permitted rather than described - chassis_top at 3 (the deck
+# plus the Orange Pi's rear standoff pair, two 383.8 mm3 bosses floating 0.2 mm off the
+# deck's edge) and camera_mount at 3 (the channel plus the front retaining wall in two
+# loose pieces of 529.3 and 104.9 mm3).  Both are geometry now: OPI_TAB_* puts a deck
+# under the standoffs, CAM_CAP and the shortened board pocket tie the wall back on.  The
+# lesson is in the number: a count check is only as good as the number a human typed, so
+# raising an entry here is a claim about the design and has to be argued like one.
+#   servo_gauge   2 - two test coupons on one plate, and this one is on purpose
+PART_SOLIDS = {"servo_gauge": 2}
 def build():
     hb, th, sh, ft = hip_bracket(), thigh(), shin(), foot()
     cf, cr = cradles()

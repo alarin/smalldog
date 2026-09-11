@@ -277,9 +277,16 @@ name → (workplane, qty, note) and drives both the export loop and the BOM;
   can see a cap drawn half a millimetre too wide. **And the part came back as five loose
   pieces the first time** - the two clip planes meet at each corner cell and orphan a
   crescent of collar - with `isValid()` and `Volume() > 0` both passing, which is why
-  `build()` now checks each part's SOLID COUNT against `PART_SOLIDS` (default 1; three
-  existing parts are legitimately several bodies on one plate and are declared there).
-  Added 2026-09-10.
+  `build()` now checks each part's SOLID COUNT against `PART_SOLIDS` (default 1; ONE part,
+  `servo_gauge`, is legitimately two coupons on one plate and is declared there).
+  **Raising an entry in that table is a claim about the design, not a way past a red
+  line** - two of its three rows turned out to be DEFECTS it was permitting rather than
+  describing, `chassis_top` at 3 (the Orange Pi's rear standoff pair, two 383.8 mm3 bosses
+  floating 0.2 mm off the deck's edge) and `camera_mount` at 3 (the front retaining wall in
+  two loose pieces of 529.3 and 104.9 mm3, whose comment called them "the channel plus its
+  two rails"), and both shipped because the count check saw the number it had been told to
+  expect. Both are geometry now - see `OPI_TAB_*` and `CAM_CAP`.
+  Added 2026-09-10, table cut back to one row 2026-09-11.
 - **The battery is a MODULE, and the tray is now its.** Six cells in two `cell_holder`
   combs, welded into a 3 x 2 brick, heatshrunk over cells AND holder, its BMS beside them,
   all of it in `battery_case` + `battery_lid`,
