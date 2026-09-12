@@ -73,6 +73,19 @@ PROTECTION_CURRENT 310  OVERLOAD_TORQUE 80  PROTECTIVE_TORQUE 20  OFFSET 85
 > "Stall torque" is not one number — the cold value is what a leg gets in a
 > transient, and it is the 4.50 above.
 >
+> **2026-09-12, full duty, and it is three numbers.** Supply dropped to 8 V so cap
+> 1000 fits under the 2 kg scale, second unit, 5 s holds, protections disabled for
+> the two top rungs and restored: torque is **0.40 N·m/V of drive up to ~5.5 V and
+> ~0.20 N·m/V above it** (2.25 N·m at d·U 7.8 V; the same d·U reads the same at 12 V,
+> so it is the motor's current, not the supply), which puts full duty at 12 V near
+> **3.2 N·m cold**, not 4.50 — the 4.50 was a straight line through rungs that were
+> all below the knee. And the stock protections bound what a leg can *hold*:
+> `OVERLOAD_TORQUE` 80 cuts any duty above 80 % to 20 % after `PROTECTION_TIME` 2 s,
+> and `PROTECTION_CURRENT` 310 × 6.5 mA = **2.0 A** cuts torque to zero — 2.0 A
+> through ~4 Ω is 8 V of drive, so the **sustained stall is ~2.3 N·m at any pack
+> voltage**. Warm (+7 °C case) the same rung reads 8 % less. A 3 kg scale at 12 V
+> would confirm the peak; the sustained number needs nothing more.
+>
 > The original analysis is kept below because it is what justified building the rig.
 >
 > #### (superseded) The torque constant does not reconcile with the datasheet, by 2.2×
@@ -97,7 +110,8 @@ PROTECTION_CURRENT 310  OVERLOAD_TORQUE 80  PROTECTIVE_TORQUE 20  OFFSET 85
 > converted to N·m through `m·g·r`, which is known exactly — so a constant scale
 > error cancels out of `τ_c`, `μ_load` and the speed-proportional total, and they
 > stand. `k_t`, `R`, `k_e`, the efficiency and any stall figure derived from them
-> do not. Do not size a joint off the 7.4 — or off the vendor's 2.94. Use 4.50.
+> do not. Do not size a joint off the 7.4 — or off the vendor's 2.94. Use ~3.2 for a
+> transient under 2 s and ~2.3 for anything held (the block above).
 
 ---
 

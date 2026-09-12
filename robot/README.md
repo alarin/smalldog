@@ -365,9 +365,33 @@ error to find. `k_t` and `R` stay unresolved because `PRESENT_CURRENT` is unusab
 - **`TORQUE_LIMIT` is volatile** (SRAM, reloaded from `MAX_TORQUE` on power-up).
   `bench/torque_limit.py` writes it, reads it back, and refuses while torque is enabled.
   Cap before every session and after every supply change.
-- **Still open**: all three rungs are 20–45 % duty, so 4.50 is a 2.2× extrapolation, and the
-  no-load plateau below may say the loop never drives past ~75 % (PLAN.md 3c). One voltage
-  only so far.
+- **The line bends above ~5.5 V of drive, and 4.50 is the extrapolation that did not know
+  it.** Second unit, the rig rebuilt with the scale on a plate, supply dropped to 8 V so
+  full duty fits under a 2 kg scale, 5 s holds:
+
+  | supply | cap | d·U | scale | τ | |
+  |---|---|---|---|---|---|
+  | 7.88 | 500 | 3.94 | 905 g | 1.51 | cold |
+  | 7.80 | 700 | 5.46 | 1165 | 1.94 | cold |
+  | 7.80 | 850 | 6.63 | 1237 | 2.06 | warm |
+  | 7.80 | 1000 | 7.80 | 1350 | **2.25** | warm |
+  | 7.81 | 700 | 5.47 | 1065 | 1.78 | warm repeat, −8 % for +7 °C |
+  | 11.90 | 500 | 5.95 | 1245 | 2.08 | warm |
+  | 11.90 | 600 | 7.14 | 1378 | 2.30 | warm |
+
+  Duty is honest at every rung (`PRESENT_CURRENT` = d²·U/R to 3 %, R 3.94 → 4.48 Ω as the
+  winding heats), and the same d·U gives the same torque at 8 V and 12 V, so this is the
+  motor: 0.40 N·m/V below 5.5 V of drive, ~0.20 above it. Full duty at 12 V extrapolates
+  to **~3.1–3.3 N·m** cold, not 4.50 — a number for a 3 kg scale to confirm.
+- **And the servo will not hold full duty.** Two protections, both stock, both met on this
+  ladder: `OVERLOAD_TORQUE` 80 / `PROTECTION_TIME` 200 / `PROTECTIVE_TORQUE` 20 — any duty
+  above 800 is cut to 20 % after 2 s (cap 850 held 1.43 A for 2 s and dropped to 0.07); and
+  `PROTECTION_CURRENT` 310 × 6.5 mA = **2.0 A** / `OVERCURRENT_TIME` 200 — torque cut to
+  zero (cap 1000, push 2: 2.23 A, arm fell back 64 counts). 2.0 A through R ≈ 4 Ω is
+  d·U ≈ 8 V, so **the sustained stall is ~2.3 N·m at any pack voltage**; above it a leg has
+  2 s. The 850/1000 rungs were read with `OVERLOAD_TORQUE`/`PROTECTIVE_TORQUE` at 100 on
+  the loose unit, restored to 80/20 and read back — `sweep.py`'s rule stands for robot
+  servos. What the model carries is an open decision (PLAN.md 3d).
 
 ### The no-load speed, and the plateau
 

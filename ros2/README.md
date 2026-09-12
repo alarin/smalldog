@@ -301,7 +301,7 @@ lengths, hip offsets, the three limit ladders, the rate ceiling, the nominal sta
 | joint limits | roll ±1.5708, pitch ±1.5708, knee ±1.9199 rad — **read** from the CAD ROM scan (`3d/out/bom.json`) via `export_sim.joint_rom()`, so the two exporters cannot drift |
 | MuJoCo hard stops | 0.03 rad **inside** the URDF limits, so the measured position can never trip ros2_control's joint limiter |
 | gait soft limits | 0.12 rad inside the mechanical limits → roll/pitch 1.4508, knee 1.7999 |
-| joint effort / velocity | 4.50 N·m measured on the torque rig; 3.15 rad/s achievable ceiling `(forcerange − frictionloss)/damping`, below the measured 3.86 no-load; the generator takes `min()` |
+| joint effort / velocity | 4.50 N·m from the torque rig's low-duty line — the full-duty ladder has since bent it to ~3.2 peak / ~2.3 sustained, PLAN.md 3d; 3.15 rad/s achievable ceiling `(forcerange − frictionloss)/damping`, below the measured 3.86 no-load; the generator takes `min()` |
 | nominal stance | base 181 mm above ground, gait default 158 mm |
 | meshes | 13 link meshes + 12 ST3215 bodies (visual only — their mass is in each link's `<inertial>`) |
 | links | `base_link` + `{leg}_hip` / `{leg}_thigh` / `{leg}_shin` (foot fused into shin), plus fixed `imu_link`, `lidar_link`, `gps_link` |

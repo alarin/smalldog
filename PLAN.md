@@ -20,10 +20,10 @@ wait on hardware. Steps 1–3 are done and their results live in the trees, not 
 | 1 servo identification | friction 0.19 N·m + 0.28 per N·m carried; stiffness 40.9 N·m/rad at 12 V; total speed-proportional 1.37 N·m·s/rad (`b_v` is not separable from back-EMF on this bench — use the total) | `robot/README.md`, "Two things the fit cannot find" |
 | 2 `mu_load` in `actuator.py` | `tau_c` 0.184, `J_m` 0.0165, `mu_load` 0.286 | `robot/README.md`, "The load-dependent friction term" |
 | 2b static friction | `simulate()` is Karnopp; the training path gets stick from MuJoCo `frictionloss` = `tau_c`; the refit that followed was **not** adopted (mixed result) | `rl/CLAUDE.md`, "Re-baselines" |
-| 2c stall torque | **4.50 N·m at 12 V** on a scale; both the register route (7.4) and the datasheet (2.94) were wrong | `robot/README.md`, "The stall torque" |
+| 2c stall torque | **4.50 N·m at 12 V** on a scale — an extrapolation the full-duty ladder has since bent to **~3.2 peak, ~2.3 sustained** (3d below) | `robot/README.md`, "The stall torque" |
 | 3 fitted constants into the CAD | `MJ_KP` 40.9, `MJ_FRICTIONLOSS` 0.184, `MJ_DAMPING` 1.37, `MJ_ARMATURE` 0.0165 | `3d/mini_dog.py` section 4; `3d/CLAUDE.md` baseline |
 | 3b gait rate limit | limits against the achievable 3.15 rad/s ceiling, not the no-load speed | `ros2/README.md`, "Gait" |
-| 3c no-load speed | **3.86 rad/s**, a firmware profile cap: open loop the motor does 5.0 (`--pwm`, reading A); 4.50 N·m stands | `robot/README.md`, "The no-load speed" |
+| 3c no-load speed | **3.86 rad/s**, a firmware profile cap: open loop the motor does 5.0 (`--pwm`, reading A) | `robot/README.md`, "The no-load speed" |
 
 ## What each missing part gates
 
@@ -48,10 +48,30 @@ until one exists. The mount is decided (`IMU_*` in `mini_dog.py`, checked by
 
 `noload_speed.py --pwm` ran on the second unit: open loop the speed is linear in duty
 through 1000 (5.0 rad/s at 12.1 V, k_e 2.39), while position mode on the same unit stops
-at 3.88 with the register flat at 2500 counts/s. So 4.50 N·m stands, and what
-`rl/actuator.py` still lacks is a rate cap on the *goal* — a state per joint, not a duty
-cap. What `--pwm` does not prove is that the loop applies full duty at zero speed: the torque
-rig at `TORQUE_LIMIT` 800 and 1000 is that check, next rig session.
+at 3.88 with the register flat at 2500 counts/s. What `rl/actuator.py` still lacks is a
+rate cap on the *goal* — a state per joint, not a duty cap. The rig then ran to full duty
+(3d): the loop does apply it, and the motor is what bends.
+
+## 3d, open: what stall number the model carries
+
+The full-duty ladder (`robot/README.md`, "The stall torque") gives three numbers where
+there was one: **0.40 N·m/V** of drive below ~5.5 V (the fitted `k_u`, and it still
+predicts the 5.0 rad/s no-load speed through `k_e`), **~3.2 N·m** at full duty and 12 V
+cold for under 2 s, and **~2.3 N·m sustained** at any supply, set by the 2.0 A current
+protection. `SERVO_STALL_NM` = 4.50 feeds three consumers that want different ones:
+
+- `fea.py`'s stall column is a strength case — the 2 s peak, ~3.2. SF goes *up* ×1.4.
+- MuJoCo's `forcerange` is what a policy can lean on for as long as it likes — the
+  sustained 2.3 is the honest one, but the sim's damping 1.37 then frees the joint at
+  (2.3 − 0.18)/1.37 = 1.5 rad/s against the 3.86 the servo does. A linear position
+  actuator cannot carry both a 5.0 rad/s motor and a 2.3 N·m clamp; the real servo does
+  it with a saturating k_t and a 2 s timer.
+- `walk.py`'s 3.15 rad/s ceiling is the same expression and moves with it.
+
+Not decided here. Options: keep 4.50 in the sim and add the protections as a per-joint
+torque-time budget in `env/`; or drop `forcerange` to 3.2 and accept the sim's speed
+ceiling falling to 2.2; or split the constant. Whichever, it is a re-baseline of
+`3d/CLAUDE.md`'s table and of `rl/` — one pass, with the `3d/CLAUDE.md` ladder, not now.
 
 ## 4. Randomise over the pack
 
