@@ -512,8 +512,19 @@ CRADLE_BOSS_X = 71.5                  # ... and how far out it runs (servo case 
 CRADLE_NUT_X  = 67.0                  # nut-slot floor: the full CRADLE_T under the nut,
                                       # which is what takes the clamp.  A pocket in the
                                       # 4 mm flange instead would leave 1.3 mm and creep.
-CRADLE_NUT_RUN = 5.5                  # nut channel: opens toward the centreline, in air
-                                      # between the rail box at |y| = 14 and the boss
+                                      # The nut goes in ALONG THE BOLT AXIS from the servo
+                                      # bore, before the servo: a hex-width pocket open
+                                      # through the boss's +x face down to that floor.
+                                      # It was a side channel "opening toward the
+                                      # centreline" - into the rail box, which is solid
+                                      # there: a sealed cavity, found on the first print.
+                                      # cradle_nut_clear() sweeps a real nut down it now.
+CRADLE_NUT_IN = ROLL_X - S_H/2 + M3_NUT_H + 1.0   # 76.2 - the pocket cut runs out to here,
+                                      # past the servo's rear face at 72.5: the bolt is at
+                                      # |z| = 10.5 and a nut round it reaches 13.4, 1 mm
+                                      # above the bore's ceiling at S_W/2, so the ceiling
+                                      # is relieved one nut deep behind the servo and the
+                                      # nut is lifted into the pocket from inside the bore
 CRADLE_REG_D  = 7.0                   # register spigot on the cradle's flange face ...
 CRADLE_REG    = 2.0                   # ... standing this proud of CRADLE_X
 CRADLE_SEAT   = 2.8                   # tray boss inboard of the wall: it is what makes
@@ -1091,11 +1102,18 @@ GPS_KG            = 0.025         # GY-NEO6MV2 + its 25x25 active patch + the le
                                   # like every other number on this module: it is a bazaar
                                   # part, not a documented one.
 TPU_PARTS         = ("foot",)     # printed in TPU_RHO, everything else in PRINT_RHO
-SERVO_STALL_NM    = 4.50          # MEASURED 2026-09-10 on torque_rig, NOT the vendor's
-                                  # 2.94 (30 kg*cm).  A scale in newtons at a 170 mm arm,
-                                  # three duty rungs at 12 V: k_u = 0.400 N*m/V, friction
-                                  # intercept -0.30 N*m, extrapolated to full duty.  See
-                                  # the block below - this is what settled PLAN.md 2c.
+SERVO_STALL_NM    = 3.2           # MEASURED on torque_rig, NOT the vendor's 2.94 and not
+                                  # the 4.50 this once said.  A scale at a 170 mm arm:
+                                  # 0.400 N*m/V of drive up to ~5.5 V, ~0.20 above it
+                                  # (2.25 N*m at 7.8 V of drive, the same at 8 V and 12 V
+                                  # supply - the motor's current, not the loop), so full
+                                  # duty at 12 V is ~3.2 cold.  4.50 was that first line
+                                  # extrapolated 2.2x past its last rung.  This is the
+                                  # PEAK, under 2 s: OVERLOAD_TORQUE 80 then cuts duty to
+                                  # 20 %, and PROTECTION_CURRENT 2.0 A bounds anything
+                                  # held to ~2.3 N*m at any pack voltage - a runtime
+                                  # budget (robot/runtime/safety.py), not a sim constant.
+                                  # robot/README.md, "The stall torque"; PLAN.md 3d.
 SERVO_NOLOAD_RADS = 3.86          # MEASURED 2026-09-11 on the bench stand, free hub,
                                   # 12.1 V, robot/bench/noload_speed.py: 3.864 rad/s from
                                   # the position, 3.835 from PRESENT_SPEED.  The vendor's
@@ -1139,14 +1157,19 @@ SERVO_NOLOAD_RADS = 3.86          # MEASURED 2026-09-11 on the bench stand, free
 #                   at all: MuJoCo's frictionloss is a proper stick-slip
 #                   constraint, whereas rl/actuator.py's tanh(w/v_eps) is exactly
 #                   zero at rest and cannot hold a joint (PLAN.md step 2b).
-#   MJ_DAMPING      the TOTAL speed-proportional torque, 1.37 N*m*s/rad, measured
-#                   to 5 % over three supply voltages.  Deliberately the total and
-#                   not the viscous part: that total is b_v + k_u*k_e, this bench
+#   MJ_DAMPING      the TOTAL speed-proportional torque, measured to 5 % over
+#                   three supply voltages as 1.37 N*m*s/rad IN THE LADDER'S OWN
+#                   CALIBRATION - k_t_eff 0.596 N*m/V, friction cancelled, before
+#                   the gearbox's load-proportional loss.  SERVO_STALL_NM is in the
+#                   scale's: 0.400 N*m/V at the output, after it.  A joint ceiling
+#                   of (forcerange - frictionloss)/damping mixes the two unless
+#                   both are in one, so it is carried here in the scale's:
+#                   1.37 x 0.400/0.596 = 0.92.  Deliberately the total and not
+#                   the viscous part: that total is b_v + k_u*k_e, this bench
 #                   cannot split them (both cost a motor voltage proportional to
 #                   omega and neither depends on supply), and a position actuator
-#                   has nowhere to put back-EMF anyway.  It is 11x the old 0.12,
-#                   and it is what makes the model run out of speed near 1.8 rad/s
-#                   the way the real servo does.
+#                   has nowhere to put back-EMF anyway.  rl/ zeroes this and lets
+#                   actuator.py carry k_e itself.
 #   MJ_ARMATURE     the reflected rotor inertia, 0.0165 kg*m2, from the free swing
 #                   at the corrected friction.  Do NOT use the 0.024-0.042 range
 #                   this project quoted before: that was computed against a tau_c
@@ -1169,8 +1192,8 @@ SERVO_NOLOAD_RADS = 3.86          # MEASURED 2026-09-11 on the bench stand, free
 # find; the registers are off AND the datasheet is optimistic in the other
 # direction.  The four constants above are unaffected either way - each is a
 # ratio in the same register units converted through the known m*g*r, or an
-# inertia off a timed fall - which is why they did not have to be re-measured
-# when SERVO_STALL_NM moved.
+# inertia off a timed fall.  The one that has to travel with SERVO_STALL_NM is
+# MJ_DAMPING, because the ceiling divides one by the other (above).
 #
 # Method, because it is the part that was hard: robot/bench/torque_hold.py holds
 # a blocked push for 8 s while robot/bench/torque_limit.py caps TORQUE_LIMIT.
@@ -1179,7 +1202,7 @@ SERVO_NOLOAD_RADS = 3.86          # MEASURED 2026-09-11 on the bench stand, free
 # CONSTANT ~130 g of arm inertia and filter ringing, which distorts the slope as
 # well as the level.  Full write-up in robot/README.md, "The stall torque, in
 # newton-metres".
-MJ_DAMPING        = 1.37          # N*m*s/rad at the joint (b_v + back-EMF)
+MJ_DAMPING        = 0.92          # N*m*s/rad at the joint (b_v + back-EMF), scale units
 MJ_ARMATURE       = 0.0165        # kg*m2, reflected rotor+gearbox inertia
 MJ_FRICTIONLOSS   = 0.184         # N*m, Coulomb
 MJ_KP             = 40.9          # position-actuator gain, N*m/rad at 12 V
@@ -1611,10 +1634,14 @@ def cradle_bolts(cradle=True):
         boss = bs if boss is None else boss.union(bs)
         c = cyl(M3_CLR, CRADLE_BOSS_X-CRADLE_X+CRADLE_REG+2,
                 (CRADLE_X-CRADLE_REG-1, y, z), axis=(1, 0, 0))
-        # the nut channel opens toward the centreline: at x >= CRADLE_NUT_X the only solid
-        # is the boss itself and the rail box at |y| <= 14, so it ends in air between them
-        c = c.union(nut_slot((CRADLE_NUT_X, y, z), (0.0, -1.0 if y > 0 else 1.0, 0.0),
-                             up=(1, 0, 0), run=CRADLE_NUT_RUN))
+        # the nut pocket opens through the boss's +x face into the servo bore: flats
+        # against the y walls, corners in z, floor at CRADLE_NUT_X, and it goes in before
+        # the servo does.  The servo's rear face at 72.5 is what retains it afterwards.
+        # NOT a side channel toward the centreline - the rail box is solid at |y| <= 14,
+        # so that channel was a sealed cavity and no nut ever went in.
+        c = c.union(bxc(CRADLE_NUT_X, CRADLE_NUT_IN,
+                        y-(M3_NUT_AF+NUT_CLR)/2, y+(M3_NUT_AF+NUT_CLR)/2,
+                        z-(M3_NUT_AF/0.866+NUT_CLR)/2, z+(M3_NUT_AF/0.866+NUT_CLR)/2))
         cut = c if cut is None else cut.union(c)
         # --- tray: a boss inboard of the wall, deep enough for the register pocket AND a
         # flat head seat.  WALL alone is 2.8 mm and holds neither.
@@ -2764,6 +2791,48 @@ def cradle_clear():
             out[(end, i)] = overlap(tray.val(), p.val())
     return out
 
+def cradle_nut():
+    """One M3 nut as it sits in a cradle boss pocket: hex, flats along y, on the floor at
+    CRADLE_NUT_X.  Hardware, so invisible to every other check."""
+    w = cq.Workplane("XY").polygon(6, M3_NUT_AF/0.866).extrude(M3_NUT_H)
+    return mv(W(w.val()), frame((0, 0, 0), xdir=(0, 0, 1), zdir=(1, 0, 0)))
+
+def cradle_nut_clear(reach=10.0, step=0.5):
+    """Can each cradle nut actually be put in?  Returns {i: worst mm3} over a sweep of a
+    real nut along the path a hand takes: in at the sleeve's mouth (open air, reach past
+    it), down the bore at a z that fits inside it, up to the bolt axis where the ceiling
+    is relieved (CRADLE_NUT_IN), then along the axis to its seat at CRADLE_NUT_X.  0.0 is
+    the only passing value.
+
+    Exists because the first version of this pocket was a side channel that opened into
+    the rail box - a sealed cavity that every static check passed, since nothing in this
+    file had ever asked whether a nut can travel to where the drawing puts it.  Same
+    class as fork_access(): the probe runs until it stands in open air."""
+    c = PARTS["cradle_front"][0]
+    nut = cradle_nut()
+    zn = (M3_NUT_AF/0.866 + NUT_CLR)/2            # nut half height in z, corners up
+    x_mouth = ROLL_X + SLEEVE_LEN/2 + reach
+    out = {}
+    for i, (y, z) in enumerate(cradle_bolt_axes()):
+        zb = math.copysign(S_W/2 - zn - CLR, z)   # a z the nut fits through the bore at
+        path = []                                 # (x of the nut's near face, y, z)
+        x_lift = CRADLE_NUT_IN - M3_NUT_H         # far face at the relief's end
+        x = CRADLE_NUT_X
+        while x <= x_lift:                        # leg 1: seat -> relief's end, on axis
+            path.append((x, y, z)); x += step
+        zz = z
+        while abs(zz) > abs(zb):                  # the lift, at the relief's end
+            path.append((x_lift, y, zz)); zz -= math.copysign(step, z)
+        x = x_lift
+        while x <= x_mouth:                       # leg 2: down the bore to open air
+            path.append((x, y, zb)); x += step
+        worst = 0.0
+        for px, py, pz in path:
+            n = mv(nut, cq.Location(cq.Vector(px, py, pz)))
+            worst = max(worst, overlap(c.val(), n.val()))
+        out[i] = worst
+    return out
+
 def cradle_head_clear():
     """mm3 of the cradle screws' heads inside the battery module, plus the air left
     between the front seat's counterbore floor and the module's front face.  Both are
@@ -3113,6 +3182,14 @@ def main():
     if hv > INTERF_TOL or hv < 0:
         print(f"  !! CRADLE HEAD  {hv:.0f} mm3 of screw head inside the battery module -"
               f" counterbore CRADLE_CB is too shallow")
+    nc = cradle_nut_clear()
+    bad = {k: v for k, v in nc.items() if v > INTERF_TOL or v < 0}
+    for i, v in bad.items():
+        print(f"  !! CRADLE NUT  boss {i}: {v:.1f} mm3 of cradle in the nut's path from the"
+              f" servo bore to its seat - that nut cannot be put in")
+    if not bad:
+        print(f"  cradle nuts: all {len(CRADLE_BOLT)} pockets open to the servo bore,"
+              f" nut seats at x = {CRADLE_NUT_X:.0f}")
     cc = cradle_clear()
     bad = {k: v for k, v in cc.items() if v > INTERF_TOL or v < 0}
     for (end, i), v in bad.items():

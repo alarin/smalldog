@@ -129,7 +129,7 @@ it is nearly free. `walk.py --baseline` records the free-air curve, `--contact` 
   came out identical to the map derived from the load residuals.
 - **Baselines**: `runtime/contact_baseline_slow.json` (the measurement gait) and
   `contact_baseline_walk.json` (recorded at 0.14 m/s / 1.20 s). The rate ceiling has since
-  moved the fitted gait to 0.11 / 1.50, so `mismatch()` flags the walk baseline on every run
+  moved the fitted gait to 0.11 / 1.35, so `mismatch()` flags the walk baseline on every run
   — re-record it hanging at the new point, or run `--as-commanded --period 1.2 --speed
   0.14`. A period under ~1.2 s at 50 Hz skips phase bins outright (`Baseline.coverage()`
   says which cure: longer period or fewer bins).
@@ -176,20 +176,20 @@ is why the bench runs at 2.55 kg with a 1 kg plate.
 `walk.py` refuses to command a trot these servos cannot fly. At 0.20 m/s the trot demanded
 7.55 rad/s; the commanded foot path was clipped before a servo saw it and the robot dragged
 at 0.067 m/s. `feasible_gait()` finds the shortest period whose demand fits under the rate
-ceiling (`joint_rate_ceiling_rad_s` = 3.15 from `robot_params.json`, × 0.95) with the
+ceiling (`joint_rate_ceiling_rad_s` = 3.28 from `robot_params.json`, × 0.95) with the
 stride under `max_step`, and caps the speed if none does; `--as-commanded` restores the
 old behaviour and names the defect. `walk.py --dry-run --profile`:
 
 | commanded | best period | stride | demand | |
 |---|---|---|---|---|
-| 0.08 | 1.20 | 24 mm | 2.91 | comfortable |
-| 0.10 | 1.30 | 32 mm | 2.99 | |
-| **0.11** | **1.50** | **41 mm** | **2.98** | **what anything faster is capped to** |
+| 0.08 | 1.10 | 22 mm | 3.10 | comfortable |
+| 0.10 | 1.25 | 31 mm | 3.06 | |
+| **0.11** | **1.35** | **37 mm** | **3.09** | **what anything faster is capped to** |
 | 0.12 and up | — | — | — | infeasible at any period |
 
 Ground runs at the previous fit (0.14 / 1.20 s) measured **350–450 mm in 3 s = 0.12–0.15 m/s
 against 0.067** — the cap is a faster robot than the drag was. Nothing has measured
-0.11 / 1.50 on the ground yet. `feasible_turn()` fits the turn the same way: the teleop's
+0.11 / 1.35 on the ground yet. `feasible_turn()` fits the turn the same way: the teleop's
 1.2 rad/s is capped to 0.65; `clamp_profile()` caps the scripted demo's own velocities.
 
 The sim does not have this bug — MuJoCo's feet grip at μ ≈ 1.2 — so `gait.py` is untouched;
@@ -338,7 +338,8 @@ with one RMS better and one worse; it was **not** adopted.
 ### The stall torque, in newton-metres
 
 **4.50 N·m at 12 V**, on `3d/torque_rig.py` — a printed C-frame with a 170 mm arm pressing an
-M6 anvil onto a 2 kg coffee scale. `mini_dog.py`'s `SERVO_STALL_NM` is this number.
+M6 anvil onto a 2 kg coffee scale. `mini_dog.py`'s `SERVO_STALL_NM` was this number until the
+full-duty ladder below; it is 3.2 now.
 
 | `TORQUE_LIMIT` | d·U | scale, cold | τ |
 |---|---|---|---|

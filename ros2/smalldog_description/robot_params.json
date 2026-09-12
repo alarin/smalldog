@@ -147,11 +147,11 @@
     "knee": 1.7999
   },
   "joint_velocity_limit": 3.86,
-  "joint_rate_ceiling_rad_s": 3.1504,
+  "joint_rate_ceiling_rad_s": 3.2783,
   "stance_rad": {
     "pitch": -0.42,
     "knee": 1.05
   },
   "stance_base_height_m": 0.18073992620501958,
-  "total_mass_kg": 2.4935
+  "total_mass_kg": 2.4931
 }

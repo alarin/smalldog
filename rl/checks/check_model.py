@@ -36,7 +36,7 @@ PARAMS = os.path.join(DESC, "robot_params.json")
 # The ST3215 as the CAD declares it (3d/mini_dog.py section 4).  Repeated here
 # only to be checked against, never to be read as a source: if these disagree
 # with the model, the model is what ships and this file is what is stale.
-SERVO_STALL_NM = 4.50        # MEASURED 2026-09-10, torque rig (vendor said 2.94)
+SERVO_STALL_NM = 3.2         # MEASURED on the torque rig at full duty, the 2 s peak (vendor said 2.94; the low-duty line said 4.50)
 SERVO_NOLOAD_RADS = 3.86     # MEASURED 2026-09-11, free hub (vendor said 4.71)
 ENCODER_STEP_RAD = math.radians(360.0 / 4096)   # 0.088 deg, the reported resolution
 
@@ -198,9 +198,12 @@ def check_actuators(m, d, R, P):
                     "The robot cannot — Goal Position is bounded. Set ctrlrange to the "
                     "soft limits before training.")
     if abs(fr[1] - SERVO_STALL_NM) > 1e-6:
-        R.say(INFO, f"forcerange {fr[1]:g} is the stall torque {SERVO_STALL_NM:g} rounded up; "
-                    f"a constant either way, so it carries no voltage dependence — "
-                    f"at 9.9 V (3S empty) the real stall is nearer {SERVO_STALL_NM*9.9/12:.2f} N*m")
+        R.say(WARN, f"forcerange {fr[1]:g} is not this check's SERVO_STALL_NM {SERVO_STALL_NM:g} — "
+                    f"one of the two is stale (3d/mini_dog.py or the copy above)")
+    else:
+        R.say(INFO, f"forcerange {fr[1]:g} is the measured 2 s peak; a constant, so it carries "
+                    f"no voltage dependence and no protection timer — the servo holds ~2.3 N*m "
+                    f"and cuts duty above 80 % after 2 s (robot/README.md, \"The stall torque\")")
 
     # dampratio resolves kv against the joint's own effective inertia at compile
     # time: kv = 2*sqrt(kp * M_ii).  That is worth saying out loud, because M_ii
@@ -553,10 +556,10 @@ def ledger(R):
         ("joint limits", "swept-boolean ROM scan", "measured"),
         ("link geometry", "CAD", "measured"),
         ("armature", "3d/mini_dog.py MJ_ARMATURE", "MEASURED 2026-09-09 — dominates the leg"),
-        ("damping", "3d/mini_dog.py MJ_DAMPING", "MEASURED 2026-09-09, 3 voltages"),
+        ("damping", "3d/mini_dog.py MJ_DAMPING", "MEASURED 2026-09-09, 3 voltages, in the scale's calibration"),
         ("frictionloss", "3d/mini_dog.py MJ_FRICTIONLOSS", "MEASURED 2026-09-09, 2 routes"),
         ("actuator kp", "3d/mini_dog.py MJ_KP", "MEASURED 2026-09-09 — still not a servo model"),
-        ("stall torque", "3d/mini_dog.py SERVO_STALL_NM", "MEASURED 2026-09-10, 4.50 N*m"),
+        ("stall torque", "3d/mini_dog.py SERVO_STALL_NM", "MEASURED at full duty, 3.2 N*m peak / ~2.3 held"),
         ("no-load speed", "3d/mini_dog.py SERVO_NOLOAD_RADS",
          "MEASURED 2026-09-11, 3.86 rad/s — actuator.py's law gives 5.9"),
         ("foot friction", "3d/export_sim.py", "GUESSED"),

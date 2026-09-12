@@ -52,26 +52,17 @@ at 3.88 with the register flat at 2500 counts/s. What `rl/actuator.py` still lac
 rate cap on the *goal* — a state per joint, not a duty cap. The rig then ran to full duty
 (3d): the loop does apply it, and the motor is what bends.
 
-## 3d, open: what stall number the model carries
+## 3d, decided: 3.2 in the model, damping in the same units, the held 2.3 is a budget
 
-The full-duty ladder (`robot/README.md`, "The stall torque") gives three numbers where
-there was one: **0.40 N·m/V** of drive below ~5.5 V (the fitted `k_u`, and it still
-predicts the 5.0 rad/s no-load speed through `k_e`), **~3.2 N·m** at full duty and 12 V
-cold for under 2 s, and **~2.3 N·m sustained** at any supply, set by the 2.0 A current
-protection. `SERVO_STALL_NM` = 4.50 feeds three consumers that want different ones:
-
-- `fea.py`'s stall column is a strength case — the 2 s peak, ~3.2. SF goes *up* ×1.4.
-- MuJoCo's `forcerange` is what a policy can lean on for as long as it likes — the
-  sustained 2.3 is the honest one, but the sim's damping 1.37 then frees the joint at
-  (2.3 − 0.18)/1.37 = 1.5 rad/s against the 3.86 the servo does. A linear position
-  actuator cannot carry both a 5.0 rad/s motor and a 2.3 N·m clamp; the real servo does
-  it with a saturating k_t and a 2 s timer.
-- `walk.py`'s 3.15 rad/s ceiling is the same expression and moves with it.
-
-Not decided here. Options: keep 4.50 in the sim and add the protections as a per-joint
-torque-time budget in `env/`; or drop `forcerange` to 3.2 and accept the sim's speed
-ceiling falling to 2.2; or split the constant. Whichever, it is a re-baseline of
-`3d/CLAUDE.md`'s table and of `rl/` — one pass, with the `3d/CLAUDE.md` ladder, not now.
+`SERVO_STALL_NM` = **3.2** — the 2 s cold peak the rig measured — for FEA (stall SF ×1.4)
+and both sims' `forcerange`. `MJ_DAMPING` 1.37 → **0.92**: the ladder's total was in its own
+calibration (k_t 0.596 N·m/V, before the gearbox's load loss) and the stall in the scale's
+(0.400 after it); the joint ceiling divides one by the other, so both carry the scale's
+now, and the ceiling is 3.15 → **3.28 rad/s** — speed kept, stall honest. `rl/` zeroes
+`MJ_DAMPING` and its law's own stall after `mu_load` is ~3.2 already. Ladder run, step 6:
+flat 523 (control 457), terrain 415 ±44 0/6 down, course all upright. **Open:** the held 2.3 N·m and the
+2 s timer are a per-joint duty budget for `robot/runtime/safety.py`, not written; and a 3 kg
+scale at 12 V would confirm the 3.2 peak directly.
 
 ## 4. Randomise over the pack
 
@@ -113,7 +104,7 @@ so `--rough` is the arm that can. Choose a shape with coupons on a tilt plate, n
 
 ## 6. Train
 
-Everything that blocked it is resolved: the two sims agree on servo strength (4.50), the
+Everything that blocked it is resolved: the two sims agree on servo strength (3.2), the
 training path has friction at rest, `check_model.py` is 0 FAIL. The WSL2 box does this
 alone. Do not expect to deploy — that needs the IMU. Step 3b's gait re-tune is for the
 hand-tuned regression harness, not a blocker: RL learns its own gait.

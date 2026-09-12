@@ -1,8 +1,8 @@
 <mujoco>
   <default>
     <default class="mujoco">
-      <joint frictionloss="0.184" armature="0.0165" damping="1.37"/>
-      <position kp="40.9" dampratio="1" forcerange="-4.5 4.5"/>
+      <joint frictionloss="0.184" armature="0.0165" damping="0.92"/>
+      <position kp="40.9" dampratio="1" forcerange="-3.2 3.2"/>
       <default class="visual">
         <geom type="mesh" contype="0" conaffinity="0" group="2" rgba="0.55 0.58 0.62 1"/>
       </default>

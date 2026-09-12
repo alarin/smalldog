@@ -54,13 +54,16 @@ STL only.
   `HUB_BOLT_D` is M3 on the hub that arrived, ⌀2.5 in the STEP. Mark such rows in the
   README's source column.
 - **Masses, densities, the MuJoCo joint feel (`MJ_*`), the foot contact (`MJ_FOOT_*`), the
-  servo's stall torque and no-load speed, the LiDAR parameters and the IMU site all live
+  servo's stall torque (the 2 s peak, 3.2 — the held 2.3 is a runtime budget) and no-load
+  speed, the LiDAR parameters and the IMU site all live
   once, in `mini_dog.py` sections 3–4.** `fea.py`, `export_sim.py` and the ROS 2 generator
   read them and keep no copies. Every one of these was duplicated once and diverged (servo
   mass 55 vs 60 g; rounded `J_EFF`; IMU sites 25 mm apart; joint limits narrower by 52° in
   one exporter). `rl/checks/check_model.py` is what catches it.
 - `MJ_DAMPING` / `MJ_FRICTIONLOSS` / `MJ_ARMATURE` / `MJ_KP` are measured on one real
-  ST3215 (provenance beside each constant). `MJ_ARMATURE` = 0.0165 is deliberately not
+  ST3215 (provenance beside each constant). `MJ_DAMPING` and `SERVO_STALL_NM` are in one
+  torque calibration — the scale's — because the joint ceiling divides one by the other;
+  the ladder's 1.37 is the same measurement in the ladder's (× 0.596/0.400). `MJ_ARMATURE` = 0.0165 is deliberately not
   `rl/actuator.py`'s `Params.J_m` default of 0.008 — that is a flagged vendor prior and
   `rl/params/st3215.json` carries the fit.
 - `MJ_FOOT_CONDIM` = 4, not 6: condim 6 triples the terrain spread (measured; it is the
@@ -196,17 +199,17 @@ disagree. A "cosmetic" parameter still moves the moment arms `fea.py` derives.
 7. `rom_scan(..., step=2)` before committing to real joint limits; `export_sim.py
    --rom-step 2` re-scans.
 
-### Current baseline (2026-09-11, 2.494 kg)
+### Current baseline (2026-09-12, 2.494 kg)
 
 Inter-layer SF per load case. `stall` scales with `SERVO_STALL_NM` only, the three ground
 columns with `fea.robot_mass()`. Read `--orient` for `thigh_A` and `cradle_front`.
 
 | | stand4 | stand2 | land3g | stall | `--orient` |
 |---|---|---|---|---|---|
-| `hip_bracket_A` | 46.2 | 23.1 | 7.7 | 1.6 | 5.57 |
-| `thigh_A` | 18.6 | 9.3 | 3.1 | 0.8 | 2.01 |
-| `shin_A` | 59.2 | 29.6 | 9.9 | 3.2 | 12.65 |
-| `cradle_front` | 4.0 | 2.0 | 0.7 | 1.9 | **1.33** |
+| `hip_bracket_A` | 46.2 | 23.1 | 7.7 | 2.2 | 5.57 |
+| `thigh_A` | 18.6 | 9.3 | 3.1 | 1.1 | 2.01 |
+| `shin_A` | 59.2 | 29.6 | 9.9 | 4.5 | 12.65 |
+| `cradle_front` | 4.0 | 2.0 | 0.7 | 2.7 | **1.33** |
 
 `export_sim.py --check`: `4 feet down, upright +1.00`, base z 187 mm, camera axis
 (+0.99 0 +0.10), ROM ±90 / ±90 / ±110 (±90 is the scan window, not a stop). Probes:
@@ -214,8 +217,10 @@ columns with `fea.robot_mass()`. Read `--orient` for `thigh_A` and `cradle_front
 `cradle bolts +5.15`, `fork access: all six arms`, `lidar fov 34.0 / 48.1 / 23.1`,
 `camera view: out of frame`.
 
-Step 6, same seeds: **flat trot 457.9 mm**; **terrain seeds 7…12: 403 ±34 mm, 1/6 down**
-(seed 8); **course seeds 7/8/9: 2/7 1791, 0/7 451 down, 2/7 1842 mm**.
+Step 6, same seeds: **flat trot 522.8 mm**; **terrain seeds 7…12: 415 ±44 mm, 0/6 down**;
+**course seeds 7/8/9: 1986 / 1716 / 2149 mm, all upright**. (`SERVO_STALL_NM` 3.2 and
+`MJ_DAMPING` 0.92 moved the joint ceiling 3.15 → 3.28 rad/s; the control — 4.50 / 1.37 on
+the same mesh — reads 456.7, and the terrain was 403 ±34, 1/6 down: one distribution.)
 
 ### How to read step 6
 
@@ -233,7 +238,7 @@ Step 6, same seeds: **flat trot 457.9 mm**; **terrain seeds 7…12: 403 ±34 mm,
   so it is the mass cliff, not the geometry. Without that column a mass change reads as
   the part breaking the walker.
 - **Distances fell by a third twice (fitted actuator; then the gait limiting to the
-  achievable `(forcerange − frictionloss)/damping` = 3.15 rad/s instead of the vendor
+  achievable `(forcerange − frictionloss)/damping` = 3.28 rad/s instead of the vendor
   no-load speed) and both were the model getting honest.** Do not recover them by putting
   `MJ_DAMPING` or the old rate limit back. The hand-tuned gait is due a re-tune.
 - When `terrain.py` changes, re-baseline by running the unchanged model on the new course

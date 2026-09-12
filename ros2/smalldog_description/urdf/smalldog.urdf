@@ -6,9 +6,9 @@
   <material name="servo"><color rgba="0.12 0.12 0.14 1"/></material>
   <link name="base_link">
     <inertial>
-      <origin xyz="0.008222 -0.000041 0.020863" rpy="0 0 0"/>
-      <mass value="1.55937"/>
-      <inertia ixx="0.00305898" ixy="0.00000664" ixz="-0.00077339" iyy="0.00648944" iyz="0.00000067" izz="0.00602949"/>
+      <origin xyz="0.008224 -0.000041 0.020868" rpy="0 0 0"/>
+      <mass value="1.55900"/>
+      <inertia ixx="0.00305861" ixy="0.00000664" ixz="-0.00077333" iyy="0.00648708" iyz="0.00000067" izz="0.00602720"/>
     </inertial>
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0"/>
@@ -243,84 +243,84 @@
     <child link="fl_hip"/>
     <origin xyz="0.09000 0.03600 0.00000" rpy="0 0 0"/>
     <axis xyz="1 0 0"/>
-    <limit lower="-1.5708" upper="1.5708" effort="4.5" velocity="3.86"/>
+    <limit lower="-1.5708" upper="1.5708" effort="3.2" velocity="3.86"/>
   </joint>
   <joint name="fl_pitch" type="revolute">
     <parent link="fl_hip"/>
     <child link="fl_thigh"/>
     <origin xyz="0.00000 0.04000 -0.03000" rpy="0 0 0"/>
     <axis xyz="0 1 0"/>
-    <limit lower="-1.5708" upper="1.5708" effort="4.5" velocity="3.86"/>
+    <limit lower="-1.5708" upper="1.5708" effort="3.2" velocity="3.86"/>
   </joint>
   <joint name="fl_knee" type="revolute">
     <parent link="fl_thigh"/>
     <child link="fl_shin"/>
     <origin xyz="0.00000 0.00000 -0.07500" rpy="0 0 0"/>
     <axis xyz="0 1 0"/>
-    <limit lower="-1.9199" upper="1.9199" effort="4.5" velocity="3.86"/>
+    <limit lower="-1.9199" upper="1.9199" effort="3.2" velocity="3.86"/>
   </joint>
   <joint name="fr_roll" type="revolute">
     <parent link="base_link"/>
     <child link="fr_hip"/>
     <origin xyz="0.09000 -0.03600 0.00000" rpy="0 0 0"/>
     <axis xyz="1 0 0"/>
-    <limit lower="-1.5708" upper="1.5708" effort="4.5" velocity="3.86"/>
+    <limit lower="-1.5708" upper="1.5708" effort="3.2" velocity="3.86"/>
   </joint>
   <joint name="fr_pitch" type="revolute">
     <parent link="fr_hip"/>
     <child link="fr_thigh"/>
     <origin xyz="0.00000 -0.04000 -0.03000" rpy="0 0 0"/>
     <axis xyz="0 1 0"/>
-    <limit lower="-1.5708" upper="1.5708" effort="4.5" velocity="3.86"/>
+    <limit lower="-1.5708" upper="1.5708" effort="3.2" velocity="3.86"/>
   </joint>
   <joint name="fr_knee" type="revolute">
     <parent link="fr_thigh"/>
     <child link="fr_shin"/>
     <origin xyz="0.00000 0.00000 -0.07500" rpy="0 0 0"/>
     <axis xyz="0 1 0"/>
-    <limit lower="-1.9199" upper="1.9199" effort="4.5" velocity="3.86"/>
+    <limit lower="-1.9199" upper="1.9199" effort="3.2" velocity="3.86"/>
   </joint>
   <joint name="rl_roll" type="revolute">
     <parent link="base_link"/>
     <child link="rl_hip"/>
     <origin xyz="-0.09000 0.03600 0.00000" rpy="0 0 0"/>
     <axis xyz="1 0 0"/>
-    <limit lower="-1.5708" upper="1.5708" effort="4.5" velocity="3.86"/>
+    <limit lower="-1.5708" upper="1.5708" effort="3.2" velocity="3.86"/>
   </joint>
   <joint name="rl_pitch" type="revolute">
     <parent link="rl_hip"/>
     <child link="rl_thigh"/>
     <origin xyz="0.00000 0.04000 -0.03000" rpy="0 0 0"/>
     <axis xyz="0 1 0"/>
-    <limit lower="-1.5708" upper="1.5708" effort="4.5" velocity="3.86"/>
+    <limit lower="-1.5708" upper="1.5708" effort="3.2" velocity="3.86"/>
   </joint>
   <joint name="rl_knee" type="revolute">
     <parent link="rl_thigh"/>
     <child link="rl_shin"/>
     <origin xyz="0.00000 0.00000 -0.07500" rpy="0 0 0"/>
     <axis xyz="0 1 0"/>
-    <limit lower="-1.9199" upper="1.9199" effort="4.5" velocity="3.86"/>
+    <limit lower="-1.9199" upper="1.9199" effort="3.2" velocity="3.86"/>
   </joint>
   <joint name="rr_roll" type="revolute">
     <parent link="base_link"/>
     <child link="rr_hip"/>
     <origin xyz="-0.09000 -0.03600 0.00000" rpy="0 0 0"/>
     <axis xyz="1 0 0"/>
-    <limit lower="-1.5708" upper="1.5708" effort="4.5" velocity="3.86"/>
+    <limit lower="-1.5708" upper="1.5708" effort="3.2" velocity="3.86"/>
   </joint>
   <joint name="rr_pitch" type="revolute">
     <parent link="rr_hip"/>
     <child link="rr_thigh"/>
     <origin xyz="0.00000 -0.04000 -0.03000" rpy="0 0 0"/>
     <axis xyz="0 1 0"/>
-    <limit lower="-1.5708" upper="1.5708" effort="4.5" velocity="3.86"/>
+    <limit lower="-1.5708" upper="1.5708" effort="3.2" velocity="3.86"/>
   </joint>
   <joint name="rr_knee" type="revolute">
     <parent link="rr_thigh"/>
     <child link="rr_shin"/>
     <origin xyz="0.00000 0.00000 -0.07500" rpy="0 0 0"/>
     <axis xyz="0 1 0"/>
-    <limit lower="-1.9199" upper="1.9199" effort="4.5" velocity="3.86"/>
+    <limit lower="-1.9199" upper="1.9199" effort="3.2" velocity="3.86"/>
   </joint>
   <link name="lidar_link"/>
   <joint name="lidar_link_joint" type="fixed">
