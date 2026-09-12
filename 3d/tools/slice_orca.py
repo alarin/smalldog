@@ -8,7 +8,9 @@ presets that are set up in the OrcaSlicer GUI.
             --walls 3 --name feet_tpu foot --copies 4
 
 Writes out/gcode/<name>.gcode (ready to print) and out/gcode/<name>.3mf (the
-project, openable in the GUI), and prints time / filament.
+project, openable in the GUI), and prints time / filament.  `--upload` posts the
+gcode to the machine preset's `print_host` (Moonraker, i.e. any Klipper
+printer) and starts it; `--upload-only` just stores it.
 
 Why the preset juggling below: `--load-settings` / `--load-filaments` take a
 preset json but do *not* resolve its "inherits", and a GUI user preset is only a
@@ -18,6 +20,7 @@ built-in defaults for everything the diff does not mention (empty layer gcode,
 bundles inside the app, and only then handed to the CLI.
 """
 import argparse, glob, json, os, re, shutil, subprocess, sys, tempfile
+import urllib.request
 
 ORCA = "/Applications/OrcaSlicer.app/Contents/MacOS/OrcaSlicer"
 RES  = "/Applications/OrcaSlicer.app/Contents/Resources/profiles"
@@ -102,7 +105,13 @@ def main():
     ap.add_argument("--infill", default="40%")
     ap.add_argument("--walls", type=int, default=5)
     ap.add_argument("--copies", type=int, default=1, help="copies of every part")
-    ap.add_argument("--no-support", action="store_true")
+    ap.add_argument("--support", choices=["tree", "normal", "none"], default="tree",
+                    help="tree (default: normal ones are hard to get out), normal, none")
+    ap.add_argument("--no-support", dest="support", action="store_const", const="none")
+    ap.add_argument("--upload", action="store_true",
+                    help="send the gcode to the machine preset's print_host and start it")
+    ap.add_argument("--upload-only", action="store_true",
+                    help="send it, do not start it")
     ap.add_argument("--stl-dir", action="append", default=None,
                     help="where to look for <part>.stl; repeatable, searched in order "
                          "(default: out/stl then out/bench/stl)")
@@ -130,9 +139,9 @@ def main():
         "print_settings_id": f"{a.process} - {a.name}",
         "sparse_infill_density": a.infill,
         "wall_loops": str(a.walls),
-        # README.md, "Printed BOM": normal(auto), 30 deg, 0.2 mm z-gap
-        "enable_support": "0" if a.no_support else "1",
-        "support_type": "normal(auto)",
+        # README.md, "Printed BOM": tree(auto), 30 deg, 0.2 mm z-gap
+        "enable_support": "0" if a.support == "none" else "1",
+        "support_type": f"{a.support}(auto)",
         "support_threshold_angle": "30",
         "support_top_z_distance": "0.2",
         "support_bottom_z_distance": "0.2",
@@ -174,12 +183,43 @@ def main():
     layers = g("^; total layer number: (.+)$")
     tall   = g("^; max_z_height: (.+)$")
     copies = f" x{a.copies}" if a.copies > 1 else ""
-    support = "no support" if a.no_support else "normal(auto) support 30 deg"
+    support = "no support" if a.support == "none" else f"{a.support}(auto) support 30 deg"
     print(f"{a.name}: {', '.join(a.parts)}{copies}")
     print(f"  {a.machine} / {a.process} / {a.filament}")
     print(f"  {a.walls} walls, {a.infill} infill, {support}")
     print(f"  {time_}, {grams} g, {layers} layers, {tall} mm tall")
     print(f"  -> out/gcode/{a.name}.gcode, out/gcode/{a.name}.3mf")
+
+    if a.upload or a.upload_only:
+        host = machine.get("print_host") or sys.exit(
+            f"machine preset {a.machine!r} has no print_host set in the GUI")
+        upload(host, f"{GOUT}/{a.name}.gcode", start=not a.upload_only)
+
+
+def upload(host, gcode, start):
+    """POST the file to Moonraker (/server/files/upload), optionally starting it.
+
+    Refuses if the printer is already printing - Moonraker would only queue or
+    reject it, and either way that is a decision to make at the printer."""
+    base = host if "://" in host else "http://" + host
+    def get(path):
+        return json.load(urllib.request.urlopen(base + path, timeout=5))["result"]
+    stats = get("/printer/objects/query?print_stats")["status"]["print_stats"]
+    if stats["state"] in ("printing", "paused"):
+        sys.exit(f"!! {host} is {stats['state']} {stats.get('filename')}; not uploading")
+
+    boundary = "----slice_orca"
+    name = os.path.basename(gcode)
+    body = (f"--{boundary}\r\nContent-Disposition: form-data; name=\"print\"\r\n\r\n"
+            f"{'true' if start else 'false'}\r\n"
+            f"--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; "
+            f"filename=\"{name}\"\r\nContent-Type: application/octet-stream\r\n\r\n"
+            ).encode() + open(gcode, "rb").read() + f"\r\n--{boundary}--\r\n".encode()
+    req = urllib.request.Request(base + "/server/files/upload", data=body, headers={
+        "Content-Type": f"multipart/form-data; boundary={boundary}"})
+    r = json.load(urllib.request.urlopen(req, timeout=120))
+    what = "printing" if r.get("print_started") else "stored"
+    print(f"  -> {host}: {name} {what}")
 
 
 if __name__ == "__main__":
