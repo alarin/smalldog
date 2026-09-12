@@ -20,9 +20,10 @@ this file is stale.
 ```
   3S2P pack, 6 x 21700, 12.6 -> 9.9 V, 0.42 kg          BATTERY_KG, mini_dog.py:638
     |
-    +-- XT60   master disconnect / bench supply, on the pack's fused P+   30 A MIDI
-    +-- XT30   charge only, deliberately the smaller shell, own branch fuse  7.5 A ATO
-    +-- JST-XH 3S balance lead, passed through outside the tray
+    +-- fused P+, INSIDE the tray: the module's lead is the master disconnect  30 A MIDI
+    |          (bench supply goes on the same node, deck off)
+    +-- XT30   charge only, the one external connector, own branch fuse      7.5 A ATO
+    +-- JST-XH 3S balance lead, stays in the case: balance-charge with the module out
     |
     +--> raw pack ------> 12 x ST3215 on one bus          UNREGULATED, and deliberately so
     |
@@ -34,13 +35,10 @@ this file is stale.
     +--> 12 V, regulated -> Unitree L2                    see *The LiDAR wants its own rail*
 ```
 
-The three ways out of the tray are the ones the CAD already cut, and they moved on
-2026-09-09 because none of them opened into air: the two rear hip-roll cradles formed a
-continuous plate 1.2 mm behind the wall and every one of these was blocked (`3d/README.md`,
-*Payload bays*). `PANEL_AT` now puts the **XT60 above the cradle** at z = +20 on the
-centreline, the XT30 at y = +32 and the balance lead at y = −32, around a 22 x 16 bus
-window; the two shells differ so a charger
-physically cannot be plugged into the bus (`mini_dog.py:250`).
+One connector leaves the tray. `PANEL_AT` puts the **XT30 above the cradle** at z = +20
+on the centreline (`3d/README.md`, *Payload bays*); the bus window is the only other
+opening. There is no XT60 - the load lead never leaves the tray - and no balance
+pass-through. The charge shell is an XT30 so the wrong plug does not fit.
 
 ## The BMS is same-port, and there are two fuses
 
@@ -49,10 +47,10 @@ Settled 2026-09-09, when the board arrived. It is a YH2204A-class 3S with a mode
 keeps them separate for 60 A. Both are the vendor's own wiring diagrams - bridging those
 two terminals is a documented mode, not a bodge.
 
-**It is wired same-port, and the reason is the XT60's second job.** The rating is noise:
-peak draw is ~35 A and the fuse below opens at 30, so neither 50 nor 60 is reachable. What
-decides it is that the XT60 is a *bench supply input* as well as the load output (the tree
-above, and `3d/README.md:263`). A supply sitting above pack voltage there pushes current
+**It is wired same-port, and the reason is the fused P+ node's second job.** The rating is
+noise: peak draw is ~35 A and the fuse below opens at 30, so neither 50 nor 60 is
+reachable. What decides it is that the node is a *bench supply input* as well as the load
+output (the tree above). A supply sitting above pack voltage there pushes current
 into P-. In split-port the charge FETs are not in that path and the discharge FET's body
 diode conducts in exactly that direction - so it charges the pack with the overcharge
 cutoff completely out of the loop. Same-port puts both FET banks in series, so that same
@@ -64,15 +62,15 @@ the FET loss) and for charging while running (independent limits); same-port is 
 better for the bench supply. Only the last of those can destroy a pack.
 
 **Two fuses, because the charge branch is a sixth of the main lead.** Same-port is about the
-BMS's *negative* terminals, not about the robot having one connector - the XT60 and XT30
-stay separate leads whose negatives merely meet at the shared node, so a fuse in the XT30's
-*positive* branch carries charge current only.
+BMS's *negative* terminals, not about the robot having one connector - the load lead and
+the XT30 stay separate leads whose negatives merely meet at the shared node, so a fuse in
+the XT30's *positive* branch carries charge current only.
 
 ```
-pack B+ --[30 A MIDI]--+----------------- XT60 +   load / bench supply
+pack B+ --[30 A MIDI]--+----------------- P+ node   load / bench supply (inside)
                        +--[7.5 A ATO]---- XT30 +   charger
 
-pack B- -- BMS B- =[chg FETs]=[dis FETs]= C-/P- bridged --+-- XT60 -
+pack B- -- BMS B- =[chg FETs]=[dis FETs]= C-/P- bridged --+-- P- node
                                                           +-- XT30 -
 ```
 
@@ -110,7 +108,7 @@ limit - unlike a 30 A blade in a 30 A-max holder, which is exactly at its own.
 
 ## The servos are not regulated, and that is a decision
 
-Everything from the XT60 to the twelve ST3215s is raw pack, sagging 12.6 → 9.9 V over the
+Everything from the P+ node to the twelve ST3215s is raw pack, sagging 12.6 → 9.9 V over the
 discharge. Do not "fix" this:
 
 - **Supply voltage is a gait variable.** The bench measured position-loop stiffness at
@@ -177,7 +175,7 @@ protection.
 ## Wiring, which is where the brownout is won or lost
 
 - **Star at the pack, not at the far end of the bus.** Take the converter's feed at the
-  XT60 / fused P+, not off a servo bus branch: every milliohm of the servo run turns those
+  fused P+ node, not off a servo bus branch: every milliohm of the servo run turns those
   24 A transients into volts at the converter's input.
 - **Bulk capacitance on both sides of the buck** — a few hundred µF low-ESR in, some out.
   The input cap is what carries the Pi through the push-off dip.

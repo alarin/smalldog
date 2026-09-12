@@ -87,7 +87,7 @@ Two consequences, and both are as load-bearing as a dimension:
 
 | | why it matters |
 |---|---|
-| wire bend room off each short end | IN and OUT terminals face outward along ±length; the feed comes from the XT60's fused P+ at the rear panel |
+| wire bend room off each short end | IN and OUT terminals face outward along ±length; the feed comes from the fused P+ node inside the tray |
 
 **15.6 is the total, mounting plane to the top of the coil** — the 1.5 mm of solder and
 components underneath is inside it, not on top of it. So a bay 15.6 mm deep holds the

@@ -46,7 +46,7 @@ would take the clear strip to 13.15 — still short, and with nothing left at th
 Cutting the mode switch takes it to **13.0**, which is inside the undivided 14.05 strip
 but still outside the 8.85 that is clear of the connector pads. And height is not the only
 wall: standing in the strip the board must be 56 across y and 36.6 in z, and 36.6 raised
-clear of the XT60 pad's top at z = −8.75 reaches z = 27.85 against a deck at 25.
+clear of a connector pad's top at z = −8.75 reaches z = 27.85 against a deck at 25 (the pad has since moved to z = +20; the arithmetic is stale).
 
 ## There is no home for it anywhere on this robot
 
@@ -175,7 +175,7 @@ transients `../../../POWER.md` is written around, and twelve stalled ST3215s wou
 ~32 A. `../../../robot/README.md:715` already states the rule for the URT-1 and it applies
 here verbatim: *a debug adapter is not a power distribution board.*
 
-**Use it for signal only.** The servos are fed from the XT60's fused P+ star as POWER.md
+**Use it for signal only.** The servos are fed from the fused P+ star as POWER.md
 already specifies; the adapter's servo connectors get **data and ground only, V+ left
 unconnected**, which needs a custom harness because a stock servo lead carries all three.
 Its barrel then supplies nothing but the board's own logic current, which is what a
@@ -184,7 +184,7 @@ Its barrel then supplies nothing but the board's own logic current, which is wha
 #### Where it goes, checked against the solid
 
 Standing in the rear strip at **y ∈ [−23, +19], z ∈ [−8.75, +24.25]** it clears
-everything: the XT60 pad tops out at z = −8.75, the XT30 pad is at y = 19…31, the rear
+everything (stale — the panel now has one pad, the XT30 at y ±9, z 13.7…25): the XT60 pad tops out at z = −8.75, the XT30 pad is at y = 19…31, the rear
 deck bosses are at y ≥ 35.2, and the full 14.05 mm of strip thickness is available there
 because no pad reaches that band. It leaves **0.75 mm to the deck**, and it is asymmetric
 in y, which costs nothing.
