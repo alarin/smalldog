@@ -84,6 +84,14 @@ STL only.
   into the stock aluminium lands in a nut in a `nut_slot()`; the slot's `ang` must point at
   a face still reachable at that moment of the assembly order — it is what fixes the order
   in `README.md`. Hub screws thread into the tapped aluminium plates (no room for a nut).
+- **The cradle → tray screws are the one exception: heat-set inserts** (`INS_*`), from the
+  flange side through the register spigot. A nut has nowhere to go round that axis — the
+  side channel it had was a sealed cavity, a pocket open to the servo bore hollows the
+  boss and halves `cradle_front`'s SF, and the servo side has 3.7 mm under the strap.
+  `cradle_insert_clear()` checks the bore, the lip it bottoms on and the screw's reach.
+- **The camera mount has no screws**: tabs under the LiDAR pedestal's front deck bolts
+  (`cam_tab()`, one function for the tab and for the pocket `lidar_mount` cuts for it).
+  Its old M3s cut the cradle's 4 mm flange rib in two.
 - **Off the torque path a screw may thread into plastic** (lids, covers): hole
   `M3_TAP`/`M25_TAP` (⌀2.6/⌀2.1, radii like the `_CLR` pair, both **UNVERIFIED** — print a
   coupon first), ≥ 1 D of wall, 2 D engaged, one-assembly thread. Unsure whether a load
@@ -133,9 +141,12 @@ STL only.
   `rl/checks/imu_placement.py` is the argument for the position — run it whenever the
   mount or the gait moves (it runs on the mac). Moving the site is a re-baseline for `rl/`
   (retrain, not fine-tune).
-- **The rear-panel openings are laid out inside the cradle flange's frame**, the XT60 above
-  the cradle at z = +20 (the 9.64 mm band between `CRADLE_Z1` and `BODY_Z1`, so its z is
-  not round). `panel_clear()` probes every opening along −x against the assembled body.
+- **The rear wall has two openings**: the bus window inside the cradle flange's frame, and
+  the XT30 above the cradle at z = +20 (the 9.64 mm band between `CRADLE_Z1` and
+  `BODY_Z1`, so its z is not round). Inside the frame, everything but the window is
+  behind a rear roll servo's case. `panel_clear()` probes both along −x every run — the
+  connector against the body *and* `servo_hardware()`, because a servo is not a part and
+  two connectors once shipped behind one.
 
 **Checks, and why each exists.** The recurring lesson: `isValid()`, `interference()` (static
 body parts only) and `rom_scan` (moving parts only) are each blind to a class of defect.
@@ -199,7 +210,7 @@ disagree. A "cosmetic" parameter still moves the moment arms `fea.py` derives.
 7. `rom_scan(..., step=2)` before committing to real joint limits; `export_sim.py
    --rom-step 2` re-scans.
 
-### Current baseline (2026-09-12, 2.494 kg)
+### Current baseline (2026-09-12, 2.496 kg)
 
 Inter-layer SF per load case. `stall` scales with `SERVO_STALL_NM` only, the three ground
 columns with `fea.robot_mass()`. Read `--orient` for `thigh_A` and `cradle_front`.
@@ -209,18 +220,21 @@ columns with `fea.robot_mass()`. Read `--orient` for `thigh_A` and `cradle_front
 | `hip_bracket_A` | 46.2 | 23.1 | 7.7 | 2.2 | 5.57 |
 | `thigh_A` | 18.6 | 9.3 | 3.1 | 1.1 | 2.01 |
 | `shin_A` | 59.2 | 29.6 | 9.9 | 4.5 | 12.65 |
-| `cradle_front` | 4.0 | 2.0 | 0.7 | 2.7 | **1.33** |
+| `cradle_front` | 4.8 | 2.4 | 0.8 | 3.0 | **1.42** |
 
 `export_sim.py --check`: `4 feet down, upright +1.00`, base z 187 mm, camera axis
 (+0.99 0 +0.10), ROM ±90 / ±90 / ±110 (±90 is the scan window, not a stop). Probes:
 `imu clear +3.40`, `batt clear +0.60`, `clamp clear +1.43`, `head clear +0.65`,
-`cradle bolts +5.15`, `fork access: all six arms`, `lidar fov 34.0 / 48.1 / 23.1`,
+`cradle bolts +5.15`, `fork access: all six arms`, `panel clear` (window to the
+servos, XT30 clear of body and servos), `lidar fov 34.0 / 48.1 / 23.1`,
 `camera view: out of frame`.
 
-Step 6, same seeds: **flat trot 522.8 mm**; **terrain seeds 7…12: 415 ±44 mm, 0/6 down**;
-**course seeds 7/8/9: 1986 / 1716 / 2149 mm, all upright**. (`SERVO_STALL_NM` 3.2 and
+Step 6, same seeds: **flat trot 526.9 mm** (rear panel down to the XT30, < 1 g; the
+control with the old panel reads 523.7); **terrain seeds 7…12: 445 ±55 mm, 0/6 down**;
+**course seeds 7/8/9: 1679 / 1156 (down) / 2053 mm** — seed 8 reads 2228 upright on the
+control, which is the 0.79 g mass cliff below, not the panel. (`SERVO_STALL_NM` 3.2 and
 `MJ_DAMPING` 0.92 moved the joint ceiling 3.15 → 3.28 rad/s; the control — 4.50 / 1.37 on
-the same mesh — reads 456.7, and the terrain was 403 ±34, 1/6 down: one distribution.)
+the same mesh — read 456.7, and the terrain was 403 ±34, 1/6 down: one distribution.)
 
 ### How to read step 6
 

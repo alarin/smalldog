@@ -407,8 +407,10 @@ ESP_RIB_Y = 13.5                      # ... and its half length: clear of the dr
                                       # to the lower pair of rear CRADLE_BOLT screws
 ESP_X     = -51.0                     # the ESP32 + URT-1 divider rib, behind the
                                       # module and in front of the connector panel's pads
-BATT_WIRE = (14.0, 8.0)               # grommet slot in the rear wall: pack leads and the
-                                      # 3S balance lead, out to the rear connector panel
+BATT_WIRE = (14.0, 8.0)               # grommet slot in the rear wall: the pack leads, to
+                                      # the power node inside the tray.  The 3S balance
+                                      # lead stays in the case - balance charge with the
+                                      # module out.
 #
 # WHAT THE MODULE COST, AND WHERE IT CAME FROM.  A case is walls, and the bay had none to
 # give: from the tray floor at BODY_Z0+3 = -22 to the old pack ceiling at 21.4 there were
@@ -504,27 +506,37 @@ CRADLE_RIB    = 6.0                   # the flange is a FRAME: rib width round t
                                       # see the panel block below, which is laid out
                                       # against it and against the four nut bosses.
 CRADLE_BOLT   = ((17.0, 10.5), (17.0, -10.5), (-17.0, 10.5), (-17.0, -10.5))
+                                      # A tray is printed against these; they stay.  What
+                                      # that costs: nothing round this axis fits under the
+                                      # strap (3.7 mm of bore ceiling over the bolt), so
+                                      # neither a nut nor an insert can come in from the
+                                      # servo side, and the boss must stay SOLID - a nut
+                                      # pocket opened here put the land3g peak at the
+                                      # strap's edge where the boss ends (--orient SF
+                                      # 1.33 -> 0.77).  Hence the heat-set insert from
+                                      # the flange side, INS_* below.  (Moving the bolts
+                                      # to |z| = 7, boss clear of the strap, read 2.06.)
 CRADLE_BOSS   = 10.0                  # nut boss, square in y and z.  y 12..22 keeps it
                                       # 1 mm off the camera's foot at y = 23 and 1 mm off
                                       # the bus window at y = 11; its nearest corner is
-                                      # r = 15.0 from the roll axis against ARM_R = 13.5.
+                                      # r = 14.1 from the roll axis against ARM_R = 13.5.
 CRADLE_BOSS_X = 71.5                  # ... and how far out it runs (servo case at 72.5)
-CRADLE_NUT_X  = 67.0                  # nut-slot floor: the full CRADLE_T under the nut,
-                                      # which is what takes the clamp.  A pocket in the
-                                      # 4 mm flange instead would leave 1.3 mm and creep.
-                                      # The nut goes in ALONG THE BOLT AXIS from the servo
-                                      # bore, before the servo: a hex-width pocket open
-                                      # through the boss's +x face down to that floor.
-                                      # It was a side channel "opening toward the
-                                      # centreline" - into the rail box, which is solid
-                                      # there: a sealed cavity, found on the first print.
-                                      # cradle_nut_clear() sweeps a real nut down it now.
-CRADLE_NUT_IN = ROLL_X - S_H/2 + M3_NUT_H + 1.0   # 76.2 - the pocket cut runs out to here,
-                                      # past the servo's rear face at 72.5: the bolt is at
-                                      # |z| = 10.5 and a nut round it reaches 13.4, 1 mm
-                                      # above the bore's ceiling at S_W/2, so the ceiling
-                                      # is relieved one nut deep behind the servo and the
-                                      # nut is lifted into the pocket from inside the bore
+# The cradle screws land in HEAT-SET INSERTS, the one place on the robot they do.  Not a
+# nut: the side channel the nut had was a sealed cavity (into the rail box), and a pocket
+# open to the servo bore hollows the boss and halves the cradle's SF, see CRADLE_BOLT.
+# The joint carries 22 N axial; a brass M3 insert in PETG holds several hundred.
+# The insert goes in from the FLANGE side, through the register spigot, and is pressed
+# CRADLE_INS_X0 - CRADLE_X past the flange face to bottom on a lip in the boss: the bore
+# is INS_D from the spigot's tip to the lip, M3 clearance beyond it.  Push it with an M3
+# screw threaded into the insert and the iron on the screw's head - a stepped insert tip
+# stops at the spigot.  Screw tension then pulls the insert INTO the lip, never out.
+INS_D, INS_L  = 4.4, 6.0              # M3 heat-set insert: hole diameter and length.
+                                      # The ones bought: @5.0 knurled body x 6 long; 4.4
+                                      # is the usual hole for a @5 body      **verify**
+CRADLE_INS_LIP = 1.0                  # boss left beyond the insert, the stop it seats on
+CRADLE_INS_X0 = CRADLE_BOSS_X - CRADLE_INS_LIP - INS_L    # 64.5 - insert's near end, 1.5
+                                      # past the flange face: clear of the spigot
+                                      # (61..63), whose wall the @4.4 bore leaves at 1.3
 CRADLE_REG_D  = 7.0                   # register spigot on the cradle's flange face ...
 CRADLE_REG    = 2.0                   # ... standing this proud of CRADLE_X
 CRADLE_SEAT   = 2.8                   # tray boss inboard of the wall: it is what makes
@@ -542,8 +554,9 @@ CRADLE_CB     = 2.0                   # that is not tidiness: the front seat's f
                                       # - the part in the way is HARDWARE, so isValid(),
                                       # interference() and rom_scan are all blind to it.
                                       # cradle_head_clear() is what prints the margin.
-CRADLE_BOLT_L = 12.0                  # M3 x 12: counterbore floor 59.4 to the nut's far
-                                      # face at 69.7 is 10.3, and 12 is the next length up
+CRADLE_BOLT_L = 10.0                  # M3 x 10: counterbore floor 59.4 into the insert
+                                      # (64.5..70.5) by 4.9 of its 6; x 12 would stop
+                                      # 0.1 mm inside the boss, a burr from the servo
 STRAP_Y       = 21.5                  # the strap's outboard edge where it passes the fork
                                       # arm.  A hard ROM limit, not a guess - see the
                                       # straps in roll_module().
@@ -556,55 +569,47 @@ PANEL_REACH   = 20.0                  # ... and how far panel_clear() looks out 
                                       # started 1.2 mm behind it, so this is generous on
                                       # purpose: the question is "is anything there", not
                                       # "does the plug's own length fit".
-# Rear connector panel: the pack's three ways out of the tray, around the bus window.
-#   XT60  master disconnect / bench supply, on the pack's fused P+ ;
-#   XT30  charge, and it is deliberately the SMALLER XT - a charger physically cannot be
-#         plugged into the bus, which is the whole reason for two different shells;
-#   a plain pass-through for the 3S JST-XH balance lead, which lives outside the tray so
-#         the pack can be metered without opening the robot.
-# Each XT sits in a pocket in a locally thickened wall and goes in from INSIDE, before the
+# Rear connector panel: ONE connector and the bus window.
+#   XT30  charge, on its own fused branch (POWER.md).  Deliberately an XT30 and not an
+#         XT60: the pack's load lead never leaves the tray, so the only shell on the
+#         outside is the charger's, and the wrong plug physically does not fit.
+# There is no XT60 and no balance pass-through.  The pack's P+ runs inside, grommet to
+# power node, and the module's own lead is the master disconnect (deck off).  The 3S
+# balance lead stays inside the case: balance charging is done with the module out.
+# The XT sits in a pocket in a locally thickened wall and goes in from INSIDE, before the
 # deck.  The outer PANEL_LIP_T of wall is left as a PANEL_LIP lip all round, and that lip -
-# not glue - is what takes the unplug force, which on an XT60 is the big one.  The mating
-# half therefore stands PANEL_LIP_T proud of the wall; XT pins are ~7 mm long against ~5 mm
-# of engagement, so it still seats.  Nothing threads into plastic here either.
-# EVERY ONE OF THESE OPENED INTO SOLID PLASTIC UNTIL 2026-09-09, and nothing in this
-# repository could see it.  The two rear hip-roll cradles met across the centreline and
-# formed one continuous 2.8 mm plate at x = -64.2 .. -67.0 over |y| <= 49.11 and
-# |z| <= 15.36, with 1.2 mm of air behind the wall and no way through.  Measured on the
-# solid: the bus window 100 % blocked, the XT30 100 %, the balance lead 100 %, the XT60's
-# top 3.61 mm - and the XT mating halves stand PANEL_LIP_T proud of x = -63, i.e. to
-# -64.5, which is already 0.3 mm INSIDE the plate.  Not one of them could ever have been
-# plugged in.  `interference()` pairs the static body parts and the cradles WERE
-# chassis_bottom, and a part cannot interfere with itself; `isValid()` and `rom_scan` see
-# nothing either.  The block below reasoned about the deck bosses at |y| = 32.2 and never
-# about the cradle, which was 30 mm closer.
+# not glue - is what takes the unplug force.  The mating half therefore stands PANEL_LIP_T
+# proud of the wall; XT pins are ~7 mm long against ~5 mm of engagement, so it still
+# seats.  Nothing threads into plastic here either.
 #
-# What fixed it is the cradle becoming a bolted part with a FRAME flange (see the CRADLE_*
-# block): the frame's opening is y +-43.11, z +-9.36, and everything here is laid out
-# inside it and around the four CRADLE_BOLT bosses, whose tray-side seats reach y = 23 and
-# z = 16.5.  `panel_clear()` probes each opening along -x against the assembled body on
-# every run, and it is a failure line like `!! INTERFERENCE`, not a note.
-# THE XT60 IS THE ONE THAT DOES NOT FIT INSIDE THE FRAME.  16.5 mm of width does not
-# survive the bus window and the two bosses, so it goes ABOVE the cradle instead: the
-# rear wall is clear of everything for z = 15.36 .. 25, the interior there is the
-# ESP32/URT-1 strip, and the deck closes it at 25.  That band is 9.64 mm for an 8.5 mm
-# body - 0.6 mm of margin top and bottom, so PANEL_AT's z is not a round number and moving
-# BODY_Z1, CRADLE_Z1 or PANEL_XT60 moves it.  The old note here - "the clear strip between
-# the window's edge and the rear deck boss's inboard face at |y| = 32.2 is 16.2 mm" - was
-# stale twice over: the deck screws went to |y| = 41 with the battery module, so that face
-# is at 35.2, and the strip was never clear in the first place.
-PANEL_XT60   = (16.5, 8.5)            # body over the moulding, + fit         **verify**
-PANEL_XT30   = (12.0, 6.6)            #                                       **verify**
-PANEL_BAL    = (13.0, 6.0)            # JST-XH 3S plug, passing through       **verify**
+# WHERE IT MAY GO, and two things that were shipped wrong here.  Behind this wall, at
+# |z| < 13 and |y| > 13, are the two rear hip-roll servos - case from x = -72.5, 9.5 mm
+# behind the wall.  An XT plug is ~20 mm long.  So a connector inside the cradle frame's
+# opening (y +-43.11, z +-9.36) is behind a servo case unless it is on the centreline,
+# and the centreline is the bus window.  The connector therefore sits ABOVE the cradle
+# flange: the wall is clear of servo, sleeve and cradle for z = 15.36 .. 25, the interior
+# there is the ESP32/URT-1 strip, and the deck closes it at 25.  PANEL_AT's z is not a
+# round number for that reason, and moving BODY_Z1, CRADLE_Z1 or PANEL_XT30 moves it.
+#   1. Every opening once came out into the rear cradles' 2.8 mm plate, 1.2 mm behind the
+#      wall: the cradles were part of chassis_bottom and a part cannot interfere with
+#      itself.  The cradle became a bolted part with a FRAME flange and panel_clear()
+#      was written.
+#   2. Then the XT30 and the balance lead at y = +-32 sat behind the roll servos, and
+#      panel_clear() was blind to it: it probed BODY_PARTS, and the servos are hardware,
+#      not parts - the thrust-clamp cap head and the hub screw heads all over again.  It
+#      probes servo_hardware() too now.  The bus window opens onto the two rear roll
+#      servos' connector faces on purpose: that is where the bus goes.
+# `panel_clear()` runs every build and is a failure line like `!! INTERFERENCE`.
+PANEL_XT30   = (12.0, 6.6)            # body over the moulding, + fit         **verify**
 PANEL_T      = 8.0                    # pocket depth, from the wall's outer face
 PANEL_LIP    = 0.8                    # ... the lip left at the outer face, all round
 PANEL_LIP_T  = 1.5                    # ... and how thick that lip is
 PANEL_WIN    = (22.0, 16.0)           # the bus window: w x h, on the centreline.  It was
                                       # 32 x 20 and blocked; 22 keeps 1 mm off the bolt
                                       # bosses at y = 12 and 16 fits the frame's opening.
-PANEL_AT     = ((0.0, 20.0, PANEL_XT60),      # (y, z, size) - XT60 ABOVE the cradle,
-                (32.0, 0.0, PANEL_XT30))      # XT30 outboard of the bolt boss
-PANEL_BAL_AT = (-32.0, 0.0)           # ... balance lead, mirrored on the other side
+PANEL_AT     = ((0.0, 20.0, PANEL_XT30),)     # (y, z, size) - ABOVE the cradle, on
+                                      # the centreline.  y = +-32 at z = 0 is behind a
+                                      # servo; y = +-32 at z = 20 is in a deck boss.
 OPI_X        = -22.0                  # Orange Pi 5 Pro board centre on the deck
 OPI_HOLES    = (92.0, 54.0)
 OPI_STAND_R, OPI_STAND_H = 4.8, 7.0   # standoff: r fits an M2.5 nut slot, h clears the nut
@@ -624,7 +629,7 @@ OPI_NUT_DZ   = 1.5                    # ... its floor, above the deck's top face
 # deck (chassis_top only unions it while OPI_TAB_X is outboard of the deck's end).
 # Nothing is behind the rear wall at deck height to object: measured 0.0 mm3 against
 # chassis_bottom, cradle_rear (z <= 15.36) and battery_case over x -80..-63, |y| <= 36,
-# z 25..29, and the XT60 above the cradle tops out at the deck's underside.
+# z 25..29, and the XT30 above the cradle tops out at the deck's underside.
 OPI_TAB_RIM  = 1.2                    # ... rim of deck left round the standoff's foot
 OPI_TAB_X    = OPI_X - OPI_HOLES[0]/2 - OPI_STAND_R - OPI_TAB_RIM
 OPI_TAB_W    = OPI_STAND_R + OPI_TAB_RIM      # ... half width of the tab, in y
@@ -999,19 +1004,28 @@ CAM_LEDGE    = CRADLE_Z1              # 15.36 - the front cradle's own top face,
 # The mount is a C-section standing on that ledge.  It cannot grip the FRONT of the board's
 # lower half (0.5 mm to the fork arm) and it cannot put a nut behind the board (2.9 mm of
 # depth, an M3 nut is 5.85 across), so the board slides in endwise and is trapped: a slot
-# in the shelf below, a wall in front of its upper half, a skirt behind.  The two M3 both
-# live at the +y end, past the board's short end, where the boss can be full size; the far
-# end is keyed against sliding by a printed tongue in a pocket, which fastens nothing and
-# so needs no nut.  Both screws come down into nuts in slots in the gusset, opening
-# forward - open air under the chin, and the only face still reachable with the board in.
+# in the shelf below, a wall in front of its upper half, a skirt behind.
+#
+# HOW IT IS HELD, and why not by screws of its own.  It had two M3 down into nuts in the
+# cradle's flange rib at y = 23 and 29 - a @3.4 hole through a rib CRADLE_T = 4 deep, 0.3
+# mm of skin a side, and the rib was cut in two at both.  There is nowhere else: past the
+# board's end the mount is a 1.3 mm skirt round the insertion path, the rib is 4 mm deep
+# along its whole length, the bosses are full of the cradle bolts, and x 67..73.5 at
+# y > STRAP_Y is the hip bracket's.  So the mount borrows the LiDAR pedestal's two FRONT
+# deck bolts: two tabs reach back over the deck into CAM_TAB_T-deep pockets in the base
+# disc's underside and are clamped there, disc over tab over deck, by the same M3 x 16 -
+# the stack is no taller, the pockets are where disc used to be.  The tabs join the
+# mount through the skirt above the deck and the roof over the pocket, which is why the
+# roof now runs on both sides of the lens relief.  Nothing closes the open +y end after
+# the board is in: a 4 g board in a CLR-fit slot, the connector's tail down its far end.
+# A stop fin on the cradle's top was tried and dropped as clutter.
 CAM_BACK, CAM_BACK_HI = 63.0, 63.6    # mount back plane, below / above the deck's top
 CAM_FRONT    = 68.0                   # ... and its front, 0.1 inside the fork arm plane
 CAM_END      = (31.0, -73.0)          # the channel's two ends, in y
-CAM_FOOT_X   = 65.5                   # the two M3, outboard of the void in the gusset
-CAM_FOOT_Y   = (23.0, 29.0)
-CAM_NUT_DZ   = 8.0                    # nut-slot floor, below the ledge: 5 mm of gusset
-                                      # over the nut, which is what takes the preload
-CAM_KEY      = (-45.0, 6.0, 3.0)      # locating tongue: y centre, length, depth
+CAM_TAB_T    = 3.0                    # tab thickness, = the pocket's depth in the 6 mm
+                                      # disc: 3 mm of disc left over the bolt
+CAM_TAB_R    = 6.0                    # pad radius round the pedestal bolt ...
+CAM_TAB_W    = 8.0                    # ... and the width of the bar back to the mount
 CAM_LENS_REL = 2.0                    # relief round the @14 holder, on radius: the mount
                                       # must not vignette its own camera
 # ... AND THE WALL IN FRONT OF THE BOARD HAS TO BE ATTACHED TO SOMETHING.  It was not.
@@ -1029,8 +1043,7 @@ CAM_LENS_REL = 2.0                    # relief round the @14 holder, on radius: 
 #   * at the NEAR end the board is inserted through, so nothing may close it - the tie
 #     goes OVER the board instead.  The channel's top rises CAM_CAP above the pocket's own
 #     ceiling from the lens relief to the board's near end, which is 10.4 mm of roof clear
-#     of both CAM_FOOT_Y screws (23 and 29), so neither counterbore moves and the M3 x 20
-#     in the BOM is unchanged.
+#     of the tabs' skirt patches, which now carry the same roof on the -y side too.
 # There is room above: the ceiling here is LIDAR_BASE_FLAT = 63.5, i.e. the pedestal is
 # cut away in front of the mount's own back plane, and measured, a roof to z 33.9 shares
 # 0.0 mm3 with lidar_mount and leaves lidar_fov_clear at +22.6 deg outside the 96 deg
@@ -1391,7 +1404,7 @@ def servo_dummy():
     s = s.union(bxc(S_L-S_AX, S_L-S_AX+CONN_D, -CONN_W/2, CONN_W/2, -CONN_H/2, CONN_H/2))
     return s
 
-def servo_envelope(hub=True):
+def servo_envelope(hub=True, conn=True):
     """cut this from every printed part.
 
     hub=True  - the general case: also sweep out both hub discs and the base recess.  They
@@ -1407,7 +1420,9 @@ def servo_envelope(hub=True):
         s = s.union(cyl(HUB_REC_D/2+ROTCLR, 8.0, (0,0,-S_H/2-4.0)))
     else:
         s = s.cut(cyl(HUB_REC_D/2-CLR, HUB_BOT_Z+S_H/2+1.0, (0,0,-S_H/2-1.0)))
-    s = s.union(bxc(S_L-S_AX, S_L-S_AX+CONN_D+14, -CONN_W/2-1, CONN_W/2+1, -CONN_H/2-1, CONN_H/2+1))
+    if conn:    # the connector and 14 mm of cable escape - a keep-out for parts, but it
+                # is the cable's own room, so panel_clear() asks for the hardware only
+        s = s.union(bxc(S_L-S_AX, S_L-S_AX+CONN_D+14, -CONN_W/2-1, CONN_W/2+1, -CONN_H/2-1, CONN_H/2+1))
     return s
 
 def sleeve(length=SLEEVE_LEN, wall=SLEEVE_W, window=True, lighten=True, clamp=True):
@@ -1557,6 +1572,22 @@ def env_all(no_hub=None):
         _ENV[key] = e
     return _ENV[key]
 
+def servo_hardware():
+    """All twelve servos as HARDWARE - case at CLR and both hub discs, no cable escape.
+    What a plug or a hand meets behind a wall; env_all() is what a printed part must keep
+    out of, and the two differ by the connector's 14 mm of cable room."""
+    key = ("hw",)
+    if key not in _ENV:
+        leg = None
+        for nm, L in JOINTS:
+            s = mv(servo_envelope(conn=False), L)
+            leg = s if leg is None else leg.union(s)
+        e = leg
+        for f in (mirY, mirX, lambda w: mirX(mirY(w))):
+            e = e.union(f(leg))
+        _ENV[key] = e
+    return _ENV[key]
+
 # =====================================================================================
 # PART: cradle_front / cradle_rear, and chassis_bottom
 # =====================================================================================
@@ -1634,14 +1665,12 @@ def cradle_bolts(cradle=True):
         boss = bs if boss is None else boss.union(bs)
         c = cyl(M3_CLR, CRADLE_BOSS_X-CRADLE_X+CRADLE_REG+2,
                 (CRADLE_X-CRADLE_REG-1, y, z), axis=(1, 0, 0))
-        # the nut pocket opens through the boss's +x face into the servo bore: flats
-        # against the y walls, corners in z, floor at CRADLE_NUT_X, and it goes in before
-        # the servo does.  The servo's rear face at 72.5 is what retains it afterwards.
-        # NOT a side channel toward the centreline - the rail box is solid at |y| <= 14,
-        # so that channel was a sealed cavity and no nut ever went in.
-        c = c.union(bxc(CRADLE_NUT_X, CRADLE_NUT_IN,
-                        y-(M3_NUT_AF+NUT_CLR)/2, y+(M3_NUT_AF+NUT_CLR)/2,
-                        z-(M3_NUT_AF/0.866+NUT_CLR)/2, z+(M3_NUT_AF/0.866+NUT_CLR)/2))
+        # the insert bore: INS_D from the spigot's tip to CRADLE_INS_LIP short of the
+        # boss's end, where the insert bottoms; the boss beyond it stays M3 clearance.
+        # The bore runs through the spigot and the flange because that is the only side
+        # the axis is reachable from - the servo bore's ceiling is 1.9 mm over it.
+        c = c.union(cyl(INS_D/2, CRADLE_INS_X0+INS_L-(CRADLE_X-CRADLE_REG-1),
+                        (CRADLE_X-CRADLE_REG-1, y, z), axis=(1, 0, 0)))
         cut = c if cut is None else cut.union(c)
         # --- tray: a boss inboard of the wall, deep enough for the register pocket AND a
         # flat head seat.  WALL alone is 2.8 mm and holds neither.
@@ -1698,16 +1727,8 @@ def cradle(front=True):
     s = s.cut(rel).cut(mirY(rel))
     boss, cut = cradle_bolts(cradle=True)
     s = s.union(boss)
-    if front:
-        # the camera's two M3, into nuts in slots opening forward - open air under the
-        # chin, and the only face still reachable with the board in its channel
-        for fy in CAM_FOOT_Y:
-            s = s.cut(cyl(M3_CLR, 20.0, (CAM_FOOT_X, fy, CAM_LEDGE-CAM_NUT_DZ-4.0)))
-            s = s.cut(nut_slot((CAM_FOOT_X, fy, CAM_LEDGE-CAM_NUT_DZ), (1.0, 0.0, 0.0),
-                               run=8.0))
-        ky, kl, kd = CAM_KEY                   # ... and the pocket its far end keys into
-        s = s.cut(bxc(CAM_FOOT_X-3.0-CLR, CAM_FOOT_X+3.0+CLR, ky-kl/2-CLR, ky+kl/2+CLR,
-                      CAM_LEDGE-kd-CLR, CAM_LEDGE+1.0))
+    # the camera mount no longer fastens to this part at all - its two M3 used to cut
+    # the flange rib through at y = 23 and 29, see the camera block
     s = s.cut(cut)                             # bolt holes and nut channels
     s = s.cut(env_all())
     return s if front else mirX(s)
@@ -1774,7 +1795,7 @@ def chassis_bottom():
     s = s.cut(bxc(-BODY_L/2-1, -BODY_L/2+WALL+1, -pw/2, pw/2, -ph/2, ph/2))
     # Rear connector panel - see the PANEL_* block.  Pad, then the pocket out of it, then
     # the lip's smaller opening through the wall's outer skin.  The pad is clamped at BOTH
-    # ends now: the XT60 sits high enough that an unclamped pad would stand proud of the
+    # ends: the XT30 sits high enough that an unclamped pad would stand proud of the
     # tray's top edge and foul the deck.
     xw = -BODY_L/2                                            # the wall's outer face
     for cy, cz, (w, h) in PANEL_AT:
@@ -1783,17 +1804,8 @@ def chassis_bottom():
         s = s.cut(bxc(xw+PANEL_LIP_T, xw+PANEL_T+1, cy-w/2, cy+w/2, cz-h/2, cz+h/2))
         s = s.cut(bxc(xw-1, xw+PANEL_LIP_T, cy-w/2+PANEL_LIP, cy+w/2-PANEL_LIP,
                       cz-h/2+PANEL_LIP, cz+h/2-PANEL_LIP))
-    by, bz = PANEL_BAL_AT
-    s = s.cut(bxc(xw-1, xw+WALL+1, by-PANEL_BAL[0]/2, by+PANEL_BAL[0]/2,
-                  bz-PANEL_BAL[1]/2, bz+PANEL_BAL[1]/2))
-    # The camera's two M3 are NOT here any more: CAM_FOOT_X is 65.5, outboard of this
-    # part's front face at 63, so both nuts live in cradle_front() - the honest consequence
-    # of the ledge the camera stands on being a bolted part.  Its KEY POCKET does still
-    # cross the joint, by 0.5 mm, so both sides cut their share of it the way both sides
-    # cut the fork channels.
-    ky, kl, kd = CAM_KEY
-    s = s.cut(bxc(CAM_FOOT_X-3.0-CLR, CAM_FOOT_X+3.0+CLR, ky-kl/2-CLR, ky+kl/2+CLR,
-                  CAM_LEDGE-kd-CLR, CAM_LEDGE+1.0))
+    # Nothing of the camera's here: the mount hangs off the LiDAR pedestal's front bolts
+    # (camera block); nothing of it touches the tray or the cradles.
     #
     # There are no fork-access channels here any more.  They used to cut a @6 hole
     # through this part's front corner post and through the lower half of each corner deck
@@ -2204,6 +2216,11 @@ def lidar_mount():
         a = math.radians(360.0*i/LIDAR_N+45.0)
         px, py = cx+LIDAR_BC/2*math.cos(a), LIDAR_BC/2*math.sin(a)
         s = s.cut(cyl(M3_CLR, 20.0, (px, py, z0-1)))
+        if px > cx:
+            # the camera mount's tab sits under this bolt, in a pocket in the disc's
+            # underside that runs out through the flat face to the mount (camera block)
+            tab = cam_tab(px, py, CLR)
+            s = s.cut(tab.union(tab.translate((0, 0, -1.0))))
         for zn in LIDAR_NUT_Z:
             s = s.cut(nut_slot((px, py, z0+zn), (math.cos(a), math.sin(a), 0.0),
                                run=LIDAR_LEG_D/2+4.0))
@@ -2437,6 +2454,16 @@ def camera_mount():
     # board, from the lens relief to the board's own end.  See the CAM_CAP block.
     s = s.union(bxc(CAM_BACK_HI, CAM_FRONT, CAM_LENS_D/2+CAM_LENS_REL, y1,
                     top, ptop+CAM_CAP))
+    # the two tabs to the pedestal's front bolts, and the patch of skirt + roof each one
+    # joins through: the skirt above the deck is 0.5 mm here, so the patch fills it back
+    # to the board pocket (cut below, after this) and up to the roof's top.  On the -y
+    # side that patch IS the roof over the pocket - the tie the +y side had from CAM_CAP.
+    z0 = BODY_Z1 + DECK_T
+    for px, py in cam_tab_bolts():
+        s = s.union(cam_tab(px, py))
+        s = s.union(bxc(CAM_BACK_HI, CAM_FRONT, py-CAM_TAB_W/2, py+CAM_TAB_W/2,
+                        z0, ptop+CAM_CAP))
+        s = s.cut(cyl(M3_CLR, CAM_TAB_T+2.0, (px, py, z0-1.0)))
     # everything in front of the board below its upper half has to go: 0.5 mm to the fork
     s = s.cut(cam_box(-CLR, 40.0, e0-1, e1+1, -Wd, 1.0))
     # ... and so does everything in front of the lens, all the way across the holder
@@ -2448,14 +2475,29 @@ def camera_mount():
     s = s.cut(cam_box(-T-CLR, CLR, y0-CLR, e1+1, -Wd/2-CLR, Wd/2+CLR))
     s = s.cut(cam_box(-T-CLR-CAM_CONN[1], -T-CLR, e0-1, y0+CAM_CONN[0]+CLR,
                       -Wd/2-CLR, Wd/2+CLR))                       # ... and its connector
-    # two M3 down into nuts in the gusset, both past the board's short end
-    for fy in CAM_FOOT_Y:
-        s = s.cut(cyl(M3_CLR, 40.0, (CAM_FOOT_X, fy, CAM_LEDGE-1.0)))
-        s = s.cut(cyl(3.2, 6.0, (CAM_FOOT_X, fy, top-6.0)))       # head counterbore
-    ky, kl, kd = CAM_KEY                                          # locating tongue
-    s = s.union(bxc(CAM_FOOT_X-3.0, CAM_FOOT_X+3.0, ky-kl/2, ky+kl/2, CAM_LEDGE-kd,
-                    CAM_LEDGE))
     return s
+
+def cam_tab(px, py, grow=0.0):
+    """One tab of the camera mount, in robot coordinates: a CAM_TAB_R pad round the
+    pedestal bolt at (px, py), a CAM_TAB_W bar from it back to the mount, CAM_TAB_T thick
+    on the deck's top.  `grow` widens it by a clearance - that is the pocket lidar_mount
+    cuts for it, so the two can never disagree."""
+    z0 = BODY_Z1 + DECK_T
+    # `grow` is lateral only: in z the stack deck / tab / disc is a clamp, no air in it
+    t = cyl(CAM_TAB_R+grow, CAM_TAB_T, (px, py, z0))
+    return t.union(bxc(px, CAM_BACK_HI+1.0, py-CAM_TAB_W/2-grow, py+CAM_TAB_W/2+grow,
+                       z0, z0+CAM_TAB_T))
+
+def cam_tab_bolts():
+    """(x, y) of the pedestal's two front deck bolts - the ones the camera mount hangs
+    on.  Read from the same circle lidar_mount() drills, so they cannot drift apart."""
+    out = []
+    for i in range(LIDAR_N):
+        a = math.radians(360.0*i/LIDAR_N+45.0)
+        px, py = LIDAR_X+LIDAR_BC/2*math.cos(a), LIDAR_BC/2*math.sin(a)
+        if px > LIDAR_X:
+            out.append((px, py))
+    return out
 
 def camera_clear(wp):
     """Highest elevation, in degrees off the optical axis, at which a solid still shows up
@@ -2743,33 +2785,37 @@ def panel_clear():
     {name: blocked_mm3}, and 0.0 is the only passing value.
 
     Fourth member of the family that foot_bolt_check(), thrust_clear() and fork_access()
-    belong to, and it is here because the defect it catches SHIPPED: every opening on this
-    wall - the bus window and all three connectors - opened into the rear hip-roll
-    cradles' 2.8 mm plate, 1.2 mm behind the wall.  Nothing could see it.  interference()
-    pairs the static body parts and the cradles were part of chassis_bottom, so the plate
-    was chassis_bottom standing in front of chassis_bottom's own hole; isValid() is happy
-    with a pocket that leads nowhere, and rom_scan only looks at what moves.
+    belong to, and it is here because the defect it catches SHIPPED, twice.  First every
+    opening on this wall came out into the rear hip-roll cradles' 2.8 mm plate, 1.2 mm
+    behind the wall - the cradles were part of chassis_bottom, and interference() cannot
+    pair a part with itself.  Then, with that fixed, both connectors sat behind the rear
+    roll servos' cases, 9.5 mm back, and this probe missed it because it looked at
+    BODY_PARTS only and a servo is hardware, not a part.  isValid() is happy with a
+    pocket that leads nowhere and rom_scan only looks at what moves, so nothing else
+    sees this wall.
 
-    The probe is the opening extruded outward along -x, intersected with the whole
-    assembled body.  A connector is not fitted from outside so the run only has to be as
-    long as the mating half stands proud, but the bus window is a cable route and gets the
-    full PANEL_REACH."""
+    Two questions, because the two kinds of opening want different things behind them:
+    - a CONNECTOR needs its plug's length of air: body AND servo_hardware() (cases and
+      hubs - not env_all(), whose cable-escape boxes are the cables' own room);
+    - the BUS WINDOW is the cable route TO the rear roll servos, whose connector faces
+      are 9.5 mm behind it on the centreline - the servos are what it opens onto, so
+      it is probed against the body only.
+    Each probe is the opening extruded PANEL_REACH outward along -x."""
     body = None
     for nm in BODY_PARTS:
         if nm not in PARTS:
             continue
         body = PARTS[nm][0] if body is None else body.union(PARTS[nm][0])
+    hard = body.union(servo_hardware())
     xw = -BODY_L/2
     pw, ph = PANEL_WIN
-    tgt = [("bus window", 0.0, 0.0, pw, ph)]
+    tgt = [("bus window", 0.0, 0.0, pw, ph, body)]
     for cy, cz, (w, h) in PANEL_AT:
-        tgt.append((f"panel y{cy:+.0f} z{cz:+.0f}", cy, cz, w, h))
-    by, bz = PANEL_BAL_AT
-    tgt.append(("balance", by, bz, *PANEL_BAL))
+        tgt.append((f"panel y{cy:+.0f} z{cz:+.0f}", cy, cz, w, h, hard))
     out = {}
-    for name, cy, cz, w, h in tgt:
+    for name, cy, cz, w, h, against in tgt:
         probe = bxc(xw-PANEL_REACH, xw-CLR, cy-w/2, cy+w/2, cz-h/2, cz+h/2)
-        out[name] = overlap(body.val(), probe.val())
+        out[name] = overlap(against.val(), probe.val())
     return out
 
 def cradle_clear():
@@ -2791,46 +2837,28 @@ def cradle_clear():
             out[(end, i)] = overlap(tray.val(), p.val())
     return out
 
-def cradle_nut():
-    """One M3 nut as it sits in a cradle boss pocket: hex, flats along y, on the floor at
-    CRADLE_NUT_X.  Hardware, so invisible to every other check."""
-    w = cq.Workplane("XY").polygon(6, M3_NUT_AF/0.866).extrude(M3_NUT_H)
-    return mv(W(w.val()), frame((0, 0, 0), xdir=(0, 0, 1), zdir=(1, 0, 0)))
+def cradle_insert_clear(reach=10.0):
+    """Can each cradle insert be pressed to its seat, and does the screw then reach it?
+    Returns {i: (path_mm3, seat_mm3, tip_margin_mm)}: the INS_D bore swept from open air
+    `reach` in front of the spigot to the insert's far end must meet no cradle (0.0), the
+    lip beyond it must be THERE (> 0: an insert with nothing to bottom on is pushed
+    through into the servo bore), and the M3 x CRADLE_BOLT_L's tip must stop inside the
+    boss (margin > 0, or it stands in the servo's 1 mm).
 
-def cradle_nut_clear(reach=10.0, step=0.5):
-    """Can each cradle nut actually be put in?  Returns {i: worst mm3} over a sweep of a
-    real nut along the path a hand takes: in at the sleeve's mouth (open air, reach past
-    it), down the bore at a z that fits inside it, up to the bolt axis where the ceiling
-    is relieved (CRADLE_NUT_IN), then along the axis to its seat at CRADLE_NUT_X.  0.0 is
-    the only passing value.
-
-    Exists because the first version of this pocket was a side channel that opened into
-    the rail box - a sealed cavity that every static check passed, since nothing in this
-    file had ever asked whether a nut can travel to where the drawing puts it.  Same
-    class as fork_access(): the probe runs until it stands in open air."""
+    Exists because the fastener this replaced was a nut in a side channel that opened
+    into the rail box - a sealed cavity that every static check passed, since nothing in
+    this file had ever asked whether the fastener can travel to where the drawing puts
+    it.  Same class as fork_access(): the probe runs until it stands in open air."""
     c = PARTS["cradle_front"][0]
-    nut = cradle_nut()
-    zn = (M3_NUT_AF/0.866 + NUT_CLR)/2            # nut half height in z, corners up
-    x_mouth = ROLL_X + SLEEVE_LEN/2 + reach
+    x1 = CRADLE_INS_X0 + INS_L
+    x0 = CRADLE_X - CRADLE_REG - reach
     out = {}
     for i, (y, z) in enumerate(cradle_bolt_axes()):
-        zb = math.copysign(S_W/2 - zn - CLR, z)   # a z the nut fits through the bore at
-        path = []                                 # (x of the nut's near face, y, z)
-        x_lift = CRADLE_NUT_IN - M3_NUT_H         # far face at the relief's end
-        x = CRADLE_NUT_X
-        while x <= x_lift:                        # leg 1: seat -> relief's end, on axis
-            path.append((x, y, z)); x += step
-        zz = z
-        while abs(zz) > abs(zb):                  # the lift, at the relief's end
-            path.append((x_lift, y, zz)); zz -= math.copysign(step, z)
-        x = x_lift
-        while x <= x_mouth:                       # leg 2: down the bore to open air
-            path.append((x, y, zb)); x += step
-        worst = 0.0
-        for px, py, pz in path:
-            n = mv(nut, cq.Location(cq.Vector(px, py, pz)))
-            worst = max(worst, overlap(c.val(), n.val()))
-        out[i] = worst
+        path = cyl(INS_D/2, x1-x0, (x0, y, z), axis=(1, 0, 0))
+        lip = cyl(INS_D/2, CRADLE_INS_LIP, (x1, y, z), axis=(1, 0, 0))
+        tip = CRADLE_X - WALL - CRADLE_SEAT + CRADLE_CB + CRADLE_BOLT_L
+        out[i] = (overlap(c.val(), path.val()), overlap(c.val(), lip.val()),
+                  CRADLE_BOSS_X - tip)
     return out
 
 def cradle_head_clear():
@@ -3176,20 +3204,32 @@ def main():
         print(f"  !! PANEL  the {k} opening has {v:.0f} mm3 of solid in front of it -"
               f" nothing can be plugged in or routed out there")
     if not bad:
-        print(f"  panel clear: bus window {PANEL_WIN[0]:.0f}x{PANEL_WIN[1]:.0f} and all"
-              f" three connectors open to air over {PANEL_REACH:.0f} mm")
+        print(f"  panel clear: bus window {PANEL_WIN[0]:.0f}x{PANEL_WIN[1]:.0f} open to the"
+              f" rear roll servos, XT30 clear of body and servos over {PANEL_REACH:.0f} mm")
     hv, hgap = cradle_head_clear()
     if hv > INTERF_TOL or hv < 0:
         print(f"  !! CRADLE HEAD  {hv:.0f} mm3 of screw head inside the battery module -"
               f" counterbore CRADLE_CB is too shallow")
-    nc = cradle_nut_clear()
-    bad = {k: v for k, v in nc.items() if v > INTERF_TOL or v < 0}
-    for i, v in bad.items():
-        print(f"  !! CRADLE NUT  boss {i}: {v:.1f} mm3 of cradle in the nut's path from the"
-              f" servo bore to its seat - that nut cannot be put in")
+    ic = cradle_insert_clear()
+    bad = False
+    for i, (pv, lv, tm) in ic.items():
+        if pv > INTERF_TOL or pv < 0:
+            bad = True
+            print(f"  !! CRADLE INSERT  boss {i}: {pv:.1f} mm3 of cradle in the insert's"
+                  f" path from the spigot to its seat - it cannot be pressed in")
+        if lv <= INTERF_TOL:
+            bad = True
+            print(f"  !! CRADLE INSERT  boss {i}: no lip beyond the insert - it presses"
+                  f" straight through into the servo bore")
+        if tm < 0:
+            bad = True
+            print(f"  !! CRADLE INSERT  boss {i}: M3 x {CRADLE_BOLT_L:.0f} stands"
+                  f" {-tm:.1f} mm out of the boss into the servo's gap")
     if not bad:
-        print(f"  cradle nuts: all {len(CRADLE_BOLT)} pockets open to the servo bore,"
-              f" nut seats at x = {CRADLE_NUT_X:.0f}")
+        tm = min(v[2] for v in ic.values())
+        print(f"  cradle inserts: {len(CRADLE_BOLT)} x M3 @{INS_D:.1f} x {INS_L:.1f} per"
+              f" end, pressed from the spigot to x = {CRADLE_INS_X0:.1f}, screw tip"
+              f" {tm:+.1f} mm inside the boss")
     cc = cradle_clear()
     bad = {k: v for k, v in cc.items() if v > INTERF_TOL or v < 0}
     for (end, i), v in bad.items():

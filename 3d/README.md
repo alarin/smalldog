@@ -96,11 +96,24 @@ stopped meaning "reprint four cradles and unbolt four servos".
   deep (its outer face is `FORK_GAP` behind the roll fork's rear arm) and an M3 nut does not
   fit in 4 mm, so nut bosses run out to `CRADLE_BOSS_X` = 71.5 (servo case at 72.5). That is
   legal because past the flange the only thing in the way is the arm's `ARM_R` disc — the
-  spine's annulus is swept only outboard. Screws at (±17, ±10.5), nearest boss corner at
-  r = 15.0 against `ARM_R` = 13.5. `rom_scan` checks the arm; `cradle_clear()` checks a
+  spine's annulus is swept only outboard. Screws at (±17, ±7), nearest boss corner at
+  r = 14.1 against `ARM_R` = 13.5. `rom_scan` checks the arm; `cradle_clear()` checks a
   driver reaches the heads; `cradle_head_clear()` checks the heads against the battery
   module (1.65 mm ISO 7380 heads on a seat 1.25 mm off the pack — hence `CRADLE_CB` = 2 mm
   of counterbore).
+- **The screws land in heat-set inserts — the one place on the robot they do.** The nut
+  they had sat in a side channel "toward the centreline", into the rail box, which is solid
+  there: a sealed cavity that printed and passed every check. A pocket open to the servo
+  bore instead hollows the boss and puts `land3g` at the strap's edge where the boss ends
+  (`--orient` SF 1.33 → 0.77); moving the bolts to |z| = 7 recovers it (2.06) but moves
+  the tray's seats, and a tray is printed. So: bolts stay at ±10.5, the boss stays solid,
+  and an M3 insert (⌀5.0 × 6 knurled body, the ones bought; hole `INS_D` = 4.4, **verify**
+  on a coupon) goes in **from the flange side, through the register spigot**, pressed
+  1.5 mm past the flange face to bottom on a 1 mm lip in the boss. Push it with an M3 screw threaded
+  into the insert and the iron on the screw's head — a stepped insert tip stops at the
+  spigot. Screw tension pulls the insert into the lip, never out. The spigot's wall goes
+  1.8 → 1.3 mm — thin; keep the iron off it and let the insert do the pushing. `cradle_insert_clear()` sweeps the bore from open air to the seat, checks
+  the lip is there and that the M3 × 10's tip stays inside the boss.
 - **The flange is a frame**, and its opening is what lets the rear connector panel out.
 - **`cradle_front` is the weakest printed part** — inter-layer SF 1.33 at `land3g`
   (`fea.py --orient`). The first FEA of it fixed a 1.4 mm notch and a 27.6 mm step in the
@@ -218,16 +231,18 @@ through the **lateral** wall, the neutral axis for the bending the knee does.
   25° on the centreline. The deck's cable window sits off-centre (`IMU_WINDOW`) to leave
   solid deck under the board; the two M2.5 form their own thread 5 mm into standoff and deck
   (*Screws into plastic*). Everything about the board is **verify**.
-- **Rear connector panel**, laid out inside the cradle flange's frame opening (y ±43.11 by
-  z ±9.36) and around its four bolt bosses: a 22 × 16 bus window, **XT30** (charge) at
-  y = +32, the 3S JST-XH balance pass-through at y = −32, and the **XT60** (master
-  disconnect / bench supply, on the fused P+) *above* the cradle at z = +20 — 16.5 mm of
-  width does not fit inside the frame, and the band between `CRADLE_Z1` and `BODY_Z1` is
-  9.64 mm for an 8.5 mm body. The two XT shells differ so a charger cannot be plugged into
-  the servo bus. Each XT sits in a pocket in a locally thickened wall, goes in **from
-  inside, before the deck**, and stands 1.5 mm proud on a 0.8 mm lip that takes the unplug
-  force. Charge lead 18 AWG, bus lead 14 AWG for the 30–35 A fuse. `panel_clear()` probes
-  every opening on every run.
+- **Rear connector panel**: a 22 × 16 bus window on the centreline inside the cradle
+  flange's frame opening, and one connector, the **XT30** (charge, own fused branch),
+  *above* the cradle at z = +20 on the centreline. Nothing else leaves the tray: the pack's
+  P+ runs inside to the power node and the module's own lead is the master disconnect;
+  the balance lead stays in the case (balance-charge with the module out). The connector
+  is above the flange because the two rear roll servos' cases sit 9.5 mm behind the wall
+  over |y| > 1, |z| < 12.4 — anywhere inside the frame but the window is behind a servo
+  — and the band between `CRADLE_Z1` and `BODY_Z1` is 9.64 mm for a 6.6 mm body. The
+  XT30 sits in a pocket in a locally thickened wall, goes in **from inside, before the
+  deck**, and stands 1.5 mm proud on a 0.8 mm lip that takes the unplug force. Charge
+  lead 18 AWG. `panel_clear()` probes both openings every run — the window against the
+  body, the connector against the body *and* the servos.
 - **Orange Pi 5 Pro**: four printed standoffs on the deck, 92 × 54 pattern — **verify**.
   That pattern puts the rear pair at x = −68 on a deck ending at −63, so the deck grows a
   tab under each rear standoff (`OPI_TAB_*`, guarded by `if OPI_TAB_X < -BODY_L/2`, so a
@@ -274,8 +289,14 @@ through the **lateral** wall, the neutral axis for the bending the knee does.
   - **The mount is a C-section on the gusset's own top face** — the only flat surface near
     the camera. The board slides in endwise and is trapped: a slot below, a wall in front
     of its upper half, a skirt behind, and a `CAM_CAP` = 1.2 mm roof over the near end that
-    ties the front wall to the skirt. Both M3 × 20 live at the +y end, into nuts in slots in
-    the gusset opening forward under the chin; the far end is keyed by a tongue. 4.3 g.
+    ties the front wall to the skirt. **It has no screws of its own**: two tabs reach back
+    over the deck into pockets in the LiDAR base disc's underside and are clamped there by
+    the pedestal's own two front deck bolts (disc over tab over deck — the stack is no
+    taller, the M3 × 16 unchanged). It used to bolt down into the cradle's flange rib with
+    two M3 at y = 23 / 29: a ⌀3.4 hole through a rib 4 mm deep, and the rib was cut in two
+    at both. Past the board's end the mount is a 1.3 mm skirt round the insertion path, so
+    there is nowhere on it to seat a head either. Nothing closes the open +y end once the
+    board is in — a 4 g board in a `CLR`-fit slot, its connector tail down the far end. 5.2 g.
     ("Slides in endwise" is not a rigid straight slide — the ⌀14 lens holder cannot pass the
     front wall — so the real motion is a tilt-in.)
   - `camera_clear()` reports the highest elevation at which a solid shows in the frame; a
@@ -327,8 +348,8 @@ through the **lateral** wall, the neutral axis for the bending the knee does.
 | `servo_gauge` | 1 | **print this first** |
 
 `_A` = FL + RR, `_B` = FR + RL (the two chiralities; front/rear are the same part rotated).
-The cradles are two distinct prints, not a mirrored pair, and only `cradle_front` carries
-the camera's nuts. Both print flange-down — the only build direction with the servo bores
+The cradles are two distinct prints, not a mirrored pair (the rear carries the panel
+openings' frame, the front the camera's ledge). Both print flange-down — the only build direction with the servo bores
 vertical, which a press fit wants more than the stronger lying-flat orientation.
 
 STLs in `out/stl/` are rotated into their print orientation (`PRINT_ORIENT`), which is
@@ -355,7 +376,7 @@ and how to use them.
 ## Fasteners
 
 Counts are per robot and come off the geometry: 12 joints × (one `sleeve()` + one `fork()`),
-`DECK_SCREWS`, `CAM_FOOT_Y`, `LIDAR_N`, `HUB_N`.
+`DECK_SCREWS`, `LIDAR_N`, `HUB_N`.
 
 **Structural — the robot stands and walks on these:**
 
@@ -365,7 +386,7 @@ Counts are per robot and come off the geometry: 12 joints × (one `sleeve()` + o
 | M3 × 10 **set screw** (grub, hex socket) + M3 nut (sleeve thrust clamp, 2 per joint) | 24 |
 | M3 × 30 socket head + M3 nut (foot → shin ankle) | 4 |
 | M3 × 12 + M3 nut (deck → tray bosses) | 8 |
-| M3 × 12 + M3 nut (cradle → tray, 4 per end) | 8 |
+| M3 × 10 + M3 heat-set insert ⌀5 × 6 (cradle → tray, 4 per end) | 8 |
 
 **Payload — none of it is needed to walk:**
 
@@ -375,7 +396,6 @@ Counts are per robot and come off the geometry: 12 joints × (one `sleeve()` + o
 | M2.5 × 8 **thread-forming**, no nut (BMI088 → the deck's top, through its standoff) | 2 |
 | M2.5 × 8 **thread-forming**, no nut (battery lid → the module's front wall) | 2 |
 | foam strip, ~1.4 × 20 × 90 mm (over the battery lid, under the deck — the gap is 0.60 mm) | 1 |
-| M3 × 20 + M3 nut (camera mount → the chassis gusset) | 2 |
 | M3 × 16 + M3 nut (LiDAR pedestal → deck, from underneath) | 4 |
 | M3 × 12 (Unitree L2 → pedestal, into the L2's own M3 threads) | 4 |
 | M3 × 24 (GPS mast + deck → tray boss, **replaces** the rear two deck screws) | 2 |
@@ -391,8 +411,8 @@ Lengths that are derived, and where a longer screw is *not* the safe direction:
   5.95, with 0.5 of the case's 0.55 recess spare. `head_clear()` prints both.
 - **Orange Pi standoffs, M2.5 × 8 not × 10**: the hole does not pass through the deck, so
   the screw has `OPI_STAND_H` + board = 8.6 mm and no more.
-- **camera, M3 × 20**: head counterbore at 25.96, nut floor at 7.36, 18.6 mm to full
-  engagement; × 16 does not enter the nut.
+- **cradle, M3 × 10**: counterbore floor 59.4 into the insert at 64.5…70.5 by 4.9 of its
+  6; × 12 would stop 0.1 mm inside the boss, a burr from the servo's rear face.
 - **IMU, M2.5 × 8 thread-forming**: 1.6 of board then `IMU_TAP_L` = 5.0 of formed thread
   (2 D: the 2 mm standoff plus 3 mm into the deck's 4, not through). × 10 breaks out
   under the deck.
@@ -403,8 +423,10 @@ Lengths that are derived, and where a longer screw is *not* the safe direction:
 the stock aluminium lands in a nut in a side-loaded `nut_slot()` whose walls hold the flats.
 The slot opens toward the face still reachable at that point in the assembly order —
 outward for the LiDAR legs, inboard in y for the corner deck bosses, along +x for the mid
-pair, outboard for the Pi standoffs, forward under the chin for the camera, above the foot's
-top face for the ankle bolt. No heat-set inserts. The corner deck channels are closed by the
+pair, outboard for the Pi standoffs, above the foot's top face for the ankle bolt. One
+exception, argued in *The cradle joint*: the cradle screws land in heat-set inserts, because
+nothing that holds a nut fits round that axis without hollowing the boss that carries the
+leg. The corner deck channels are closed by the
 battery module once it is in, so all eight deck nuts go in with the deck off and before the
 module. No nuts at the hubs: both aluminium plates are tapped M3 and there is no room
 (0.30 mm behind the driven hub, 0.55 behind the passive).
@@ -430,11 +452,12 @@ off repeatedly wants a nut. Both radii are **verify**: print a coupon first.
    arms to the hubs (the bottom arm's ⌀23 pad enters the case-base recess). Thrust screws
    first: once the fork is on its spine sweeps over the lug. **At the hips this happens
    with the cradle off the tray**: straight 2 mm key, through the flange's opening and the
-   `FORK_DRIVER_R` relief.
-4. Cradles onto the tray, **before the battery module**: four M3 nuts into each cradle's
-   boss channels, spigots into their pockets, four M3 × 12 from *inside* the tray into the
-   counterbored seats. The front seats sit 1.25 mm off the module's face, so heads first,
-   pack after.
+   `FORK_DRIVER_R` relief. Before any of it, **the cradle's four heat-set inserts** go in
+   from the flange face, through the spigots, on an M3 screw with the iron on its head,
+   until they bottom (see *The cradle joint*).
+4. Cradles onto the tray, **before the battery module**: spigots into their pockets, four
+   M3 × 10 from *inside* the tray into the counterbored seats. The front seats sit 1.25 mm
+   off the module's face, so heads first, pack after.
 5. Legs: hip bracket → thigh → shin → press the TPU foot onto the ⌀18 spigot → M3 × 30 up
    through the foot into the nut in the ankle slot (the slot is above the foot's top face,
    so the foot stays removable).
@@ -444,16 +467,15 @@ off repeatedly wants a nut. Both radii are **verify**: print a coupon first.
    edge down, 2 M2.5 into the front wall (a one-assembly thread — a pack opened often wants
    those holes drilled and nutted).
 7. Chassis, in this order because half the nuts stop being reachable: 8 M3 nuts into the
-   tray bosses' slots (**all eight before the module**) → XT60 and XT30 into their pockets
-   from inside, balance lead through its pass-through → battery module into its seat, foam
+   tray bosses' slots (**all eight before the module**) → XT30 into its pocket from
+   inside → battery module into its seat, foam
    strip on its lid, servo bus out through the side ports (never across the top) → 4 M3
-   nuts into the pedestal legs and the pedestal bolted to the deck **from underneath, deck
-   off** → deck onto the tray → BMI088 onto its standoffs, 2 M2.5, **before the Pi** → 4
+   nuts into the pedestal legs → camera mount's two tabs into the disc's underside pockets
+   → pedestal bolted to the deck **from underneath, deck off**, its two front M3 through
+   the tabs → camera board into the mount from the +y end → deck onto the tray → BMI088 onto its standoffs, 2 M2.5, **before the Pi** → 4
    M2.5 nuts into the standoff slots, Orange Pi, servo bus adapter → GPS mast onto the rear
    deck screws (M3 × 24), receiver into its rails and two ties (the Pi goes in first; the
-   mast comes off to lift the Pi) → camera: 2 M3 nuts into the gusset slots under the
-   chin, channel onto the ledge, tongue into its pocket, both M3 down, module in from the
-   +y end → L2 onto the flange, 4 × M3 × 12 into its own tapped holes (6 mm deep; a longer
+   mast comes off to lift the Pi) → L2 onto the flange, 4 × M3 × 12 into its own tapped holes (6 mm deep; a longer
    screw bottoms in the blind hole and lifts the sensor off its seat).
 8. Zero all joints at the mechanical zero pose (legs straight down) before powering the
    gait.
@@ -521,8 +543,8 @@ object gets. No intensity. The same pattern exists in `mujoco_lidar.cpp`; change
    just a mass box).
 3. Unitree L2: bolt circle, envelope, RJ45 + DC barrel — measured. Still **verify**: the
    range window and range noise.
-4. Rear-panel connector bodies — XT60 16.5 × 8.5, XT30 12.0 × 6.6, JST-XH 3S 13.0 × 6.0 —
-   are catalogue. A pocket 0.3 mm small is a connector that does not go in.
+4. Rear-panel connector body — XT30 12.0 × 6.6 — is catalogue. A pocket 0.3 mm small is a
+   connector that does not go in.
 5. Servo cable/connector envelope: the sleeve window is 15 × 12 mm at the far end face.
 6. GY-NEO6MV2 board (36 × 26 × 1.6), its patch (25 × 25 × 8), 22 g for the pair — a
    bazaar part; measure the one in hand, especially the header and u.FL.
