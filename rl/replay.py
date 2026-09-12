@@ -78,6 +78,12 @@ def parse():
     ap.add_argument("--mem-fraction", type=float, default=0.60)
     ap.add_argument("--elevation", type=float, default=-18.0)
     ap.add_argument("--azimuth", type=float, default=135.0)
+    ap.add_argument("--follow", action="store_true",
+                    help="track the herd's centroid instead of framing the start "
+                         "grid. A walking herd leaves a fixed camera in ~5 s at "
+                         "0.4 m/s, which is before most of the falls happen.")
+    ap.add_argument("--distance", type=float, default=None,
+                    help="camera distance, m. Default frames the start grid.")
     return ap.parse_args()
 
 
@@ -248,8 +254,12 @@ def build_grid(n, spacing, surface=(False, 0)):
     return m, nq, offsets
 
 
-def render(m, nq, offsets, qpos, out, fps, w, h, elevation, azimuth, spacing):
-    """Write qpos in, mj_forward, one frame. Never mj_step."""
+def render(m, nq, offsets, qpos, out, fps, w, h, elevation, azimuth, spacing,
+           follow=False, distance=None):
+    """Write qpos in, mj_forward, one frame. Never mj_step.
+
+    `follow` moves the look-at point with the herd's centroid, smoothed so a
+    robot falling over does not yank the frame; the distance stays fixed."""
     import mujoco
     import imageio
     import jaxenv
@@ -262,7 +272,7 @@ def render(m, nq, offsets, qpos, out, fps, w, h, elevation, azimuth, spacing):
     cam.type = mujoco.mjtCamera.mjCAMERA_FREE
     side = int(np.ceil(np.sqrt(n)))
     cam.lookat = [0.0, -side * spacing * 0.35, 0.15]
-    cam.distance = max(2.0, side * spacing * 1.9)
+    cam.distance = distance or max(2.0, side * spacing * 1.9)
     cam.elevation = elevation
     cam.azimuth = azimuth
 
@@ -282,6 +292,12 @@ def render(m, nq, offsets, qpos, out, fps, w, h, elevation, azimuth, spacing):
             q = qpos[t].copy()                            # (n, nq_robot)
             q[:, 0] += offsets[:, 0]
             q[:, 1] += offsets[:, 1]
+            if follow:
+                c = q[:, :2].mean(axis=0)
+                if t == 0:
+                    look = c.copy()
+                look += 0.08 * (c - look)             # ~0.25 s lag at 50 fps
+                cam.lookat[0], cam.lookat[1] = float(look[0]), float(look[1])
             d.qpos[:] = q.reshape(-1)
             mujoco.mj_forward(m, d)
             renderer.update_scene(d, cam)
@@ -319,7 +335,7 @@ def main():
         return 1
 
     render(m, nq, offsets, qpos, out, a.fps, a.width, a.height,
-           a.elevation, a.azimuth, a.spacing)
+           a.elevation, a.azimuth, a.spacing, follow=a.follow, distance=a.distance)
     print(f"\nwrote {out}")
     print("runs/ is gitignored — hand the file to a person, do not commit it.")
     return 0
