@@ -34,8 +34,8 @@ versioned deliberately: a pinned resolution is the point when three machines sha
   `python -c "import actuator; actuator._selftest()"`.
 - **`params/st3215.json` is a fit, not a solved servo.** Read `p.source`: the analytic
   passes read only freeswing/hold/holdbi, and its derived free speed is 5.90 rad/s against
-  the 3.86 the hardware does, because the real servo stops at a firmware plateau the law
-  does not carry (PLAN.md 3c). Do not narrow `params/domain_rand.json` on the strength of
+  the 3.86 the hardware does, because the real servo's position loop caps its profile at
+  2500 counts/s and the law carries no goal-rate cap (PLAN.md 3c; the motor itself does 5.0). Do not narrow `params/domain_rand.json` on the strength of
   a fit of ONE servo — those ranges are the spread across twelve.
 - **Units cross a boundary here.** `3d/` is mm; MJCF/URDF are SI. `robot_params.json` names
   the unit in every key (`hip_xyz_mm`, `joint_limits_rad`, `total_mass_kg`). Read the suffix.

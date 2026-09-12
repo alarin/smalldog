@@ -333,14 +333,20 @@ the observed droop, and it will be too soft the moment the joint moves.
 
 Stated so nobody quotes an absence as a value:
 
-- **`k_e` independently** — needs a no-load free-running speed test. Currently the vendor's
-  4.71 rad/s at 12 V.
+- **`k_e` independently** — no longer: open-loop duty on a free hub (`robot/bench/noload_speed.py
+  --pwm`) is linear through the origin to 5.0 rad/s at 12.1 V, **k_e = 2.39 V·s/rad**. In
+  position mode the same servo stops at **3.86 rad/s** (vendor 4.71), a firmware profile cap at
+  2500 counts/s, not the motor — the register reads that flat number at `TORQUE_LIMIT` 800 and
+  1000 alike, on both units measured.
 - **Absolute current calibration** — the 6.5 mA LSB is confirmed only against vendor
   numbers, not against an external shunt or INA226. Everything scales with it.
 - **Temperature dependence** — every run above sat between 30 and 32 °C. Winding
   resistance rises with temperature and this does not capture that.
-- **Sample-to-sample spread** — one servo. Gearbox friction in particular is exactly the
-  kind of parameter that varies between units.
+- **Sample-to-sample spread** — two servos, and the second says gearbox friction is where
+  it is: stiffness, torque constant, back-EMF and the profile cap agree to 3 %, while the
+  friction floor is 0.117 N·m against 0.186 and the load-dependent slope 0.380 against
+  0.251 (`robot/README.md`, "Unit to unit"). Two units bound nothing; the range is not
+  written until there are four.
 - **The `b_v` / `k_e` split** — see the friction section. Only the sum is measured, and this
   is a structural limit of a bench with no external ammeter, not a gap that more runs close.
 - **Why the loop runs out of authority above ~1.8 rad/s** — the duty never pins, so it is

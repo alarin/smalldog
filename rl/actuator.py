@@ -106,10 +106,10 @@ class Params:
     # because they also expose how lossy this gearbox is:
     #   locked rotor 2.7 A @ 12 V  ->  R   = 12 / 2.7   = 4.44 ohm
     #   no load 4.71 rad/s @ 12 V  ->  k_e = 12 / 4.71  = 2.55 V*s/rad
-    #       (MEASURED 2026-09-11: 3.86 on the free hub, and it is a PLATEAU
-    #        at TORQUE_LIMIT >= ~740, not d*U/k_e - the rungs below it give
-    #        k_e = 2.32.  The law has no such plateau; PLAN.md 3c says what
-    #        would add one and what decides its form.)
+    #       (MEASURED: 3.86 on the free hub, and it is a PLATEAU of the
+    #        position loop's profile at 2500 counts/s - open loop the motor
+    #        runs to 5.0 rad/s, k_e = 2.39.  The law has no such cap; what it
+    #        needs is a rate cap on the GOAL, a state per joint.  PLAN.md 3c.)
     #   stall 2.94 N*m @ 12 V      ->  k_u = 2.94 / 12  = 0.245 N*m/V
     # and then eta = k_u*R/k_e = 0.43. A 43 %-efficient drivetrain is low even
     # for a 1:345 stack of spur gears; either the gearbox really is that lossy

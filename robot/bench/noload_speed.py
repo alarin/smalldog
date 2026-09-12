@@ -68,8 +68,16 @@ Two readings of the plateau, and this tool cannot tell them apart on its own:
      applies against a block, and 4.50 N*m - a 2.2x extrapolation from rungs
      200/350/450, all under the knee - would be ~3.3.
 `--pwm` decides it: MODE 2 drives the bridge open loop at a commanded duty, no
-profile in the way.  Same plateau at duty 1000 -> B.  ~5 rad/s -> A.  It was
-written after the adapter was unplugged and HAS NOT RUN on hardware yet.
+profile in the way.  Same plateau at duty 1000 -> B.  ~5 rad/s -> A.
+
+**Answered A** (2026-09-12, second unit): open loop 400/600/800/1000 read
+2.02 / 3.06 / 4.10 / 5.02 rad/s, a line through the origin at 0.42 rad/s/V
+(k_e = 2.39), no plateau.  The bridge goes to full duty and the motor to 5.0;
+position mode on the same unit stops at 3.88 with the register flat at 2500
+counts/s, on cap 800 and 1000 alike.  So the 3.86 is the firmware's profile,
+the same on both units measured, and 4.50 N*m stands as the stall the loop can
+apply against a block - subject to the torque rig confirming that the loop
+drives full duty at zero speed (rungs 800 and 1000, not yet run).
 """
 from __future__ import annotations
 
@@ -207,8 +215,7 @@ def main():
     ap.add_argument("--pwm", action="store_true",
                     help="MODE 2, open loop: the same rungs with no position loop "
                          "between the duty and the bridge. Decides whether the "
-                         "plateau is the profile's (A) or the PWM's (B). UNTESTED "
-                         "on hardware as of 2026-09-11.")
+                         "plateau is the profile's (A) or the PWM's (B); it read A")
     ap.add_argument("--volts", type=float, default=12.0,
                     help="the PSU's dial, as a CROSS-CHECK. Every d*U below is "
                          "computed from what the servo actually reports")
@@ -287,7 +294,12 @@ def main():
 def report(rows, volts, pwm=False):
     if not rows:
         return
-    rows = sorted(rows)
+    # the pwm ladder runs +1000 and -1000, the same d*U twice; two rungs at one
+    # voltage are not a plateau, so one rung per d*U, the two directions averaged
+    by_du = {}
+    for d, v in rows:
+        by_du.setdefault(round(d, 3), []).append(v)
+    rows = sorted((d, float(np.mean(v))) for d, v in by_du.items())
     du = np.array([r[0] for r in rows]); w = np.array([r[1] for r in rows])
     top = float(w[-1])
     print(f"\n  {'open-loop' if pwm else 'no-load'} speed at {volts:.1f} V: "

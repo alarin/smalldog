@@ -383,11 +383,15 @@ was 22 % high. `SERVO_NOLOAD_RADS` is 3.86.
 
 The register's speed LSB is verified as a side effect (1–5 %). **The finding is the
 plateau**: 800 and 1000 read the same, the register sits at 2500 counts/s for both, and the
-rungs below are linear through the origin at 0.43 rad/s/V (k_e = 2.32 V·s/rad). Either the
-position loop's profile caps at 2500 counts/s, or it never drives the bridge past ~75 % —
-and under the second the 4.50 stall is nearer 3.3. `noload_speed.py --pwm` (MODE 2, open
-loop duty) decides it and **has not run**. It leaves `TORQUE_LIMIT` at its last rung; re-cap
-before the arm goes back on.
+rungs below are linear through the origin at 0.43 rad/s/V (k_e = 2.32 V·s/rad). **It is the
+position loop's profile, not the bridge**: `noload_speed.py --pwm` (MODE 2, open-loop duty)
+on the second unit reads 2.02 / 3.06 / 4.10 / 5.02 rad/s at duty 400 / 600 / 800 / 1000 —
+linear through the origin, k_e = 2.39, no plateau — while position mode on the same unit
+stops at 3.88 with the same flat 2500. So the 4.50 stall stands as far as this test can
+say; it shows the motor reaches full duty in MODE 2, not that the position loop applies it
+at zero speed — the torque rig at `TORQUE_LIMIT` 800 and 1000 is that check. `rl/actuator.py`
+still frees to 5.9; what it needs is a rate cap on the goal. Both tools leave `TORQUE_LIMIT`
+at their last rung; re-cap before the arm goes back on.
 
 ### Two things the fit cannot find, and the ladders that measure them
 
@@ -419,3 +423,24 @@ The four rows holding still across a 1.5× supply range is the check that they a
 One loose end: at a commanded 2.0 rad/s the servo reaches 1.8 and no more, at 0.74 rad of
 error, without the duty pinning. `D_COEF` is 32 and `rl/actuator.py` models `kd = 0`; an
 internal output clamp would look the same, and this data does not separate them.
+
+### Unit to unit
+
+The same two ladders on a second ST3215, heavy arm, 12 V only, in `bench/data-servo2/`
+(`hysteresis.py --data bench/data-servo2`). Recentred first with the servo's own
+middle-position command (`OFFSET` −1918) because it arrived 14 counts from the wrap.
+
+| | unit 1 | unit 2 |
+|---|---|---|
+| position-loop stiffness, N·m/rad | 40.8 | 39.7 |
+| effective torque constant, N·m/V | 0.596 | 0.578 |
+| friction at a hold, unloaded, N·m | 0.186 | **0.117** |
+| …per N·m of load carried | 0.251 | **0.380** |
+| kinetic Coulomb at zero load, N·m | 0.168 | 0.124 |
+| total speed-proportional, N·m·s/rad | 1.334 | 1.326 |
+| no-load speed, position mode, rad/s | 3.86 | 3.88 |
+
+The electrical rows and the profile cap are the same servo to 3 %; the gearbox is not.
+Each unit's static and kinetic floors agree with each other (0.186/0.168, 0.117/0.124),
+so the difference is the gearbox, not the read. Two units bound nothing —
+`rl/params/domain_rand.json` waits for a third and fourth (PLAN.md 4).

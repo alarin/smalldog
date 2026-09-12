@@ -23,7 +23,7 @@ wait on hardware. Steps 1–3 are done and their results live in the trees, not 
 | 2c stall torque | **4.50 N·m at 12 V** on a scale; both the register route (7.4) and the datasheet (2.94) were wrong | `robot/README.md`, "The stall torque" |
 | 3 fitted constants into the CAD | `MJ_KP` 40.9, `MJ_FRICTIONLOSS` 0.184, `MJ_DAMPING` 1.37, `MJ_ARMATURE` 0.0165 | `3d/mini_dog.py` section 4; `3d/CLAUDE.md` baseline |
 | 3b gait rate limit | limits against the achievable 3.15 rad/s ceiling, not the no-load speed | `ros2/README.md`, "Gait" |
-| 3c no-load speed | **3.86 rad/s**, and a plateau above cap ~740 (open question below) | `robot/README.md`, "The no-load speed" |
+| 3c no-load speed | **3.86 rad/s**, a firmware profile cap: open loop the motor does 5.0 (`--pwm`, reading A); 4.50 N·m stands | `robot/README.md`, "The no-load speed" |
 
 ## What each missing part gates
 
@@ -44,26 +44,14 @@ until one exists. The mount is decided (`IMU_*` in `mini_dog.py`, checked by
 
 ---
 
-## 3c, still open: which reading of the no-load plateau
+## 3c, closed: the plateau is the position loop's profile (A)
 
-Cap 800 and 1000 give the same 3.86 rad/s and the register reads a flat 2500 counts/s; the
-rungs below are linear at 0.43 rad/s/V (`k_e` = 2.32 V·s/rad). Two readings, and the stall
-number depends on which:
-
-- **A — the position loop's profile caps at 2500 counts/s.** The 4.50 N·m stall stands, and
-  `rl/actuator.py` needs a rate cap on the *goal*, a state per joint.
-- **B — the position loop never applies more than ~75 % PWM.** Then 4.50, a 2.2×
-  extrapolation from rungs all under the knee, is really ~3.3, and `SERVO_STALL_NM`, the
-  FEA stall column and the 3.15 ceiling all move.
-
-`robot/bench/noload_speed.py --pwm` decides it: MODE 2 drives the bridge open loop at a
-commanded duty. Same plateau at duty 1000 → B; ~5 rad/s → A. Ten seconds on the stand, no
-arm. **Do it before the next torque-rig session**; under B the rig's next rungs are 800
-and 1000, not 8/10/12 V.
-
-Meanwhile `actuator.py`'s law has no plateau and frees to 5.9 rad/s, 53 % over the real
-joint; only the `joint_vel` penalty at 3.86 holds a policy under it. Train, but read a
-policy's p95 joint speed against 3.86 (`rl/tools/ceiling.py`) before believing its distance.
+`noload_speed.py --pwm` ran on the second unit: open loop the speed is linear in duty
+through 1000 (5.0 rad/s at 12.1 V, k_e 2.39), while position mode on the same unit stops
+at 3.88 with the register flat at 2500 counts/s. So 4.50 N·m stands, and what
+`rl/actuator.py` still lacks is a rate cap on the *goal* — a state per joint, not a duty
+cap. What `--pwm` does not prove is that the loop applies full duty at zero speed: the torque
+rig at `TORQUE_LIMIT` 800 and 1000 is that check, next rig session.
 
 ## 4. Randomise over the pack
 
@@ -71,11 +59,13 @@ policy's p95 joint speed against 3.86 (`rl/tools/ceiling.py`) before believing i
 `check_model.py` asserts every per-unit servo parameter comes back batched. Voltage is
 measured rather than guessed.
 
-**Not done, and it needs the bench:** the ranges in `rl/params/domain_rand.json` are
-*manufacturing spreads*, and every number in this repository came from ONE servo, so no fit
-can narrow them. Put three or four servos through `sweep.py --traj holdbi`; the spread
-across them IS the range for `tau_c`, `mu_load` and `b_v`. Until then they stay `guessed`
-and wide, which costs sample efficiency, not correctness.
+**Two units in, needs one or two more:** the ranges in `rl/params/domain_rand.json` are
+*manufacturing spreads*, so no fit of one servo can narrow them. A second unit through
+`holdbi` and `speed` at 12 V (`robot/README.md`, "Unit to unit") put the electrical side
+within 3 % and the friction floor at 0.117 against 0.186, the load slope at 0.380 against
+0.251. Two points bound nothing; the third and fourth servo say whether that is the spread
+or an outlier, and then the range is written. Until then `guessed` and wide, which costs
+sample efficiency, not correctness.
 
 ## 5. Settle the traction question before touching a sole
 
