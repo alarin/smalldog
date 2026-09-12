@@ -342,11 +342,11 @@ Stated so nobody quotes an absence as a value:
   numbers, not against an external shunt or INA226. Everything scales with it.
 - **Temperature dependence** — every run above sat between 30 and 32 °C. Winding
   resistance rises with temperature and this does not capture that.
-- **Sample-to-sample spread** — two servos, and the second says gearbox friction is where
-  it is: stiffness, torque constant, back-EMF and the profile cap agree to 3 %, while the
-  friction floor is 0.117 N·m against 0.186 and the load-dependent slope 0.380 against
-  0.251 (`robot/README.md`, "Unit to unit"). Two units bound nothing; the range is not
-  written until there are four.
+- **Sample-to-sample spread** — four servos, and gearbox friction is where it is:
+  stiffness, torque constant and the back-EMF total agree to 5 %, while the friction floor
+  runs 0.117–0.186 N·m and the load-dependent slope 0.251–0.380 N·m per N·m, with the
+  lowest floor on the unit with the highest slope (`robot/README.md`, "Unit to unit"). Four
+  of twelve, at 12 V only.
 - **The `b_v` / `k_e` split** — see the friction section. Only the sum is measured, and this
   is a structural limit of a bench with no external ammeter, not a gap that more runs close.
 - **Why the loop runs out of authority above ~1.8 rad/s** — the duty never pins, so it is

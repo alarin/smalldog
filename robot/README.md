@@ -426,21 +426,25 @@ internal output clamp would look the same, and this data does not separate them.
 
 ### Unit to unit
 
-The same two ladders on a second ST3215, heavy arm, 12 V only, in `bench/data-servo2/`
-(`hysteresis.py --data bench/data-servo2`). Recentred first with the servo's own
-middle-position command (`OFFSET` −1918) because it arrived 14 counts from the wrap.
+The same two ladders on three more ST3215s, heavy arm, 12 V only, in `bench/data-servo2/`,
+`data-servo11/`, `data-servo21/` (`hysteresis.py --data <dir>`). Unit 2 was a loose servo
+14 counts from the wrap and was recentred with the middle-position command (`OFFSET`
+−1918); 11 and 21 came off the robot and ran with `--centre` at their hanging position so
+`calib.json` still holds.
 
-| | unit 1 | unit 2 |
-|---|---|---|
-| position-loop stiffness, N·m/rad | 40.8 | 39.7 |
-| effective torque constant, N·m/V | 0.596 | 0.578 |
-| friction at a hold, unloaded, N·m | 0.186 | **0.117** |
-| …per N·m of load carried | 0.251 | **0.380** |
-| kinetic Coulomb at zero load, N·m | 0.168 | 0.124 |
-| total speed-proportional, N·m·s/rad | 1.334 | 1.326 |
-| no-load speed, position mode, rad/s | 3.86 | 3.88 |
+| | unit 1 | unit 2 | #11 | #21 | spread |
+|---|---|---|---|---|---|
+| position-loop stiffness, N·m/rad | 40.8 | 39.7 | 39.2 | 42.8 | ±4.5 % |
+| effective torque constant, N·m/V | 0.596 | 0.578 | 0.574 | 0.620 | ±4 % |
+| friction at a hold, unloaded, N·m | 0.186 | 0.117 | 0.144 | 0.181 | **0.64–1.01×** |
+| …per N·m of load carried | 0.251 | 0.380 | 0.328 | 0.335 | **0.88–1.33×** |
+| kinetic Coulomb at zero load, N·m | 0.168 | 0.124 | 0.153 | 0.192 | 0.67–1.04× |
+| total speed-proportional, N·m·s/rad | 1.334 | 1.326 | 1.276 | 1.373 | ±4 % |
+| no-load speed, position mode, rad/s | 3.86 | 3.88 | — | — | |
 
-The electrical rows and the profile cap are the same servo to 3 %; the gearbox is not.
-Each unit's static and kinetic floors agree with each other (0.186/0.168, 0.117/0.124),
-so the difference is the gearbox, not the read. Two units bound nothing —
-`rl/params/domain_rand.json` waits for a third and fourth (PLAN.md 4).
+The electrical rows and the profile cap are the same servo to 5 %; the gearbox is not, and
+the unit with the lowest floor has the highest load slope — two numbers, not one grease
+number. Each unit's static and kinetic floors agree with each other, so the spread is the
+gearbox, not the read. `rl/params/domain_rand.json` carries it: `tau_c` ×0.55–1.20,
+`mu_load` ×0.75–1.55, `kp` ×0.85–1.15 (the observed spread with a margin for the eight
+unmeasured), all `measured` now.

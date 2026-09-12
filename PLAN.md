@@ -59,13 +59,11 @@ rig at `TORQUE_LIMIT` 800 and 1000 is that check, next rig session.
 `check_model.py` asserts every per-unit servo parameter comes back batched. Voltage is
 measured rather than guessed.
 
-**Two units in, needs one or two more:** the ranges in `rl/params/domain_rand.json` are
-*manufacturing spreads*, so no fit of one servo can narrow them. A second unit through
-`holdbi` and `speed` at 12 V (`robot/README.md`, "Unit to unit") put the electrical side
-within 3 % and the friction floor at 0.117 against 0.186, the load slope at 0.380 against
-0.251. Two points bound nothing; the third and fourth servo say whether that is the spread
-or an outlier, and then the range is written. Until then `guessed` and wide, which costs
-sample efficiency, not correctness.
+**Done:** four units through `holdbi` and `speed` at 12 V (`robot/README.md`, "Unit to
+unit"). Electrical side within 5 %; friction floor 0.64–1.01× and load slope 0.88–1.33× of
+the nominal. `tau_c`, `mu_load` and `kp` in `rl/params/domain_rand.json` are `measured`
+ranges now — 2.2× narrower than the guess on tau_c. A policy trained before this saw a
+wider world than exists; nothing needs retraining for it.
 
 ## 5. Settle the traction question before touching a sole
 
