@@ -26,31 +26,28 @@ the plain reason that one of them cannot call the other.  Both derive every numb
 the numerics above; if you change the pattern, change it in both, and the check that they
 still agree is `standalone_sim.py --lidar` against the ROS 2 topic on the same scene.
 
-THE PATTERN, AND WHAT IS HONEST ABOUT IT
-The L2's internal optics are not published.  What is published is the envelope: a
-hemisphere about the sensor's own axis (LIDAR_FOV, plus 6 deg below the base plane in
-NEGA), ~LIDAR_RATE points per second, and - the reason it is worth simulating at all -
-that the scan is *non-repetitive*: unlike a spinning multi-beam lidar it does not retrace
-the same rings, so standing still keeps filling the field in.
+THE PATTERN, MEASURED
+The L2's internal optics are not published, but the capture in ref/lidar/ shows the scan
+directly, in time order: the beam spins in a plane THROUGH the sensor axis, rim -> axis ->
+opposite rim -> round the back, at BEAM_HZ revolutions per second, and that plane
+precesses about the axis at PREC_HZ.  So every line is a meridian, the count per degree of
+off-axis angle is flat (2600 +- 60 per 4 deg band in ref/lidar/README.md's table) and the
+density per steradian goes as 1 / sin(theta): ~30x denser on the axis than at 75 deg off
+it, with no rim peak.  The last TAPER degrees before the rim thin out linearly to nothing
+(88 -> 96 deg in the capture; a desk edge may be part of that, it is the least valuable
+band either way).
 
-What is modelled here is a Risley pair: two counter-rotating wedge prisms, each deflecting
-the beam by half the cone angle, which is the classic way to build exactly that kind of
-scan.  It reproduces the coverage (0 .. LIDAR_FOV_NEGA from the axis, all azimuths), the
-point rate, and the non-repetition - the two spin rates are in the golden ratio, so the
-pattern never closes and a longer dwell always adds new directions.
+Non-repetition falls out of the two rates not being commensurate: successive lines land
+360 * PREC_HZ / BEAM_HZ = 7.3 deg apart in azimuth and the next precession turn interleaves
+them, so standing still keeps filling the field in, which is what the real unit does.
 
-What it does NOT reproduce is the density profile, and since 2026-09-05 that is measured
-rather than suspected.  A Risley rosette piles its points up where the sweep turns around,
-i.e. on the axis AND on the rim.  The real L2 falls monotonically off its own axis:
-455318 points per steradian on axis against 30560 at 72..80 deg, ~14x, with no rim peak at
-all (ref/lidar/README.md has the table).  So the rosette is roughly right on the axis and
-wrong in the last band - and the manual's claim that density is highest at the middle of
-the vertical FOV, which is what LIDAR_TILT was argued from in mini_dog.py, is not what the
-unit does either.  Use this for geometry, coverage and occlusion; do not use it to argue
-about how many returns a particular object gets.  Fixing it needs the real pattern, and
-now there is a real capture to fit one against.
+It replaced a Risley-pair guess that piled points on the rim (14x too many there) - and
+the manual's claim that density peaks mid-FOV, which LIDAR_TILT was first argued from in
+mini_dog.py, is not what the unit does either.  The pattern here reproduces the measured
+profile to +-6 % out to 88 deg (ref/lidar/README.md).  Use it for geometry, coverage,
+occlusion and for how many returns an object gets.
 
-MOTION DISTORTION is not modelled either.  Every point of a frame is cast from the sensor
+MOTION DISTORTION is not modelled.  Every point of a frame is cast from the sensor
 pose at the end of that frame's window, while a real sweeping lidar moves through it.  At
 the trot's 0.2 m/s and LIDAR_FRAME_HZ = 12 that is 17 mm across a frame; if you ever care about
 it, cast in chunks per sim step and accumulate in world coordinates - the pose is right
@@ -61,18 +58,18 @@ import math
 import numpy as np
 
 # --------------------------------------------------------------------------------------
-# The pattern model.  These three are NOT sensor specifications - they are this file's
-# guess at how the L2 fills its cone, in the same sense that MJ_DAMPING in export_sim.py
-# is a guess at the ST3215's gearbox.  Everything the catalogue actually states lives in
-# mini_dog.py.
+# The pattern, MEASURED off ref/lidar/l2_room.pcd (tools/pcview.py --stats prints them).
+# These travel into the model as the `lidar_spin` numeric, (BEAM_HZ, PREC_HZ), so the C++
+# node reads the same two numbers.
 #
-# SPIN_A is the first prism's rate.  The second is SPIN_A / -PHI: counter-rotating, and in
-# the golden ratio so the rosette never closes on itself.  Any rational ratio does close -
-# at 121.6 / -77.7 Hz the whole pattern repeats every 10 s, which is 100 frames and looks
-# fine right up until someone parks the robot and wonders why the cloud stops improving.
-PHI      = (1.0 + 5.0 ** 0.5) / 2.0
-SPIN_A   = 121.6                      # Hz, first prism (7300 rpm, Livox-class hardware)
-SPIN_B   = -SPIN_A / PHI              # ... second, counter-rotating: -75.2 Hz
+# BEAM_HZ: the beam's revolutions per second in its own plane.  One axis pass per
+# revolution; the capture counts 216 per second and its off-axis-angle spectrum peaks at
+# 215.7.  PREC_HZ: the plane's precession about the axis, the slope of the meridian
+# azimuth over the 20 s capture (1567 deg/s, residual 4 deg).  Sign: +about +Z.
+# TAPER: degrees before the rim over which the returns thin linearly to zero.
+BEAM_HZ = 215.7                       # rev/s, 12 940 rpm
+PREC_HZ = 4.354                       # rev/s
+TAPER   = math.radians(8.0)           # 88 -> 96 deg in the capture
 
 # FRAME_HZ used to be here, at 10.0, described as a sim choice.  It is not one: the real
 # L2 emits 12.0 clouds per second, measured, so it is a sensor number and it lives with
@@ -108,7 +105,7 @@ def spec(nega=True):
         r_min=md.LIDAR_R_MIN / 1000.0,
         r_max=md.LIDAR_R_MAX / 1000.0,
         sigma=md.LIDAR_SIGMA / 1000.0,
-        spin=(SPIN_A, SPIN_B),
+        spin=(BEAM_HZ, PREC_HZ),
         frame_hz=md.LIDAR_FRAME_HZ,
     )
 
@@ -189,22 +186,31 @@ def urdf_link(parent="base_link", name="lidar_link"):
 def directions(t0, t1, n, cone, spin):
     """`n` unit vectors in the sensor frame, for the window [t0, t1).
 
-    The Risley pair in closed form: two wedges of half-angle `cone/2`, spinning at
-    `spin[0]` and `spin[1]` Hz.  Angle from the axis comes out as 0 .. cone and the
-    azimuth wraps with the first prism.
+    `spin` = (beam rev/s, plane precession rev/s).  The beam sweeps a meridian through
+    the axis once per revolution; only the part inside the cone returns anything, and the
+    `n` rays of a window are the returns, so they are laid uniformly along each line's
+    visible arc -cone..+cone and the invisible half-turn is skipped.  Position along the
+    line is a triangle in mass, not in angle: the last TAPER of the arc holds half the
+    points of an equal band inside it (the measured rim roll-off).  Same expression as
+    MujocoLidar in the ROS 2 workspace - change both.
     """
     if n <= 0:
         return np.zeros((0, 3))
     t = t0 + (np.arange(n) + 0.5) * (t1 - t0) / n
-    a = 0.5 * cone
-    sa, ca = math.sin(a), math.cos(a)
-    p1 = 2.0 * math.pi * spin[0] * t
-    p2 = 2.0 * math.pi * spin[1] * t
-    x1 = sa * ca * (1.0 + np.cos(p2))
-    y1 = sa * np.sin(p2)
-    z1 = ca * ca - sa * sa * np.cos(p2)
-    c1, s1 = np.cos(p1), np.sin(p1)
-    return np.stack([x1 * c1 - y1 * s1, x1 * s1 + y1 * c1, z1], axis=1)
+    line = spin[0] * t                                    # revolutions = lines elapsed
+    k = np.floor(line)
+    u = line - k                                          # 0..1 along this line's arc
+    # mass along the half arc: `cone - taper` flat, then the taper's triangle
+    tp = min(TAPER, cone)
+    half = cone - 0.5 * tp
+    m = np.abs(2.0 * u - 1.0) * half
+    flat = m <= cone - tp
+    theta = np.where(flat, m,
+                     cone - np.sqrt(np.maximum(0.0, tp * tp - 2.0 * tp * (m - cone + tp))))
+    side = np.where(u < 0.5, np.pi, 0.0)                  # first half of the line is the
+    phi = 2.0 * np.pi * spin[1] * t + side                # far side of the axis
+    st = np.sin(theta)
+    return np.stack([st * np.cos(phi), st * np.sin(phi), np.cos(theta)], axis=1)
 
 
 class Scanner:

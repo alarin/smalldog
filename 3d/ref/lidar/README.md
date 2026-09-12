@@ -35,32 +35,38 @@ wall, so the numbers bound the room, not the sensor. `LIDAR_R_MIN`/`LIDAR_R_MAX`
 it needs a flat wall at a measured standoff and a fit of the scatter about its plane, which
 is ten minutes' work whenever the sensor is next on the bench.
 
-## The density profile — the model and the manual are both wrong
+## The pattern, read off the capture
 
-`lidar.py`'s header says its Risley rosette "does NOT reproduce the density profile … the
-manual says the real sensor is densest at the middle of its vertical FOV, which is the very
-thing `LIDAR_TILT = 45°` was chosen to exploit". The capture says otherwise. Counts per 8°
-band are flat, but equal-angle bands cover wildly unequal solid angles, so the honest
-measure is per steradian:
+The manual says the L2 is densest at the middle of its vertical FOV; `lidar.py` used to
+model a Risley pair and said so. Neither is what the unit does. Counts per 4° band of
+off-axis angle are **flat** — 2650 ± 60 from 0° to 88° — and flat per degree means the
+density per steradian is **1/sin θ**: ~30× the rim on the axis, falling monotonically, no
+rim peak. The last 8° (88 → 96) thin linearly to nothing (a desk edge may be in that).
 
 | off-axis band | points | pts/sr |
 |---|---|---|
-| 0 – 8° | 28080 | **455318** |
-| 24 – 32° | 27138 | 65406 |
-| 48 – 56° | 27380 | 39350 |
-| 72 – 80° | 26140 | **30560** |
-| 88 – 96° | 8900 | 10119 |
+| 0 – 4° | 2666 | **174185** |
+| 20 – 24° | 2580 | 15704 |
+| 44 – 48° | 2770 | 8780 |
+| 72 – 76° | 2450 | 5812 |
+| 84 – 88° | 2605 | 5954 |
+| 88 – 92° | 1571 | 3582 |
+| 92 – 96° | 364 | 832 |
 
-The real L2 is **~14× denser on its own axis than at 75° off it**, falling monotonically —
-it peaks at 0°, not mid-FOV. Tilting the sensor still buys what it was meant to buy (it
-aims the dense part where the robot walks), but the *reason* written into `mini_dog.py`'s
-`LIDAR_TILT` block and `lidar.py`'s header is not the sensor's actual behaviour. The
-rosette's own defect is the same shape at the axis and the opposite one at the rim, so the
-sim is closer than it claims on-axis and wrong in the last band.
+The time order says why: θ runs 88 → 0 → 88 at a constant ~13° per 21 returns while the
+azimuth holds and then flips by 180° — the beam **spins in a plane through the axis**, one
+meridian line per revolution, and that plane **precesses**. Rates: 216 axis passes per
+second (the θ spectrum peaks at 215.7 Hz) and the meridian azimuth drifts 1567°/s over the
+20 s, residual 4° — `BEAM_HZ` 215.7, `PREC_HZ` 4.354 in `lidar.py`, `lidar_spin` in the
+model. The ratio is not an integer, so successive precession turns interleave and the
+pattern never closes. `lidar.py` and `mujoco_lidar.cpp` now emit exactly this; the
+reproduced profile is within ±6 % of the table to 88°.
 
-Note the shape of the count column: flat. That is why `tools/pcview.py --stats` prints
-points **and** points-per-steradian — the count column on its own argues the sensor is
-uniform, which is the opposite of what it does.
+What it does to `LIDAR_TILT`: at 45° the dense axis points 45° above the horizon. See the
+tilt block in `mini_dog.py` and `tools/lidar_tilt.py`.
+
+`tools/pcview.py --stats` prints points **and** points-per-steradian — the count column on
+its own argues the sensor is uniform, which is the opposite of what it does.
 
 ## The capture
 

@@ -239,7 +239,7 @@ rays return: the ground from ~280 mm ahead outwards, the course, and the robot's
 (the chassis it is bolted to is excluded; the legs are not, because a real sensor sees
 them). The publisher is `src/mujoco_ros2_control/.../mujoco_lidar.{hpp,cpp}`; it uses
 `mj_multiRay` with no GL context, runs at the sim cadence, and stays quiet on a model with no
-`lidar` site. The Risley scan *pattern* exists twice — Python and C++ — because neither can
+`lidar` site. The scan *pattern* (measured, `3d/ref/lidar/`) exists twice — Python and C++ — because neither can
 call the other; the parameters exist once, in the CAD. Nothing subscribes to the cloud yet.
 
 **GPS**: mass and a frame only — 25 g on the mast, a `gps` site at the patch's phase centre
