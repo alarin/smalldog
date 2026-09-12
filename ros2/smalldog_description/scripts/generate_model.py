@@ -198,12 +198,11 @@ base.add_box(M_GPS,     md.gps_com(), md.GPS_STACK)
 base.add_box(M_IMU, (md.IMU_X, md.IMU_Y,
                      md.IMU_Z0-(md.IMU_BOARD[2]+md.IMU_STACK)/2.0),
              (md.IMU_BOARD[0], md.IMU_BOARD[1], md.IMU_BOARD[2]+md.IMU_STACK))
-# Unitree L2, at the pose mini_dog.py holds for it (md.lidar_com(), md.LIDAR_L2_BOX -
-# envelope and mass both off the sensor's own drawing).  This used to be a 42.0 literal
-# and a guessed 70x70x60, which is exactly the divergence mini_dog's mass block exists to
-# prevent.  The box stays axis-aligned while the real sensor leans LIDAR_TILT forward:
-# exact in mass and centroid, ~7 % out on one inertia axis of 9 % of the robot.
-base.add_box(M_LIDAR, md.lidar_com(), md.LIDAR_L2_BOX)
+# Unitree L2, at the pose mini_dog.py holds for it (md.lidar_com(), md.lidar_box_xyz() -
+# LIDAR_L2_BOX turned by LIDAR_TILT into robot axes; envelope and mass both off the
+# sensor's own drawing).  This used to be a 42.0 literal and a guessed 70x70x60, which is
+# exactly the divergence mini_dog's mass block exists to prevent.
+base.add_box(M_LIDAR, md.lidar_com(), md.lidar_box_xyz())
 # the IMX415 module in its channel at the nose - its own envelope off the vendor drawing,
 # 90 x 15 mm of board with the lens block on the optical axis.  It sits further forward
 # than anything else the robot carries, which is why the mass block flags it **verify**.

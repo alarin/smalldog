@@ -280,7 +280,7 @@ def link_masses(parts):
             # sensor's own drawing; the box stays axis-aligned while the real one leans
             # LIDAR_TILT forward, which is exact in mass and centroid and ~7 % out on one
             # inertia axis of a part that is 9 % of the robot.
-            + box_mp(md.LIDAR_KG, md.LIDAR_L2_BOX, md.lidar_com()))
+            + box_mp(md.LIDAR_KG, md.lidar_box_xyz(), md.lidar_com()))
     for L in LEGS.values():                          # the four hip-roll servos ride the chassis
         base = base + servo_mp(L, md.ROLL_LOC)
     return base, legs

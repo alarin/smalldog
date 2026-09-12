@@ -210,7 +210,7 @@ disagree. A "cosmetic" parameter still moves the moment arms `fea.py` derives.
 7. `rom_scan(..., step=2)` before committing to real joint limits; `export_sim.py
    --rom-step 2` re-scans.
 
-### Current baseline (2026-09-12, 2.496 kg)
+### Current baseline (2026-09-12, 2.497 kg)
 
 Inter-layer SF per load case. `stall` scales with `SERVO_STALL_NM` only, the three ground
 columns with `fea.robot_mass()`. Read `--orient` for `thigh_A` and `cradle_front`.
@@ -220,21 +220,23 @@ columns with `fea.robot_mass()`. Read `--orient` for `thigh_A` and `cradle_front
 | `hip_bracket_A` | 46.2 | 23.1 | 7.7 | 2.2 | 5.57 |
 | `thigh_A` | 18.6 | 9.3 | 3.1 | 1.1 | 2.01 |
 | `shin_A` | 59.2 | 29.6 | 9.9 | 4.5 | 12.65 |
-| `cradle_front` | 4.8 | 2.4 | 0.8 | 3.0 | **1.42** |
+| `cradle_front` | 4.9 | 2.5 | 0.8 | 3.0 | **1.42** |
 
 `export_sim.py --check`: `4 feet down, upright +1.00`, base z 187 mm, camera axis
 (+0.99 0 +0.10), ROM ±90 / ±90 / ±110 (±90 is the scan window, not a stop). Probes:
 `imu clear +3.40`, `batt clear +0.60`, `clamp clear +1.43`, `head clear +0.65`,
 `cradle bolts +5.15`, `fork access: all six arms`, `panel clear` (window to the
-servos, XT30 clear of body and servos), `lidar fov 34.0 / 48.1 / 23.1`,
-`camera view: out of frame`.
+servos, XT30 clear of body and servos), `lidar fov 22.0 / 26.4 / 57.0 / 14.4`
+(chassis_top / lidar_mount / gps_mount / camera_mount), `camera view: out of frame` for
+all four including the L2, `lidar ... +4 mm past the leading foot`.
 
-Step 6, same seeds: **flat trot 526.9 mm** (rear panel down to the XT30, < 1 g; the
-control with the old panel reads 523.7); **terrain seeds 7…12: 445 ±55 mm, 0/6 down**;
-**course seeds 7/8/9: 1679 / 1156 (down) / 2053 mm** — seed 8 reads 2228 upright on the
-control, which is the 0.79 g mass cliff below, not the panel. (`SERVO_STALL_NM` 3.2 and
-`MJ_DAMPING` 0.92 moved the joint ceiling 3.15 → 3.28 rad/s; the control — 4.50 / 1.37 on
-the same mesh — read 456.7, and the terrain was 403 ±34, 1/6 down: one distribution.)
+Step 6, same seeds: **flat trot 543.8 mm** (the L2 bracket: +1.5 g, base-link CoM
++4.9 mm forward, +2.2 up; the control with the tilted seat reads 524.8);
+**terrain seeds 7…12: 458 ±30 mm on the four upright, 2/6 down (11, 12)** — the control
+is 0/6, and +1.5 g of dead mass on the control puts seed 12 down too, so half of that is
+the mass cliff and the CoM shift is on the edge of the other half; **course seeds 7/8/9:
+2225 / 2153 / 2266 mm, all upright, 3 / 3 / 4 of 7**. The gait is hand-tuned and due a
+re-tune before any of this is read further.
 
 ### How to read step 6
 

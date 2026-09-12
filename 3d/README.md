@@ -247,25 +247,35 @@ through the **lateral** wall, the neutral axis for the bending the knee does.
   That pattern puts the rear pair at x = −68 on a deck ending at −63, so the deck grows a
   tab under each rear standoff (`OPI_TAB_*`, guarded by `if OPI_TAB_X < -BODY_L/2`, so a
   measured pattern that lands on the deck deletes it). Moving `OPI_X` forward is not
-  available: the Pi would hit the LiDAR pedestal. `OPI_BOX` = 100 × 62 × 20 over the deck
+  available: the Pi would hit the LiDAR bracket. `OPI_BOX` = 100 × 62 × 20 over the deck
   is the envelope every exporter hangs `ELECTRONICS_KG` on *and* the keep-out `gps_mount`
   arches over — **verify** with the hole pattern.
-- **LiDAR**: a **tilted seat**, not a mast. The Unitree L2 scans a hemisphere *above* its
-  own base plane (NEGA mode buys 6° below it), so height buys no field of view. The seat
-  leans **45° forward** (`LIDAR_TILT`), which lands the sensor's densest ring on the horizon
-  and the lower rim on the ground **147 mm in front of the leading foot** in NEGA.
-  - `LIDAR_SEAT_Z` is **derived**: no static bodywork may sit above the seat plane,
-    `z + (x − LIDAR_X)·tan(tilt) < LIDAR_SEAT_Z`. The deck lip at (63, 35) binds it at 56.0;
-    60.0 keeps 4 mm and leaves 31 mm under the seat for the RJ45. `mini_dog.py` prints
-    `lidar clear:` or `!! LIDAR FOV` every run. Only static parts count — the legs sweep the
-    cone every stride and get masked in software.
-  - `LIDAR_X` = 42 is pinned: the base disc must clear the Orange Pi standoffs behind it
-    (≥ 38.8) and the pedestal's deck bolts must land on a deck ending at 63 (≤ 44.1).
+- **LiDAR**: a **nose bracket, axis forward**, not a mast and not a tilted seat. The Unitree
+  L2 scans a hemisphere *above* its own base plane (NEGA buys 6° below it), and it fills it
+  densest **on its axis**, ~30× the rim (`ref/lidar/`; the manual's "densest mid-FOV" is
+  wrong). So the axis points at the horizon: `LIDAR_TILT` = 90, the base plane vertical on
+  the chassis front face, the cone reaching 6° behind it. Standing, a frame puts ~450
+  returns on a 0.3 m box at 1 m and sees the floor from the leading foot out (`tools/lidar_tilt.py`;
+  the 45° seat this replaced got 54 and 84 % of its rays returned nothing).
+  - `LIDAR_SEAT_Z` = 95, the axis height, is **set by the camera**: the L2 hangs 65 mm
+    forward over the lens, and its lower front edge must clear the top of the camera's
+    frame — the face band is +19…+32°. `camera_clear()` charges the L2's envelope against
+    the frame every build (`camera view: lidar (L2) out of frame`). The top of the L2 ends
+    at z 132, where the tilted seat had it; its mass sits 30 mm further forward (base-link
+    CoM +4.9 mm).
+  - `LIDAR_X` = 42 is the **deck interface** and is pinned: the base plate must clear the
+    Orange Pi standoffs behind it (≥ 38.8) and its bolts must land on a deck ending at 63
+    (≤ 44.1). The stem stands on that plate, flush with the chassis front face, and two
+    ribs behind it carry the sensor's moment back to the four deck bolts. The ribs thread
+    between the L2's inner and outer screw heads so a driver reaches all four from behind.
   - Two bolt circles: ours ⌀45 at 45° for the deck screws; the sensor's **⌀51 at
-    22.5° + k·90°, 4 × M3 tapped 6 mm deep**, off the L2 drawing (⌀60 spigot, ⌀75 base).
-    They cannot merge — ⌀51 for the deck needs the base disc at r = 30, which hits the Pi
-    standoffs; the disc is ⌀52 (`LIDAR_BASE_R` = 26) for the same reason, and flat-cut in
+    22.5° + k·90°, 4 × M3 tapped 6 mm deep**, off the L2 drawing (⌀60 spigot, ⌀75 base), on
+    a ⌀64 × 7 seat disc recessed to 4.5 behind except for a boss under each head. They
+    cannot merge — ⌀51 for the deck needs the base plate at r = 30, which hits the Pi
+    standoffs; the plate is ⌀52 (`LIDAR_BASE_R` = 26) for the same reason, and flat-cut in
     front at `LIDAR_BASE_FLAT` = 63.5 to clear the camera slot.
+  - Prints base-down; the seat disc's flanks overhang the 48 mm stem at 41° off vertical
+    at worst. 40 g against the seat's 38.5.
   - **No LiDAR guard, by decision.** A hemisphere referenced to the base plane cannot be
     caged — every bar above it is a permanent blind stripe, and the manual forbids even a
     glass plate. The low bow that used to sit under the cone protected little (the hip
@@ -277,7 +287,7 @@ through the **lateral** wall, the neutral axis for the bending the knee does.
     holder 16.2 mm off the board — off the vendor drawing, transcribed in
     [ref/camera/](ref/camera/) with its two uncertain readings flagged.
   - **Exactly one place it fits, and all four walls are measured parts**: floor the cradle's
-    top face at `CAM_LEDGE` = 15.36, ceiling the LiDAR base disc (z 29…35), back the chassis
+    top face at `CAM_LEDGE` = 15.36, ceiling the LiDAR base plate (z 29…35), back the chassis
     front face at x = 63, front the hip-roll fork's rear arm at `ROLL_X + FORK_Y0` = 68.1 —
     a disc sweeping r ≤ 34 over the roll ROM. The board lives in the 5 × 15 mm slot that
     leaves; only the lens goes past 68.1 (on the centreline it stays 36.3 mm from either
@@ -290,8 +300,8 @@ through the **lateral** wall, the neutral axis for the bending the knee does.
     the camera. The board slides in endwise and is trapped: a slot below, a wall in front
     of its upper half, a skirt behind, and a `CAM_CAP` = 1.2 mm roof over the near end that
     ties the front wall to the skirt. **It has no screws of its own**: two tabs reach back
-    over the deck into pockets in the LiDAR base disc's underside and are clamped there by
-    the pedestal's own two front deck bolts (disc over tab over deck — the stack is no
+    over the deck into pockets in the LiDAR base plate's underside and are clamped there by
+    the bracket's own two front deck bolts (plate over tab over deck — the stack is no
     taller, the M3 × 16 unchanged). It used to bolt down into the cradle's flange rib with
     two M3 at y = 23 / 29: a ⌀3.4 hole through a rib 4 mm deep, and the rib was cut in two
     at both. Past the board's end the mount is a 1.3 mm skirt round the insertion path, so
@@ -322,7 +332,7 @@ through the **lateral** wall, the neutral axis for the bending the knee does.
     height are one number (arms landing at |y| = 24 → seat at 65). `gps_clear()` checks it.
   - The board is strapped by two ties at x = ±14, outside the 25 mm patch; its ends are
     held by nothing, because several board variants share the silkscreen.
-  - The L2 blocks the forward sky below ~27°; nothing about the robot can fix that.
+  - The L2 blocks the forward sky below ~28°; nothing about the robot can fix that.
   - **Prints upside down** on the platform's top face (`tools/orient_scan.py`: 2018 mm² of
     bed against 126 the right way up, 339 mm² of overhang against 2238).
   - Optional: leave it off and put the two M3 × 12 back.
@@ -335,7 +345,7 @@ through the **lateral** wall, the neutral axis for the bending the knee does.
 | `cradle_front` | 1 | PETG/ASA, 5 walls, 40 % — flange face down |
 | `cradle_rear` | 1 | PETG/ASA, 5 walls, 40 % — flange face down |
 | `chassis_top` | 1 | PETG/ASA, 4 walls, 25 % |
-| `lidar_mount` | 1 | PETG/ASA, 4 walls, 30 % — base disc down |
+| `lidar_mount` | 1 | PETG/ASA, 4 walls, 30 % — base plate down |
 | `gps_mount` | 1 | PETG/ASA, 4 walls, 30 % — platform down, no support |
 | `camera_mount` | 1 | PETG/ASA, 4 walls, 40 % — back skirt down |
 | `battery_case` | 1 | PETG/ASA, 4 walls, 25 % — open side up, no support |
@@ -396,8 +406,8 @@ Counts are per robot and come off the geometry: 12 joints × (one `sleeve()` + o
 | M2.5 × 8 **thread-forming**, no nut (BMI088 → the deck's top, through its standoff) | 2 |
 | M2.5 × 8 **thread-forming**, no nut (battery lid → the module's front wall) | 2 |
 | foam strip, ~1.4 × 20 × 90 mm (over the battery lid, under the deck — the gap is 0.60 mm) | 1 |
-| M3 × 16 + M3 nut (LiDAR pedestal → deck, from underneath) | 4 |
-| M3 × 12 (Unitree L2 → pedestal, into the L2's own M3 threads) | 4 |
+| M3 × 16 + M3 nut (LiDAR bracket → deck, from underneath) | 4 |
+| M3 × 12 (Unitree L2 → bracket seat, into the L2's own M3 threads) | 4 |
 | M3 × 24 (GPS mast + deck → tray boss, **replaces** the rear two deck screws) | 2 |
 | cable tie, 2.5 mm (GPS receiver → platform) | 2 |
 
@@ -470,8 +480,9 @@ off repeatedly wants a nut. Both radii are **verify**: print a coupon first.
    tray bosses' slots (**all eight before the module**) → XT30 into its pocket from
    inside → battery module into its seat, foam
    strip on its lid, servo bus out through the side ports (never across the top) → 4 M3
-   nuts into the pedestal legs → camera mount's two tabs into the disc's underside pockets
-   → pedestal bolted to the deck **from underneath, deck off**, its two front M3 through
+   nuts into the LiDAR bracket's bosses (front pair from the sides) → camera mount's two
+   tabs into the plate's underside pockets
+   → bracket bolted to the deck **from underneath, deck off**, its two front M3 through
    the tabs → camera board into the mount from the +y end → deck onto the tray → BMI088 onto its standoffs, 2 M2.5, **before the Pi** → 4
    M2.5 nuts into the standoff slots, Orange Pi, servo bus adapter → GPS mast onto the rear
    deck screws (M3 × 24), receiver into its rails and two ties (the Pi goes in first; the
@@ -530,10 +541,11 @@ consumer is C++ (`mujoco_ros2_control`) and cannot import Python: the numbers ex
 `mini_dog.py`'s LiDAR block, and both readers pick them out of the file they already load.
 Cone half-angle 96° (`LIDAR_FOV_NEGA`); rate **62340 points/s → 5196 per frame at 12 Hz,
 measured** (`ref/lidar/`); range 0.05…30 m and 20 mm 1σ noise **verify**. The scan pattern
-is a Risley pair — non-repetitive, matching the L2's coverage and rate but **not** its
-density profile (the real unit falls off monotonically from its axis; a rosette piles up at
-the rim). Use the model for geometry, coverage and occlusion, not for how many returns an
-object gets. No intensity. The same pattern exists in `mujoco_lidar.cpp`; change both.
+is **measured** (`ref/lidar/`): a beam spinning in a plane through the axis at 215.7 rev/s,
+the plane precessing at 4.35 rev/s, so density goes as 1/sin(off-axis angle) — ~30× denser
+on the axis than at the rim — and the pattern never repeats. Good for returns per object
+now, not only coverage. No intensity. The same pattern exists in `mujoco_lidar.cpp`;
+change both.
 
 ## Verify before printing the whole set
 

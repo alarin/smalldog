@@ -31,7 +31,7 @@
   <worldbody>
     <body name="base_link" pos="0 0 0.1807" childclass="mujoco">
       <freejoint name="base_freejoint"/>
-      <inertial pos="0.008245 -0.000049 0.020859" mass="1.56048" fullinertia="0.00305952 0.00649468 0.00603471 0.00000439 -0.00077313 0.00000020"/>
+      <inertial pos="0.013170 -0.000049 0.023019" mass="1.56203" fullinertia="0.00352486 0.00795344 0.00702815 0.00000401 -0.00148992 0.00000004"/>
       <geom class="visual" type="mesh" mesh="base_link"/>
       <geom class="servo" type="mesh" mesh="fl_roll_servo"/>
       <geom class="servo" type="mesh" mesh="fr_roll_servo"/>
@@ -40,8 +40,8 @@
       <geom class="collision" type="box" size="0.06300 0.04600 0.02700" pos="0.00000 0.00000 0.00200"/>
       <geom class="collision" type="box" size="0.10650 0.04911 0.01536" pos="0.00000 0.00000 0.00000"/>
       <site name="imu" pos="0 0 0.031" size="0.005"/>
-      <site name="lidar" pos="0.0734663 0 0.0914663" quat="0.92388 0 0.382683 0" size="0.004" rgba="0.9 0.4 0.1 1"/>
-      <geom name="lidar_body" type="cylinder" group="2" contype="0" conaffinity="0" size="0.0375 0.0325" pos="0.064981 0 0.082981" quat="0.92388 0 0.382683 0" rgba="0.15 0.15 0.17 1"/>
+      <site name="lidar" pos="0.1075 0 0.095" quat="0.707107 0 0.707107 0" size="0.004" rgba="0.9 0.4 0.1 1"/>
+      <geom name="lidar_body" type="cylinder" group="2" contype="0" conaffinity="0" size="0.0375 0.0325" pos="0.0955 0 0.095" quat="0.707107 0 0.707107 0" rgba="0.15 0.15 0.17 1"/>
       <camera name="camera" pos="0.0787343 0 0.0257543" quat="-0.473147 -0.525483 0.525483 0.473147" fovy="52.23" resolution="3840 2160"/>
       <geom name="camera_body" type="cylinder" group="2" contype="0" conaffinity="0" size="0.007 0.0081" pos="0.0700322 0 0.0248397" quat="0.525483 0.473147 0.473147 0.525483" rgba="0.1 0.1 0.12 1"/>
       <site name="gps" pos="-0.05200 0.00000 0.07260" size="0.004" rgba="0.2 0.8 0.4 1"/>
@@ -164,7 +164,7 @@
     <numeric name="lidar_rate" data="62340"/>
     <numeric name="lidar_range" data="0.05 30"/>
     <numeric name="lidar_sigma" data="0.02"/>
-    <numeric name="lidar_spin" data="121.6 -75.1529"/>
+    <numeric name="lidar_spin" data="215.7 4.354"/>
     <numeric name="lidar_frame_hz" data="12"/>
     <numeric name="lidar_groups" data="1 1 0 1 1 1"/>
   </custom>

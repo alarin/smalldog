@@ -6,9 +6,9 @@
   <material name="servo"><color rgba="0.12 0.12 0.14 1"/></material>
   <link name="base_link">
     <inertial>
-      <origin xyz="0.008245 -0.000049 0.020859" rpy="0 0 0"/>
-      <mass value="1.56048"/>
-      <inertia ixx="0.00305952" ixy="0.00000439" ixz="-0.00077313" iyy="0.00649468" iyz="0.00000020" izz="0.00603471"/>
+      <origin xyz="0.013170 -0.000049 0.023019" rpy="0 0 0"/>
+      <mass value="1.56203"/>
+      <inertia ixx="0.00352486" ixy="0.00000401" ixz="-0.00148992" iyy="0.00795344" iyz="0.00000004" izz="0.00702815"/>
     </inertial>
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0"/>
@@ -325,7 +325,7 @@
   <link name="lidar_link"/>
   <joint name="lidar_link_joint" type="fixed">
     <parent link="base_link"/><child link="lidar_link"/>
-    <origin xyz="0.0734663 0 0.0914663" rpy="0 0.785398 0"/>
+    <origin xyz="0.1075 0 0.095" rpy="0 1.5708 0"/>
   </joint>
   <link name="camera_link"/>
   <joint name="camera_joint" type="fixed">

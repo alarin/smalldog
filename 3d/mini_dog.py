@@ -623,7 +623,7 @@ OPI_NUT_DZ   = 1.5                    # ... its floor, above the deck's top face
 # real board (README, "Orange Pi 5 Pro"), so it is deliberately NOT adjusted to make the
 # geometry close - that would bake a guess into printed material.  Moving OPI_X forward
 # is not available either: the Pi would have to come 9.8 mm forward and OPI_BOX would
-# then run into the LiDAR pedestal, which is the same clash LIDAR_BASE_R was shrunk to
+# then run into the LiDAR bracket, which is the same clash LIDAR_BASE_R was shrunk to
 # 26.0 to avoid.  So the deck is extended locally under each rear standoff, and the tab
 # DISAPPEARS on its own the moment a measured hole pattern puts the standoff back on the
 # deck (chassis_top only unions it while OPI_TAB_X is outboard of the deck's end).
@@ -714,20 +714,20 @@ IMU_Z0       = BODY_Z1 + DECK_T + IMU_STAND_H + IMU_BOARD[2]
                                       # board thickness off it to get the component face,
                                       # which is where the BMI088's package actually is,
                                       # exactly as before - only the plane moved.
-# LiDAR pedestal.  LIDAR_X is shared: chassis_top drills the bolt circle at it and
+# LiDAR bracket.  LIDAR_X is shared: chassis_top drills the bolt circle at it and
 # lidar_mount is built on it, and they used to be two independent literals.
-# LIDAR_BASE_R is set by the Orange Pi standoffs, not by the pedestal: at the old 30.0 the
+# LIDAR_BASE_R is set by the Orange Pi standoffs, not by the bracket: at the old 30.0 the
 # base disc and the two standoffs at (OPI_X+46, +-27) shared 95 mm3 of solid.  26.0 still
 # covers the bolt circle with a 1.8 mm rim and clears the standoffs by 1.6 mm.
 #
-# TWO bolt circles, and they are deliberately different.  LIDAR_BC is ours: pedestal down
+# TWO bolt circles, and they are deliberately different.  LIDAR_BC is ours: bracket down
 # onto the deck, on the same 45 deg rays as the four legs so every screw is under a post.
 # LIDAR_L2_* is the sensor's, measured off the L2 mechanical drawing in the Unitree
 # manual (Installation Dimensions, p.10) - 4 x M3 BLIND 6 mm deep on a @51 circle at
 # 22.5 deg + k*90, inside a @60 spigot on a @75 base.  Those M3s are cut in the L2's own
 # base, so this is the second joint on the robot - after the servo hubs - where a screw
 # threads into stock hardware instead of a nut_slot.  Nothing threads into plastic here
-# either: the pedestal side is a clearance hole.
+# either: the bracket side is a clearance hole.
 #
 # The two circles cannot be merged.  @51 for the deck screws would need the base disc out
 # at r=30, which is exactly the Orange Pi standoff clash noted above; and turning our legs
@@ -735,67 +735,75 @@ IMU_Z0       = BODY_Z1 + DECK_T + IMU_STAND_H + IMU_BOARD[2]
 # body's own front face at 63.  So the L2 screws live in the top flange alone, and the
 # flange grew to r=32 to carry them with a 4.8 mm rim outside the hole.
 #
-# WHY THE SEAT IS TILTED, AND WHY IT IS NOT A MAST.
-# The L1/L2 do not scan a band around themselves - they scan a HEMISPHERE ABOVE
-# themselves.  The manual is explicit: "360 * 90 deg hemispherical ultra-wide-angle scan,
-# which can measure the three-dimensional space ABOVE the radar".  Vertical FOV runs from
-# the sensor's own base plane up to its axis; NEGA mode (the factory default) buys 6 deg
-# BELOW that plane and nothing more.  Two things follow, and they are the whole design:
+# WHERE THE SENSOR POINTS, AND WHY IT IS A BRACKET AT THE NOSE, NOT A PEDESTAL.
+# The L2 scans a hemisphere ABOVE its own base plane (NEGA buys 6 deg below it), and the
+# capture in ref/lidar/ shows how it fills that hemisphere: the beam sweeps meridians
+# through the axis, so the density per steradian goes as 1/sin(angle off the axis) - the
+# axis is ~30x denser than the rim.  The axis, then, has to point where the things that
+# stop a walking robot are: the horizon.  LIDAR_TILT = 90 puts it there - the base plane
+# vertical at the chassis front face, the cone reaching 6 deg behind that plane, so the
+# ground is seen from the leading foot outwards and a 0.3 m obstacle at 1 m gets ~450
+# returns a frame (tools/lidar_tilt.py; at the old 45 deg tilted seat it got 54, the
+# dense axis pointed at the sky and 84 % of a frame returned nothing).
 #
-#   1. Height is worthless.  A mast helps a sensor that scans outward; this one is blind
-#      below its own base whatever the altitude.  Standing upright at LIDAR_SEAT_Z = 73 it
-#      met the ground 2.5 m in front of the dog - the pedestal was 38 mm of raised centre
-#      of gravity buying literally no field of view.  The only thing height must do is keep
-#      the robot's own bodywork out of the cone, which is one inequality, below.
-#   2. Tilt is everything.  Leaning the sensor forward by LIDAR_TILT drops the forward rim
-#      of the cone by exactly that angle, and that - not altitude - is what puts ground
-#      under the dog's nose.
+# LIDAR_SEAT_Z IS SET BY THE CAMERA, not by the sensor.  The L2 hangs LIDAR_L2_BOX[2]
+# forward of its seat, over the camera's lens, and the camera's job is a face at 2.2..4 m
+# - +19..+32 deg above its axis.  The box's lower front edge has to stay above the top of
+# the camera's frame: from the pupil at CAM_OPT up a 6 deg axis with a 52 deg vertical
+# FOV, that edge at x = 128 must clear z ~57, so the axis sits at 95.  camera_clear()
+# charges the real envelope against the real frame every build.  It puts the top of the
+# L2 at z 132 - exactly where the tilted seat had it - and its mass 30 mm further forward.
 #
-# 45 deg, because that is where the sensor's DENSEST ring lands on the horizon (the manual
-# notes point density is highest at the centre of the vertical FOV, i.e. 45 deg off the
-# base plane).  The horizon is where the things that stop a walking robot live - table
-# legs, door frames, thresholds - so they get sampled best, while the lower rim still
-# reaches the ground 147 mm in front of the leading foot in NEGA, one to two strides of
-# lead for a rolling elevation map.  Leaning it further keeps buying near ground and starts
-# spending the rear hemisphere on bare sky; leaning it less gives that back and pushes the
-# near edge out past 300 mm.
-#
-# LIDAR_SEAT_Z is DERIVED, not styled.  No static part of the robot may sit above the seat
-# plane, i.e. for every body point  z + (x - LIDAR_X)*tan(tilt) < LIDAR_SEAT_Z.  The
-# binding point is the deck's own stiffening lip - the top of the robot - at (63, z=35),
-# giving 35 + 21*tan45 = 56.0.  60.0 keeps 4 mm of margin on that and leaves 31 mm under
-# the seat for the L2's RJ45 to turn down into the cable core, which is the other floor on
-# this number.  Change LIDAR_TILT and this has to be re-derived; mini_dog.py checks it.
-#
-# LIDAR_X is pinned and is NOT a free choice: the base disc has to clear the Orange Pi
-# standoffs at (24, +-27) behind it (LIDAR_X >= 38.8) and its own deck bolts have to land
-# on a deck that ends at 63 (LIDAR_X <= 44.1).  42.0 sits in the middle of that 5 mm
-# corridor.  Do not "move the LiDAR forward" - there is nowhere to move it to.
-LIDAR_X      = 42.0
-LIDAR_TILT   = 45.0                   # nose-down, about +y.  See above.
-LIDAR_SEAT_Z = 60.0                   # seat plane on the pedestal axis.  Derived, see above.
+# LIDAR_X is the DECK INTERFACE and is NOT a free choice: the base plate's @45 bolt circle
+# has to clear the Orange Pi standoffs at (24, +-27) behind it (LIDAR_X >= 38.8) and land
+# on a deck that ends at 63 (LIDAR_X <= 44.1).  The seat is at the chassis front face,
+# LIDAR_SEAT_X, and the stem between the two carries the sensor's moment back to the
+# four deck bolts.
+LIDAR_X      = 42.0                   # base plate centre / deck bolt circle, on the deck
+LIDAR_TILT   = 90.0                   # axis forward.  See above.
+LIDAR_SEAT_X = BODY_L/2               # the seat plane: the chassis front face, 63
+LIDAR_SEAT_Z = 95.0                   # the axis height.  Set by the camera, see above.
 LIDAR_BC, LIDAR_N          = 45.0, 4
 LIDAR_L2_BC, LIDAR_L2_ANG  = 51.0, 22.5   # measured: Unitree L2 base, 4 x M3 v6
 LIDAR_L2_THREAD = 6.0                     # ... usable thread depth in the L2
-LIDAR_L2_BOX = (75.0, 75.0, 65.0)         # ... and its envelope, same drawing
+LIDAR_L2_BOX = (75.0, 75.0, 65.0)         # ... and its envelope, same drawing: across,
+                                          # across, and along its own axis
 LIDAR_OPT    = 44.5                       # ... and the 44.50 on its side view: the height
                                           # its scan core sits at, up its own axis from
                                           # the seat.  Every FOV number here is measured
                                           # from that point, not from the seat.
 LIDAR_BASE_R, LIDAR_BASE_T = 26.0, 6.0
-# ... and the disc is FLAT-CUT in front, at LIDAR_BASE_FLAT.  A @52 disc centred on
-# LIDAR_X reaches x = 68, which put 6 mm of pedestal directly over the only slot the
-# camera fits in - see the camera block.  Nothing needs that material: the deck bolts are
-# on a @45 circle whose front pair sits at x = 57.9, and the four pedestal legs at r = 21
-# reach x = 63.35, so a flat at 63.5 leaves the legs untouched and still keeps 5.6 mm of
-# rim in front of the bolt.  It costs 105 mm2 of a 2124 mm2 disc.
+# ... and the plate is FLAT-CUT in front, at LIDAR_BASE_FLAT.  A @52 disc centred on
+# LIDAR_X reaches x = 68, which put 6 mm of plate directly over the only slot the camera
+# fits in - see the camera block.  Nothing needs that material: the deck bolts are on a
+# @45 circle whose front pair sits at x = 57.9, and the four bosses at r = 21 reach
+# x = 63.35, so a flat at 63.5 leaves the bosses untouched and still keeps 5.6 mm of rim
+# in front of the bolt.  The stem stands on this plate and its front face IS the chassis
+# front face, so nothing of the bracket reaches past 63.5 either.
 LIDAR_BASE_FLAT = 63.5
-LIDAR_TOP_R,  LIDAR_TOP_T  = 32.0, 7.0
-LIDAR_LEG_R,  LIDAR_LEG_D  = 21.0, 13.0
-LIDAR_CORE_R = 11.0                   # cable core straight up the middle
+LIDAR_TOP_R,  LIDAR_TOP_T  = 32.0, 7.0    # the seat disc: @64 carries the @51 circle with
+                                          # a 4.8 mm rim; 7 mm of seat + 5 mm of thread in
+                                          # the L2 is the M3 x 12
+LIDAR_SEAT_POCKET = 2.5                   # ... recessed from the back inside a rim of
+LIDAR_SEAT_RIM    = 4.0                   # this, except for a boss under each head
+LIDAR_SEAT_BOSS_R = 5.0                   # 4.6 cm3 for nothing the screws need
+LIDAR_STEM_T, LIDAR_STEM_W = 4.0, 48.0    # the stem under the seat, plate to disc.  48
+                                          # wide leaves the disc's flanks overhanging at
+                                          # 41 deg off vertical at worst - prints, and the
+                                          # 64 that would not overhang at all is 5 cm3
+LIDAR_RIB_T, LIDAR_RIB_Y   = 3.0, 16.5    # two ribs behind the stem, outboard faces at
+                                          # +-RIB_Y: between the L2's inner screw heads
+                                          # (|y| <= 12.6) and its outer ones (>= 20.8), so
+                                          # a driver reaches all four from behind
+LIDAR_RIB_X0, LIDAR_RIB_Z1 = 34.0, 100.0  # ... foot back to x 34 (OPI_BOX ends at 28),
+                                          # tip up the stem to z 100: 20 deg off vertical
+LIDAR_LEG_R,  LIDAR_LEG_D  = 21.0, 13.0   # the four bosses round the deck bolts ...
+LIDAR_LEG_H  = 14.0                       # ... just tall enough to roof the nut slot
+LIDAR_CORE_R = 11.0                   # cable core: through the seat on the axis, and
+                                      # straight down through the plate into the tray
 LIDAR_NUT_Z  = (8.0,)                 # nut-slot floor above the deck, for the M3 that
                                       # comes up from under the deck.  There is no second
-                                      # nut any more: the L2 screw threads into the L2.
+                                      # nut: the L2 screw threads into the L2.
 
 # The L2 as a SENSOR rather than as a lump of mass.  Everything above describes where the
 # thing is bolted; these are what it sees, and they are here for the same reason the
@@ -867,7 +875,7 @@ LIDAR_SIGMA  = 20.0                   # mm, 1-sigma range noise (+-2 cm spec) **
 #
 #   * the deck's top face is the Orange Pi.  OPI_BOX spans x -72..28, |y| <= 31, z 29..49
 #     - which is the whole of the deck between its two stiffening lips,
-#   * ahead of the Pi is the LiDAR pedestal (base disc r = 26 at x = 42) and then the L2,
+#   * ahead of the Pi is the LiDAR bracket (base plate r = 26 at x = 42) and then the L2,
 #   * the strips outboard of the Pi are 12 mm wide, against a 25 mm patch,
 #   * and anything that clears all of that by standing tall lands in the L2's own cone.
 #
@@ -961,10 +969,10 @@ CAM_TAIL   = -1.0                     # which way the 70.6 mm tail runs.  -1 = -
 #   floor    the hip-roll cradles.  roll_module is solid over |y| <= 14 from x = 63 out to
 #            x = 106.5 and its root gusset is solid over |y| <= 49 from x = 63 to 67.5,
 #            both topping out at CAM_LEDGE.  Nothing sits below that in front of the body.
-#   ceiling  the LiDAR pedestal's base disc, z = 29..35, reaching x = 68.  It had to be
+#   ceiling  the LiDAR bracket's base plate, z = 29..35, reaching x = 68.  It had to be
 #            flat-cut - see LIDAR_BASE_FLAT - because the slot under it was 13.6 mm and
-#            the module's board is 15.0.  Above the cut the ceiling is the L2's own case,
-#            at z = 36 over the lens.
+#            the module's board is 15.0.  Above the cut there is air to the L2's underside
+#            at z = 57.5 - and the L2 is placed by this camera's frame, see LIDAR_SEAT_Z.
 #   back     the chassis front face at x = 63.
 #   front    the hip-roll fork's REAR ARM at x = ROLL_X + FORK_Y0 = 68.1.  That arm is a
 #            disc about the roll axis; over the roll ROM it sweeps everything within
@@ -1011,7 +1019,7 @@ CAM_LEDGE    = CRADLE_Z1              # 15.36 - the front cradle's own top face,
 # mm of skin a side, and the rib was cut in two at both.  There is nowhere else: past the
 # board's end the mount is a 1.3 mm skirt round the insertion path, the rib is 4 mm deep
 # along its whole length, the bosses are full of the cradle bolts, and x 67..73.5 at
-# y > STRAP_Y is the hip bracket's.  So the mount borrows the LiDAR pedestal's two FRONT
+# y > STRAP_Y is the hip bracket's.  So the mount borrows the LiDAR bracket's two FRONT
 # deck bolts: two tabs reach back over the deck into CAM_TAB_T-deep pockets in the base
 # disc's underside and are clamped there, disc over tab over deck, by the same M3 x 16 -
 # the stack is no taller, the pockets are where disc used to be.  The tabs join the
@@ -1024,7 +1032,7 @@ CAM_FRONT    = 68.0                   # ... and its front, 0.1 inside the fork a
 CAM_END      = (31.0, -73.0)          # the channel's two ends, in y
 CAM_TAB_T    = 3.0                    # tab thickness, = the pocket's depth in the 6 mm
                                       # disc: 3 mm of disc left over the bolt
-CAM_TAB_R    = 6.0                    # pad radius round the pedestal bolt ...
+CAM_TAB_R    = 6.0                    # pad radius round the bracket bolt ...
 CAM_TAB_W    = 8.0                    # ... and the width of the bar back to the mount
 CAM_LENS_REL = 2.0                    # relief round the @14 holder, on radius: the mount
                                       # must not vignette its own camera
@@ -1044,7 +1052,7 @@ CAM_LENS_REL = 2.0                    # relief round the @14 holder, on radius: 
 #     goes OVER the board instead.  The channel's top rises CAM_CAP above the pocket's own
 #     ceiling from the lens relief to the board's near end, which is 10.4 mm of roof clear
 #     of the tabs' skirt patches, which now carry the same roof on the -y side too.
-# There is room above: the ceiling here is LIDAR_BASE_FLAT = 63.5, i.e. the pedestal is
+# There is room above: the ceiling here is LIDAR_BASE_FLAT = 63.5, i.e. the base plate is
 # cut away in front of the mount's own back plane, and measured, a roof to z 33.9 shares
 # 0.0 mm3 with lidar_mount and leaves lidar_fov_clear at +22.6 deg outside the 96 deg
 # cone (it was +23.1).  Fixed 2026-09-11.
@@ -1099,7 +1107,7 @@ BMS_KG            = 0.055         # **verify** - split out of ELECTRONICS_KG whe
                                   # the Pi's box 46 mm away and 40 mm up.  Hangs at
                                   # bms_com().
 ELECTRONICS_KG    = 0.195         # Orange Pi 5 Pro / wiring - was 0.25 with the BMS in it
-LIDAR_KG          = 0.230         # Unitree L2 on the pedestal - confirmed, L2 manual
+LIDAR_KG          = 0.230         # Unitree L2 on its bracket - confirmed, L2 manual
                                   # Parameter Specifications: 230 g, 75x75x65 mm, 12 V 10 W
 CAMERA_KG         = 0.012         # IMX415 module: PCB, M12 holder, lens, connector.
                                   # **verify** - vendor gives no mass; weigh one.  It
@@ -1804,7 +1812,7 @@ def chassis_bottom():
         s = s.cut(bxc(xw+PANEL_LIP_T, xw+PANEL_T+1, cy-w/2, cy+w/2, cz-h/2, cz+h/2))
         s = s.cut(bxc(xw-1, xw+PANEL_LIP_T, cy-w/2+PANEL_LIP, cy+w/2-PANEL_LIP,
                       cz-h/2+PANEL_LIP, cz+h/2-PANEL_LIP))
-    # Nothing of the camera's here: the mount hangs off the LiDAR pedestal's front bolts
+    # Nothing of the camera's here: the mount hangs off the LiDAR bracket's front bolts
     # (camera block); nothing of it touches the tray or the cradles.
     #
     # There are no fork-access channels here any more.  They used to cut a @6 hole
@@ -2114,33 +2122,33 @@ def lidar_pose():
     export_sim.py and ../ros2/.../generate_model.py both read the sensor's position from
     here; each of them used to carry its own 42.0 literal and its own guess at the height."""
     t = math.radians(LIDAR_TILT)
-    return (LIDAR_X, 0.0, LIDAR_SEAT_Z), (math.sin(t), 0.0, math.cos(t))
+    return (LIDAR_SEAT_X, 0.0, LIDAR_SEAT_Z), (math.sin(t), 0.0, math.cos(t))
+
+def lidar_box_xyz():
+    """LIDAR_L2_BOX as axis-aligned extents in robot coordinates: the box is two `across`
+    and one `along the axis`, and the axis leans LIDAR_TILT.  Exact at 0 and 90 deg, an
+    over-estimate between - both exporters build the L2's inertia from this."""
+    t = math.radians(LIDAR_TILT)
+    a, _, h = LIDAR_L2_BOX
+    return (abs(h*math.sin(t)) + abs(a*math.cos(t)), a,
+            abs(h*math.cos(t)) + abs(a*math.sin(t)))
+
+def lidar_module():
+    """The L2 itself as a solid - its LIDAR_L2_BOX envelope on the seat, not a printed
+    part.  Here for the reason camera_module() is: interference(), the ROM scan and the
+    camera's view check have to see the thing bolted on, and none of them can see a
+    number in a table."""
+    (sx, sy, sz), n = lidar_pose()
+    a, b, h = LIDAR_L2_BOX
+    t = math.radians(LIDAR_TILT)
+    box = bxc(-a/2, a/2, -b/2, b/2, 0.0, h)
+    return mv(box, frame((sx, sy, sz), xdir=(math.cos(t), 0.0, -math.sin(t)), zdir=n))
 
 def lidar_com():
     """Centroid of the L2 itself - half its own height up its own axis from the seat."""
     (px, py, pz), (nx, ny, nz) = lidar_pose()
     h = LIDAR_L2_BOX[2]/2.0
     return (px+nx*h, py+ny*h, pz+nz*h)
-
-def lidar_seat_min():
-    """The lowest LIDAR_SEAT_Z that keeps the robot's own bodywork out of the L2's cone.
-
-    The cone's floor is the sensor's base plane, so a body point occludes exactly when it
-    is above that plane: z + (x - LIDAR_X)*tan(tilt) >= LIDAR_SEAT_Z.  The maximum of that
-    expression over the static body is what this returns.  Only the static body counts -
-    the legs sweep through the forward-down cone at every stride and no mount geometry can
-    change that, which is why every quadruped masks its own legs in software.
-    """
-    t = math.radians(LIDAR_TILT)
-    worst = 0.0
-    for x, z in ((BODY_L/2, BODY_Z1+DECK_T+6.0),        # deck stiffening lip - the top
-                 (BODY_L/2, BODY_Z1+DECK_T),            # deck itself
-                 (OPI_X+OPI_HOLES[0]/2, BODY_Z1+DECK_T+OPI_STAND_H),   # Pi standoffs
-                 (GPS_X+GPS_PLATE[0]/2, GPS_SEAT_Z)):   # GPS mast - tall, but
-                                                     # far enough back to be under the
-                                                     # tilted base plane by 68 mm
-        worst = max(worst, z + (x-LIDAR_X)*math.tan(t))
-    return worst
 
 def rod(a, b, r):
     """A cylinder from a to b — the GPS mast is all rods and there was no helper."""
@@ -2156,7 +2164,7 @@ def lidar_fov_clear(wp, nega=True):
     from its optical centre.  A point occludes exactly when it falls inside that cone, so
     a part is clear when its WORST vertex is still outside - and the returned number is
     the margin readers actually want: how many degrees of slack a part has before it
-    starts eating the view the whole pedestal exists to buy.
+    starts eating the view the whole bracket exists to buy.
     """
     (sx, sy, sz), n = lidar_pose()
     o = (sx+n[0]*LIDAR_OPT, sy+n[1]*LIDAR_OPT, sz+n[2]*LIDAR_OPT)
@@ -2174,63 +2182,79 @@ def lidar_fov_clear(wp, nega=True):
     return worst - (LIDAR_FOV_NEGA if nega else LIDAR_FOV)
 
 def lidar_mount():
-    """Pedestal.  Base disc + four @13 legs + a seat, and the seat is TILTED - it is the
-    L2's mounting face, leaning LIDAR_TILT forward.  Why that is the whole point of the
-    part is argued in the parameter block; here is what it does to the geometry.
+    """The L2's bracket: a base plate on the deck, a stem up the chassis front face, and
+    a vertical seat disc the sensor bolts to with its axis forward.  Why it points forward
+    is argued in the parameter block; here is what that does to the geometry.
 
-    The legs are still vertical and still land on the same @45 circle at 45 deg, so the
-    deck interface - four M3 up from underneath into nuts in slots that open radially
-    outward - is untouched.  They are simply grown past the seat and then cut back to it,
-    which leaves the rear pair tall and the front pair short and puts a 45 deg face on top
-    of each.  Nothing on this part overhangs downward at less than the tilt angle, so it
-    still prints on its base disc without support.
+    The deck interface is the tilted seat's, untouched: the @45 bolt circle at LIDAR_X,
+    four M3 up from under the deck into nuts in slots in four short bosses, the cable core
+    through the plate, the flat at LIDAR_BASE_FLAT and the two pockets for the camera
+    mount's tabs.  The front bosses' nut slots open SIDEWAYS through the stem's flanks
+    (they used to open radially, which would now be through the seat face); the rear
+    pair still open radially outward, into air.
 
-    Two bolt circles, and they are deliberately different.  Ours is @45 at 45 deg, every
-    screw under a leg.  The sensor's is @51 at 22.5 deg, normal to the SEAT, 4 x M3 into
-    the L2's own tapped holes - no nut, which is why the screw is M3x12: LIDAR_TOP_T of
-    seat plus 5 mm of thread against the LIDAR_L2_THREAD it actually has.  A longer one
-    bottoms in the blind hole and jacks the sensor off its seat without ever feeling loose.
-    The two circles cannot be merged: @51 for the deck screws needs the base disc out at
-    r = 30, which is the Orange Pi standoff clash the disc was shrunk to 26 to avoid.
-
-    The cable core stays vertical and straight through the middle.  Cut through a 45 deg
-    seat it opens as a @22 x 31 ellipse, still 6 mm clear of the nearest L2 bolt, and it
-    drops the L2's three tails straight down into the tray instead of round a corner."""
+    The stem is a LIDAR_STEM_T plate from the base plate up to the seat, its front face
+    on the chassis front face; the part prints base-down and the disc's flanks overhang
+    the stem at 41 deg off vertical at worst.  Two ribs behind it, outboard of the L2's screw heads so
+    a driver reaches every head from behind, carry the sensor's moment to the base plate.
+    The seat is a @64 x 7 disc standing on the stem's front, 4 x M3 clearance on the
+    L2's @51 circle at 22.5 deg, the screw heads on its back.  The cable core goes
+    through the seat on the axis; the tails turn down behind the stem between the ribs
+    and drop through the plate's core into the tray."""
     t  = math.radians(LIDAR_TILT)
     n  = (math.sin(t), 0.0, math.cos(t))
     dn = tuple(-v for v in n)
-    seat = (LIDAR_X, 0.0, LIDAR_SEAT_Z)
+    seat = (LIDAR_SEAT_X, 0.0, LIDAR_SEAT_Z)
     cx, z0 = LIDAR_X, BODY_Z1+DECK_T
-    ztop = LIDAR_SEAT_Z + LIDAR_TOP_R*math.sin(t) + 6.0
+    x1 = LIDAR_SEAT_X
     s = cyl(LIDAR_BASE_R, LIDAR_BASE_T, (cx, 0, z0))
     s = s.cut(bxc(LIDAR_BASE_FLAT, cx+LIDAR_BASE_R+2.0, -LIDAR_BASE_R-2.0,
                   LIDAR_BASE_R+2.0, z0-1.0, z0+LIDAR_BASE_T+0.5))   # room for the camera
     for i in range(LIDAR_N):
         a = math.radians(360.0*i/LIDAR_N+45.0)
         px, py = cx+LIDAR_LEG_R*math.cos(a), LIDAR_LEG_R*math.sin(a)
-        s = s.union(cyl(LIDAR_LEG_D/2, ztop-z0, (px, py, z0)))
+        s = s.union(cyl(LIDAR_LEG_D/2, LIDAR_LEG_H, (px, py, z0)))
+    # the stem, the ribs and the seat
+    s = s.union(bxc(x1-LIDAR_STEM_T, x1, -LIDAR_STEM_W/2, LIDAR_STEM_W/2, z0, LIDAR_SEAT_Z))
     s = s.union(cyl(LIDAR_TOP_R, LIDAR_TOP_T, seat, axis=dn))
-    s = s.cut(cyl(400.0, 400.0, seat, axis=n))            # everything above the seat plane
-    s = s.cut(cyl(LIDAR_CORE_R, 200, (cx, 0, z0-10)))
-    for i in range(LIDAR_N):                              # pedestal -> deck, 45 deg
+    # the disc's back is recessed LIDAR_SEAT_POCKET deep inside its rim, leaving a boss
+    # under each screw head: the seat is 7 mm where the M3 x 12 needs it and 4.5 elsewhere
+    back = tuple(seat[k] + dn[k]*LIDAR_TOP_T for k in range(3))
+    s = s.cut(cyl(LIDAR_TOP_R-LIDAR_SEAT_RIM, LIDAR_SEAT_POCKET, back, axis=n))
+    ex = (math.cos(t), 0.0, -math.sin(t))                 # the seat plane's own x
+    holes = []
+    for i in range(LIDAR_N):                              # L2 -> seat, 22.5 deg, normal to it
+        a = math.radians(360.0*i/LIDAR_N+LIDAR_L2_ANG)
+        r = LIDAR_L2_BC/2
+        holes.append(tuple(seat[k] + r*math.cos(a)*ex[k] + r*math.sin(a)*(0.0, 1.0, 0.0)[k]
+                           for k in range(3)))
+        s = s.union(cyl(LIDAR_SEAT_BOSS_R, LIDAR_TOP_T, holes[-1], axis=dn))
+    for sy in (-1.0, 1.0):
+        # tri() draws in XY and extrudes along Z; stood up with local z -> -y, so the
+        # extrusion runs from -y1 to -y0 and the triangle is (x, z) as written
+        lo, hi = sorted((-sy*LIDAR_RIB_Y, -sy*(LIDAR_RIB_Y-LIDAR_RIB_T)))
+        rib = tri(((LIDAR_RIB_X0, z0), (x1-LIDAR_STEM_T+0.5, z0),
+                   (x1-LIDAR_STEM_T+0.5, LIDAR_RIB_Z1)), lo, hi)
+        s = s.union(mv(rib, frame((0, 0, 0), xdir=(1, 0, 0), zdir=(0, -1, 0))))
+    s = s.cut(cyl(LIDAR_CORE_R, 200, (cx, 0, z0-10)))            # down into the tray
+    s = s.cut(cyl(LIDAR_CORE_R, 40.0, seat, axis=dn))            # and through the seat
+    for i in range(LIDAR_N):                              # bracket -> deck, 45 deg
         a = math.radians(360.0*i/LIDAR_N+45.0)
         px, py = cx+LIDAR_BC/2*math.cos(a), LIDAR_BC/2*math.sin(a)
         s = s.cut(cyl(M3_CLR, 20.0, (px, py, z0-1)))
         if px > cx:
-            # the camera mount's tab sits under this bolt, in a pocket in the disc's
+            # the camera mount's tab sits under this bolt, in a pocket in the plate's
             # underside that runs out through the flat face to the mount (camera block)
             tab = cam_tab(px, py, CLR)
             s = s.cut(tab.union(tab.translate((0, 0, -1.0))))
+            out = (0.0, math.copysign(1.0, py), 0.0)      # sideways, out of the stem
+        else:
+            out = (math.cos(a), math.sin(a), 0.0)         # radially, into air
         for zn in LIDAR_NUT_Z:
-            s = s.cut(nut_slot((px, py, z0+zn), (math.cos(a), math.sin(a), 0.0),
-                               run=LIDAR_LEG_D/2+4.0))
-    ex = (math.cos(t), 0.0, -math.sin(t))                 # the seat plane's own x
-    for i in range(LIDAR_N):                              # L2 -> seat, 22.5 deg, normal to it
-        a = math.radians(360.0*i/LIDAR_N+LIDAR_L2_ANG)
-        r = LIDAR_L2_BC/2
-        p = tuple(seat[k] + r*math.cos(a)*ex[k] + r*math.sin(a)*(0.0, 1.0, 0.0)[k] + n[k]
-                  for k in range(3))
-        s = s.cut(cyl(M3_CLR, LIDAR_TOP_T+2.0, p, axis=dn))
+            s = s.cut(nut_slot((px, py, z0+zn), out, run=LIDAR_STEM_W/2))
+    for p in holes:
+        p = tuple(p[k] + n[k] for k in range(3))
+        s = s.cut(cyl(M3_CLR, LIDAR_TOP_T+LIDAR_STEM_T+2.0, p, axis=dn))
     return s
 
 def opi_com():
@@ -2420,7 +2444,7 @@ def camera_mount():
     block; what the geometry does is this.  The shelf spans the ledge and carries the
     board's lower edge in a slot.  The skirt behind the board steps back CAM_BACK ->
     CAM_BACK_HI where it passes the deck's top, because above that the only thing keeping
-    it out of the LiDAR pedestal is LIDAR_BASE_FLAT.  The wall in front exists only over
+    it out of the LiDAR bracket is LIDAR_BASE_FLAT.  The wall in front exists only over
     the board's UPPER half - lower down there is 0.5 mm to the fork arm and no wall fits -
     and it is cut away over the lens, which is what stops the mount vignetting its own
     camera.  The board goes in from the +y end and the same two screws that hold the mount
@@ -2454,7 +2478,7 @@ def camera_mount():
     # board, from the lens relief to the board's own end.  See the CAM_CAP block.
     s = s.union(bxc(CAM_BACK_HI, CAM_FRONT, CAM_LENS_D/2+CAM_LENS_REL, y1,
                     top, ptop+CAM_CAP))
-    # the two tabs to the pedestal's front bolts, and the patch of skirt + roof each one
+    # the two tabs to the bracket's front bolts, and the patch of skirt + roof each one
     # joins through: the skirt above the deck is 0.5 mm here, so the patch fills it back
     # to the board pocket (cut below, after this) and up to the roof's top.  On the -y
     # side that patch IS the roof over the pocket - the tie the +y side had from CAM_CAP.
@@ -2479,7 +2503,7 @@ def camera_mount():
 
 def cam_tab(px, py, grow=0.0):
     """One tab of the camera mount, in robot coordinates: a CAM_TAB_R pad round the
-    pedestal bolt at (px, py), a CAM_TAB_W bar from it back to the mount, CAM_TAB_T thick
+    bracket bolt at (px, py), a CAM_TAB_W bar from it back to the mount, CAM_TAB_T thick
     on the deck's top.  `grow` widens it by a clearance - that is the pocket lidar_mount
     cuts for it, so the two can never disagree."""
     z0 = BODY_Z1 + DECK_T
@@ -2489,7 +2513,7 @@ def cam_tab(px, py, grow=0.0):
                        z0, z0+CAM_TAB_T))
 
 def cam_tab_bolts():
-    """(x, y) of the pedestal's two front deck bolts - the ones the camera mount hangs
+    """(x, y) of the bracket's two front deck bolts - the ones the camera mount hangs
     on.  Read from the same circle lidar_mount() drills, so they cannot drift apart."""
     out = []
     for i in range(LIDAR_N):
@@ -2738,6 +2762,7 @@ def rom_scan_all(step=ROM_STEP):
                                              .union(mirX(gps_mount()))
                                              .union(camera_mount())
                                              .union(camera_module())
+                                             .union(lidar_module())
                                              .union(mv(servo_dummy(), ROLL_LOC))
                                              .union(mv(thrust_bolts(), ROLL_LOC)),
                              (ROLL_X, ROLL_Y, ROLL_Z), axis=(1,0,0),
@@ -3025,6 +3050,7 @@ def assembly(hb, th, sh, ft):
     a.add(PARTS["battery_lid"][0],    name="battery_lid",    color=dark)
     a.add(cell_holders(),             name="cell_holder",    color=grey)
     a.add(camera_module(),            name="camera",         color=dark)
+    a.add(lidar_module(),             name="lidar",          color=dark)
     srv = [mv(servo_dummy(), L) for _, L in JOINTS]
     hub = [mv(hubs(), L) for _, L in JOINTS]
     posed_parts = [("hip_bracket", hb, "hip"), ("thigh", th, "thigh"), ("shin", sh, "shin"),
@@ -3056,10 +3082,8 @@ PRINT_ORIENT = {"chassis_bottom": ((1,0,0),0), "chassis_top": ((1,0,0),0),
                 # the cell holder on its face, bores vertical: a 10 mm plate with
                 # six through holes, no overhang anywhere and nothing to support.
                 "cell_holder": ((0,1,0),90),
-                # base disc DOWN, which is what the part was drawn for and what
-                # lidar_mount()'s docstring says.  It was 180 - upside down on the seat,
-                # which has no flat at all: tools/orient_scan.py reads 4310 mm2 of
-                # overhang and ZERO bed area that way against 2392 and 1656 mm2 this way.
+                # base plate DOWN, as modelled: the stem and ribs go straight up, the
+                # seat disc's flanks overhang the stem at 41 deg off vertical at worst.
                 "lidar_mount": ((1,0,0),0),
                 "hip_bracket_A": ((0,1,0),90),
                 "hip_bracket_B": ((0,1,0),90), "thigh_A": ((1,0,0),90),
@@ -3112,7 +3136,8 @@ def main():
     # The camera module and the IMU board are not printed parts and so are not in PARTS,
     # but both are bolted to the same rigid body and both are the thing with ~1 mm of
     # clearance rather than the bracket that holds it - they have to be in this check.
-    for pname, psolid in (("camera", camera_module().val()), ("imu", imu_module().val())):
+    for pname, psolid in (("camera", camera_module().val()), ("imu", imu_module().val()),
+                          ("lidar", lidar_module().val())):
         for nm in BODY_PARTS:
             v = overlap(psolid, PARTS[nm][0].val())
             if v > INTERF_TOL:
@@ -3120,7 +3145,7 @@ def main():
     for na, nb, v in bad:
         print(f"  !! INTERFERENCE  {na} x {nb}  {v:.1f} mm3")
     if not bad:
-        print(f"  body clear: {' / '.join(BODY_PARTS)} + camera + imu share no solid")
+        print(f"  body clear: {' / '.join(BODY_PARTS)} + camera + imu + L2 share no solid")
     # ... and the two payload gaps interference() cannot see at all: the IMU against the
     # Orange Pi it now shares a standoff gap with, and the battery module's lid against
     # the deck.  The module IS a part, so its solids are covered above; what is not is
@@ -3148,17 +3173,6 @@ def main():
     else:
         print(f"  holder clear: both caps clear the case and all six cells"
               f" ({hc:.1f} / {hcell:.1f} mm3), {CELL_GAP:.1f} mm of air between cells")
-    # The LiDAR's own field of view is a geometric invariant like the interference check:
-    # the L2 sees nothing below its base plane, so any static bodywork above that plane is
-    # a permanent blind wedge in the direction that matters.  isValid() cannot see this and
-    # neither can rom_scan.
-    need = lidar_seat_min()
-    if LIDAR_SEAT_Z < need:
-        print(f"  !! LIDAR FOV  seat at {LIDAR_SEAT_Z:.1f} is below the {need:.1f} the body"
-              f" needs at {LIDAR_TILT:.0f} deg tilt - the deck is in the cone")
-    else:
-        print(f"  lidar clear: seat {LIDAR_SEAT_Z:.1f} vs {need:.1f} needed at"
-              f" {LIDAR_TILT:.0f} deg tilt ({LIDAR_SEAT_Z-need:+.1f} mm margin)")
     # ... and the same invariant per part, against the real 96 deg cone.  camera_mount is
     # the one that can go wrong quietly: it is the closest thing to the rim now.
     blocked, reach, spare = foot_bolt_check()
@@ -3245,7 +3259,7 @@ def main():
     else:
         print(f"  gps clear:   mast over the {OPI_BOX[0]:.0f}x{OPI_BOX[1]:.0f}x{OPI_BOX[2]:.0f}"
               f" Orange Pi envelope, seat {GPS_SEAT_Z:.0f}")
-    for nm in ("chassis_top", "gps_mount", "camera_mount"):
+    for nm in ("chassis_top", "lidar_mount", "gps_mount", "camera_mount"):
         mg = lidar_fov_clear(PARTS[nm][0])
         if mg < 0:
             print(f"  !! LIDAR FOV  {nm} is {-mg:.1f} deg INSIDE the cone")
@@ -3257,8 +3271,13 @@ def main():
     hf, vf = camera_fov()
     print(f"  camera:      {hf:.0f} x {vf:.0f} deg at "
           f"{CAM_PIX[0]}x{CAM_PIX[1]}, {CAM_TILT:+.0f} deg nose-up")
-    for nm in ("chassis_bottom", "chassis_top", "camera_mount"):
-        e = camera_clear(PARTS[nm][0])
+    # The L2 is in this loop because it is what sets LIDAR_SEAT_Z: it hangs over the lens,
+    # and a face band with the sensor's underside in it is a camera with no job.
+    for nm, wp in (("chassis_bottom", PARTS["chassis_bottom"][0]),
+                   ("chassis_top", PARTS["chassis_top"][0]),
+                   ("camera_mount", PARTS["camera_mount"][0]),
+                   ("lidar (L2)", lidar_module())):
+        e = camera_clear(wp)
         if e < -180.0 + 1e-6:
             print(f"  camera view: {nm:14s} out of frame")
         elif e > 19.0:
