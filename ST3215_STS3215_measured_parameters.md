@@ -343,7 +343,7 @@ Stated so nobody quotes an absence as a value:
 - **Temperature dependence** — every run above sat between 30 and 32 °C. Winding
   resistance rises with temperature and this does not capture that.
 - **Sample-to-sample spread** — four servos, and gearbox friction is where it is:
-  stiffness, torque constant and the back-EMF total agree to 5 %, while the friction floor
+  stiffness, torque constant and the back-EMF total agree to 3 %, while the friction floor
   runs 0.117–0.186 N·m and the load-dependent slope 0.251–0.380 N·m per N·m, with the
   lowest floor on the unit with the highest slope (`robot/README.md`, "Unit to unit"). Four
   of twelve, at 12 V only.

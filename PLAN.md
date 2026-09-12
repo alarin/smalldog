@@ -60,7 +60,7 @@ rig at `TORQUE_LIMIT` 800 and 1000 is that check, next rig session.
 measured rather than guessed.
 
 **Done:** four units through `holdbi` and `speed` at 12 V (`robot/README.md`, "Unit to
-unit"). Electrical side within 5 %; friction floor 0.64–1.01× and load slope 0.88–1.33× of
+unit"). Electrical side within 3 %; friction floor 0.64–1.01× and load slope 0.88–1.33× of
 the nominal. `tau_c`, `mu_load` and `kp` in `rl/params/domain_rand.json` are `measured`
 ranges now — 2.2× narrower than the guess on tau_c. A policy trained before this saw a
 wider world than exists; nothing needs retraining for it.
