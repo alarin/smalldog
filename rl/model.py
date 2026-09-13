@@ -263,7 +263,24 @@ def build_spec(terrain: bool = False, n_boxes: int = 0, p: actuator.Params | Non
                      "model will NOT go through mjx.put_model")
 
     # 6. procedural boxes, parked below the floor until randomisation lifts them.
+    #
+    #    They collide with the FEET and the SHINS only. As shipped they carried
+    #    conaffinity=6 — feet (2) and the whole collision class (4) — and the
+    #    collision class is ten body boxes plus the four shin capsules, so eight
+    #    terrain boxes were 144 pairs per environment, 80 of them box-box, the
+    #    pair MJX pays most for. Measured on the 5070 Ti: 8 boxes at 2048 envs
+    #    did not reach the first 6 M eval in 3 h 51 min, where flat takes 27 min.
+    #    A body box meeting a 22 mm terrain box is a robot already on the
+    #    floor, and the floor (conaffinity 15) still collides with everything.
+    #    The shins get a private bit (8) so they keep meeting the boxes without
+    #    dragging the body boxes along; the generated MJCF is not touched.
     if n_boxes:
+        shins = 0
+        for b in spec.bodies:
+            for g in b.geoms:
+                if g.type == mujoco.mjtGeom.mjGEOM_CAPSULE and g.contype:
+                    g.contype = int(g.contype) | 8
+                    shins += 1
         w = spec.worldbody
         side = int(np.ceil(np.sqrt(n_boxes)))
         for i in range(n_boxes):
@@ -277,12 +294,14 @@ def build_spec(terrain: bool = False, n_boxes: int = 0, p: actuator.Params | Non
                      -BOX_HALF[2] - 1.0]          # buried; z is the randomised axis
             g.rgba = [0.45, 0.42, 0.38, 1.0]
             g.condim = 3
-            g.contype = 1
-            g.conaffinity = 6                    # feet (2) and body collision (4)
+            g.contype = 0                        # nothing by its own bit: the body
+            g.conaffinity = 2 | 8                # boxes carry conaffinity 1 and would
+                                                 # answer contype 1. Feet (2), shins (8).
             g.friction = [1.0, 0.005, 0.0001]
             g.group = 3
         notes.append(f"{n_boxes} procedural boxes, {2*BOX_HALF[0]*1000:.0f} mm square, "
-                     f"buried at z={-BOX_HALF[2]-1.0:.2f} m until randomisation raises them")
+                     f"buried at z={-BOX_HALF[2]-1.0:.2f} m until randomisation raises them; "
+                     f"they collide with the 4 feet and {shins} shins only")
 
     # Not an edit — a reading, and it is in the notes because the observation
     # hangs off it. The `imu` site is generated out of 3d/mini_dog.py's IMU_*
