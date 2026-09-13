@@ -1843,9 +1843,10 @@ def chassis_bottom():
     pw, ph = PANEL_WIN                                        # the bus window, both ends
     lw, lh = PANEL_LOW                                        # ... and the low one
     for sx in (-1.0, 1.0):
-        xw = sx*BODY_L/2
-        s = s.cut(bxc(xw-sx, xw+sx*(WALL+1), -pw/2, pw/2, -ph/2, ph/2))
-        s = s.cut(bxc(xw-sx, xw+sx*(WALL+1), -lw/2, lw/2, PANEL_LOW_Z-lh/2, PANEL_LOW_Z+lh/2))
+        xw = sx*BODY_L/2                                      # the wall's outer face
+        xa, xb = sorted((xw+sx, xw-sx*(WALL+1)))              # 1 mm past both faces
+        s = s.cut(bxc(xa, xb, -pw/2, pw/2, -ph/2, ph/2))
+        s = s.cut(bxc(xa, xb, -lw/2, lw/2, PANEL_LOW_Z-lh/2, PANEL_LOW_Z+lh/2))
     # Rear connector panel - see the PANEL_* block.  Pad, then the pocket out of it, then
     # the lip's smaller opening through the wall's outer skin.  The pad is clamped at BOTH
     # ends: the XT30 sits high enough that an unclamped pad would stand proud of the
@@ -2881,15 +2882,24 @@ def panel_clear():
     lw, lh = PANEL_LOW
     tgt = []
     for end, sx in (("rear", -1.0), ("front", 1.0)):
-        tgt.append((f"{end} bus window", sx, 0.0, 0.0, pw, ph, body))
-        tgt.append((f"{end} low window", sx, 0.0, PANEL_LOW_Z, lw, lh, body))
+        tgt.append((f"{end} bus window", sx, 0.0, 0.0, pw, ph, body, True))
+        tgt.append((f"{end} low window", sx, 0.0, PANEL_LOW_Z, lw, lh, body, True))
     for cy, cz, (w, h) in PANEL_AT:
-        tgt.append((f"panel y{cy:+.0f} z{cz:+.0f}", -1.0, cy, cz, w, h, hard))
+        tgt.append((f"panel y{cy:+.0f} z{cz:+.0f}", -1.0, cy, cz, w, h, hard, False))
+    tray = PARTS["chassis_bottom"][0]
     out = {}
-    for name, sx, cy, cz, w, h, against in tgt:
+    for name, sx, cy, cz, w, h, against, window in tgt:
         xw = sx*BODY_L/2
         probe = bxc(xw+sx*CLR, xw+sx*PANEL_REACH, cy-w/2, cy+w/2, cz-h/2, cz+h/2)
-        out[name] = overlap(against.val(), probe.val())
+        v = overlap(against.val(), probe.val())
+        if window:
+            # ... and the opening itself, through the wall: a window cut on the wrong
+            # side of the wall's outer face once left 1.8 mm of skin and passed the probe
+            # above, which only looks outward.  (The XT30 pocket is lipped on purpose.)
+            xa, xb = sorted((xw+sx*CLR, xw-sx*(WALL+CLR)))
+            v += overlap(tray.val(), bxc(xa, xb, cy-w/2+CLR, cy+w/2-CLR,
+                                         cz-h/2+CLR, cz+h/2-CLR).val())
+        out[name] = v
     return out
 
 def node_box(sy=1.0):

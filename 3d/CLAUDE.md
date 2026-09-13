@@ -222,7 +222,7 @@ disagree. A "cosmetic" parameter still moves the moment arms `fea.py` derives.
 7. `rom_scan(..., step=2)` before committing to real joint limits; `export_sim.py
    --rom-step 2` re-scans.
 
-### Current baseline (2026-09-13, 2.495 kg)
+### Current baseline (2026-09-13, 2.493 kg)
 
 Inter-layer SF per load case. `stall` scales with `SERVO_STALL_NM` only, the three ground
 columns with `fea.robot_mass()`. Read `--orient` for `thigh_A` and `cradle_front`.
@@ -246,14 +246,17 @@ x −57.4..−49.1, |y| 12..30.6, z −6..23.9), `lidar fov 22.0 / 26.4 / 57.0 /
 (chassis_top / lidar_mount / gps_mount / camera_mount), `camera view: out of frame` for
 all four including the L2, `lidar ... +4 mm past the leading foot`.
 
-Step 6, same seeds: **flat trot 542.4 mm** (the cable windows, the rib and the tie
-slots: −1.3 g off the base link; the control — −1.3 g in `ELECTRONICS_KG` on the old
-geometry — reads 537.4, the previous tree 543.8); **terrain seeds 7…12: 417 ±40 mm on
-the three upright, 3/6 down (8, 10, 12)** — the control puts 8 and 12 down and 10 up
-(407 mm), the previous tree had 11 and 12 down: one distribution, moved by the gram;
-**course seeds 7/8/9: 2108 / 347 (down) / 961 mm** — the control reads 355 (down) / 2088
-on 8 / 9, so seed 8 is the mass cliff and seed 9 is the course being chaotic. The gait is
-hand-tuned and due a re-tune before any of this is read further.
+Step 6, same seeds: **flat trot 534.7 mm** (the four cable windows, the rib and the tie
+slots: −3.5 g, nearly all off the base link; the control — the same mass out of
+`ELECTRONICS_KG` on the previous geometry — reads 536.5, the previous tree 543.8);
+**terrain seeds 7…12: 485 / 420 mm on the two upright, 4/6 down (8, 9, 10, 12)** — the
+control puts 8 and 12 down and reads 483 / 452 / 274 / 385 on the rest, the previous tree
+had 11 and 12 down. Seeds 9 and 10 fall with the windows and stand without them at the
+same mass, on a metric that is chaotic in the gram; 4/6 against 2/6 is not a
+distinction at n = 6, and the gait's own re-tune is what settles it. **Course seeds
+7/8/9: 1423 / 310 (down) / 364 (down) mm** — the control reads 2283 / 321 (down) / 1190;
+seed 8 is the mass cliff both ways. The gait is hand-tuned and due a re-tune before any
+of this is read further.
 
 ### How to read step 6
 
