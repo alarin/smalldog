@@ -68,6 +68,11 @@ def parse():
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--terrain", action="store_true", help="heightfield scene")
     ap.add_argument("--boxes", type=int, default=0, help="procedural terrain boxes")
+    ap.add_argument("--box-height", type=float, default=None, metavar="M",
+                    help="cap of the per-environment box height draw, metres, "
+                         "overriding params/domain_rand.json's box_height_m_abs "
+                         "(0.022). The heightfield eval.py scores on has 0.05 "
+                         "features. Only meaningful with --boxes.")
     ap.add_argument("--no-randomize", action="store_true",
                     help="turn off the per-environment MODEL randomisation "
                          "(the per-episode servo draw stays; it lives in the env)")
@@ -179,9 +184,15 @@ def main():
 
     randomization = None
     if not a.no_randomize:
+        ranges = None
+        if a.box_height is not None:
+            import model as model_mod
+            ranges = model_mod.domain_ranges()
+            ranges["terrain"]["box_height_m_abs"]["range"] = [0.0, float(a.box_height)]
+            print(f"boxes       height draw 0 .. {a.box_height:g} m (json cap overridden)")
         randomization = functools.partial(
-            domain_randomize, n_boxes=a.boxes, box_geoms=env.box_geoms,
-            joint_dofs=env.joint_dofs)
+            domain_randomize, ranges=ranges, n_boxes=a.boxes,
+            box_geoms=env.box_geoms, joint_dofs=env.joint_dofs)
 
     networks = functools.partial(
         ppo_networks.make_ppo_networks,

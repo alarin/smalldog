@@ -132,6 +132,12 @@ def parse():
                     help="also run the obstacle course, in vanilla MuJoCo")
     ap.add_argument("--terrain", action="store_true",
                     help="sim-to-sim on the heightfield instead of the plane")
+    ap.add_argument("--terrain-seeds", type=int, default=0, metavar="N",
+                    help="N more heightfield rollouts from scattered start points "
+                         "(+-1.2 m, joint scatter +-1.1 deg), reported as mean +- sd "
+                         "of distance and a fall count. One rollout is a coin: "
+                         "the same policy read upright and FELL on consecutive "
+                         "days from the one start pose. Implies --terrain.")
     ap.add_argument("--shot", default=None, help="write one frame here")
     ap.add_argument("--mem-fraction", type=float, default=0.60)
     ap.add_argument("--json", default=None)
@@ -313,6 +319,8 @@ def main():
     # ========================================== vanilla MuJoCo, sim-to-sim
     print("\n== sim-to-sim: the SAME policy, vanilla MuJoCo ====================")
     surfaces = [("flat", False, False)]
+    if a.terrain_seeds:
+        a.terrain = True
     if a.terrain or targs["terrain"]:
         surfaces.append(("heightfield", True, False))
     if a.course:
@@ -337,6 +345,20 @@ def main():
               f"so the two do not scale into each other.\n"
               f"  Re-run with --seconds {BASELINE_SECONDS:g} to put them side by side.")
 
+    if a.terrain_seeds:
+        mj, _ = model_mod.build(terrain=True, n_boxes=0, mjx_safe=True)
+        runs = [rollout_mujoco(mj, policy_jit, env, p, cmd=(0.4, 0.0, 0.0),
+                               seconds=a.seconds, seed=s) for s in range(a.terrain_seeds)]
+        xs = np.array([r["x_m"] for r in runs]) * 1000
+        falls = sum(r["fell"] for r in runs)
+        sim["heightfield_seeds"] = dict(n=a.terrain_seeds, x_mm_mean=float(xs.mean()),
+                                        x_mm_sd=float(xs.std(ddof=1)) if len(xs) > 1 else 0.0,
+                                        falls=int(falls), runs=runs)
+        print(f"\n== heightfield, {a.terrain_seeds} scattered starts, {a.seconds:g} s ==========")
+        print(f"  travelled {xs.mean():7.1f} +- {xs.std(ddof=1) if len(xs) > 1 else 0:5.1f} mm, "
+              f"{falls} of {a.terrain_seeds} down"
+              + ("  (at " + ", ".join(f"{r['fell_at']:.1f}" for r in runs if r["fell"]) + " s)" if falls else ""))
+
     if not p.fitted:
         print("\n!! Every number above is against the DATASHEET servo, not a fit.")
         print(f"!! {p.source}")
@@ -349,7 +371,7 @@ def main():
     return 0
 
 
-def rollout_mujoco(mj, policy_jit, env, p, cmd, seconds, shot=None):
+def rollout_mujoco(mj, policy_jit, env, p, cmd, seconds, shot=None, seed=None):
     """Step the policy through the CPU engine.
 
     The observation is built by env.assemble_obs and env.stack_obs with xp=np,
@@ -378,6 +400,33 @@ def rollout_mujoco(mj, policy_jit, env, p, cmd, seconds, shot=None):
 
     d = mujoco.MjData(mj)
     d.qpos[:] = q0
+    if seed is not None:
+        # A different patch of the heightfield and a different first frame:
+        # the scatter gait.py uses (1.1 deg, 3 mm), plus a start point anywhere
+        # in the middle of the 4 x 4 m field. Distance is measured from it.
+        g = np.random.default_rng(seed)
+        d.qpos[0:2] = g.uniform(-1.2, 1.2, 2)
+        d.qpos[qadr] += g.uniform(-0.02, 0.02, 12)
+        # Stand on the ground that is actually there: a ray straight down from
+        # above the start point, so a start on a bump is a start ON it and not
+        # inside it. mj_ray needs geoms placed, hence the forward first.
+        mujoco.mj_forward(mj, d)
+        geomid = np.array([-1], dtype=np.int32)
+        # geomgroup: only group 0 — the ground and the course furniture. The
+        # robot's collision geoms are group 3 and its meshes group 2, and a ray
+        # from above would otherwise report the robot's own back as the ground.
+        ground_only = np.array([1, 0, 0, 0, 0, 0], dtype=np.uint8)
+        # Under each FOOT, not under the base: the field varies by 5 cm across
+        # the stance, and a foot spawned inside a bump is a fall at 0.1 s.
+        # The highest of the four is the one the robot has to stand on.
+        ground = -1.0
+        for fx, fy in [(0.09, 0.076), (0.09, -0.076), (-0.09, 0.076), (-0.09, -0.076)]:
+            dist = mujoco.mj_ray(mj, d, np.array([d.qpos[0] + fx, d.qpos[1] + fy, 1.0]),
+                                 np.array([0.0, 0.0, -1.0]), ground_only, 1, -1, geomid)
+            if dist >= 0:
+                ground = max(ground, 1.0 - dist)
+        d.qpos[2] = max(ground, 0.0) + q0[2] + g.uniform(-0.003, 0.003)
+    x0, y0 = float(d.qpos[0]), float(d.qpos[1])
     mujoco.mj_forward(mj, d)
 
     def sadr(name):
@@ -436,9 +485,9 @@ def rollout_mujoco(mj, policy_jit, env, p, cmd, seconds, shot=None):
 
     R = np.zeros(9)
     mujoco.mju_quat2Mat(R, d.qpos[3:7])
-    return dict(x_m=float(d.qpos[0]), y_m=float(d.qpos[1]), z_m=float(d.qpos[2]),
-                upright=float(R.reshape(3, 3)[2, 2]), fell=bool(fell),
-                fell_at=float(fell_at))
+    return dict(x_m=float(d.qpos[0]) - x0, y_m=float(d.qpos[1]) - y0,
+                z_m=float(d.qpos[2]), upright=float(R.reshape(3, 3)[2, 2]),
+                fell=bool(fell), fell_at=float(fell_at))
 
 
 def _write_shot(mj, d, path, w=1280, h=960):
