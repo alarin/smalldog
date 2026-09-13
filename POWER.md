@@ -25,7 +25,8 @@ this file is stale.
     +-- XT30   charge only, the one external connector, own branch fuse      7.5 A ATO
     +-- JST-XH 3S balance lead, stays in the case: balance-charge with the module out
     |
-    +--> raw pack ------> 12 x ST3215 on one bus          UNREGULATED, and deliberately so
+    +--> raw pack ------> 12 x ST3215: one 18 AWG pair PER LEG from the node, spliced
+    |                     at the hip; the bus leads carry data only   UNREGULATED, and deliberately so
     |
     +--> buck 12->5 V ---> Orange Pi 5 Pro
     |                        +-- 3.3 V header pin --> BMI088 IMU        (SPI, 2 x CS)
@@ -36,8 +37,8 @@ this file is stale.
 ```
 
 One connector leaves the tray. `PANEL_AT` puts the **XT30 above the cradle** at z = +20
-on the centreline (`3d/README.md`, *Payload bays*); the bus window is the only other
-opening. There is no XT60 - the load lead never leaves the tray - and no balance
+on the centreline (`3d/README.md`, *Payload bays*); the other openings are cable windows
+(a bus window and a low window in each end wall). There is no XT60 - the load lead never leaves the tray - and no balance
 pass-through. The charge shell is an XT30 so the wrong plug does not fit.
 
 ## The BMS is same-port, and there are two fuses
@@ -172,8 +173,47 @@ source or expects a PD negotiation it will not get from a buck module. If in dou
 the 5 V and GND header pins instead and accept that this bypasses the board's own input
 protection.
 
+## The node, and how the joints are made
+
+**The P+ and P− nodes are two WAGO 221-415 lever nuts** (5 × 0.14–4 mm² fine-stranded,
+32 A; 29.9 × 18.6 × 8.3 mm — vendor sheet, **verify** on the part), hot-glued in the
+rear strip standing on the upper cradle-screw seats, one each side of the centreline,
+levers inward (`NODE_*` in `mini_dog.py`; `node_clear()` checks the box every build).
+Five positions each: the pack lead in, four legs out. That is all the strip holds — it is
+17.6 mm deep and 14.8 behind the seats, and a 221 needs 18.6 along the wire, so a second
+pair cannot stand there. So the charge branch (7.5 A ATO → XT30) and the buck's feed take
+**ring terminals on the MIDI holder's load stud** (the NKI 6.0s), and the adapter's logic
+takes the buck's own IN terminals. Nothing solders onto the 12 AWG.
+
+Why not a solder splice or perfboard for the node: a 12 AWG + 4 × 18 AWG joint needs more
+heat than a hand iron delivers, solder wicks up stranded wire and every lead then breaks
+at the stiff edge, and nothing is serviceable; perfboard pads carry nothing like 30 A and
+the holes do not take 12 AWG. A drone PDB does the job for ~1000 RUB and adds only what
+the stud already gives.
+
+Per joint:
+
+| joint | how |
+|---|---|
+| node | 221-415, one conductor per clamp, strip 11 mm |
+| charge branch, buck feed | crimped rings on the MIDI holder's load stud |
+| leg splice at the hip (18 AWG → tails to `*2`, `*3`; `*1` gets its own tail in the tray) | lineman splice, soldered, adhesive-lined heatshrink, a tie ≤ 20 mm either side |
+| servo plugs | 5264 crimp housings, or the crimped ends of stock Feetech leads; **D only** on the jumpers between servos — ground comes back on the 18 AWG |
+| buck, adapter, ATO holder | the boards' screw terminals, ferrules |
+| bus star, D + G from the adapter's two ports | one Y-lead per port |
+
+Crimp what flexes; solder only what is tied down on both sides; no joint inside a moving
+span. The 470–1000 µF 25 V low-ESR sits on the buck's IN terminals, 12 V side — that is
+the nearest screw to the node it can reach. Near the Pi the useful capacitor is the buck's
+OUT one; a 12 V bulk cap there is on the wrong rail.
+
 ## Wiring, which is where the brownout is won or lost
 
+- **The leg pairs are the fix for the daisy chain.** As first wired, `*2` and `*3` drew
+  V+/GND through `*1`'s 5264 connector (~2.5 A a contact, **verify**): three stalled
+  servos is 8 A through it. One 18 AWG pair per leg from the node, out with the `*2` lead
+  across the roll arm (`3d/README.md`, *Cables*), spliced at the hip bracket. Check before
+  rework: log `PRESENT_POSITION`'s voltage byte on `*1` vs `*3` in a loaded trot.
 - **Star at the pack, not at the far end of the bus.** Take the converter's feed at the
   fused P+ node, not off a servo bus branch: every milliohm of the servo run turns those
   24 A transients into volts at the converter's input.
@@ -216,9 +256,10 @@ optional. This is the part of the answer that "one 12 → 5 V converter" does no
 
 ## What it costs the CAD
 
-`ELECTRONICS_KG = 0.25` is "Orange Pi 5 Pro / BMS / wiring" (`mini_dog.py:639`). A 5 A buck
-module at 15–25 g fits inside that allowance without moving the mass budget — but **there
-is no keep-out for it anywhere in the model**, and `3d/CLAUDE.md`'s rule is that anything
+`ELECTRONICS_KG = 0.195` is "Orange Pi 5 Pro / wiring" (`mini_dog.py`, section 4); the
+node's two lever nuts and the leg pairs are inside it. A 5 A buck module at 15–25 g fits
+inside that allowance without moving the mass budget — but **there is no keep-out for it
+anywhere in the model**, and `3d/CLAUDE.md`'s rule is that anything
 the robot carries lives once, in `mini_dog.py`. If a converter goes inside the body it
 becomes a modelled envelope there, like `OPI_BOX` is for the Pi, and it goes through the
 usual ladder (rebuild → FEA → `export_sim.py --check` → regenerate the ROS 2 description)

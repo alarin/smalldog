@@ -97,8 +97,8 @@ the Pi if skipped:
 
 ### What the CAD gets
 
-No board in the rear bay. The 8.85 mm strip becomes a cable route and, at most, a seat for
-a three-component inline circuit. The `ESP_X` divider rib goes, and `BATT_X` = 5.0 is
+No board in the rear bay. The `ESP_X` divider rib is gone (2026-09-13) and the strip
+holds the power node's two lever nuts (`NODE_*`, `../../../POWER.md`); `BATT_X` = 5.0 is
 freed from the 8.9 mm constraint it was chosen to satisfy.
 
 ## Prior art: people do drive these servos straight off an MCU UART

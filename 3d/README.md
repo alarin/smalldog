@@ -220,9 +220,14 @@ through the **lateral** wall, the neutral axis for the bending the knee does.
   What it cost: a case needs ~3.5 mm the bay did not have, and the only 3.5 mm near it was
   the IMU's slot, so the IMU moved onto the deck; the ESP32/URT-1 bay moved to x = −51; the
   eight deck screws all sit at |y| = 41 (at 38 the corner bosses bit 1.9 mm into the module).
-- **ESP32 + Feetech URT-1 bay** at x = −51, behind the module. See `ref/urt1/README.md`:
-  the URT-1 does not fit there and belongs on the bench; the robot wants a smaller
-  UART-native adapter, ordered and awaiting measurement.
+- **Power node**, in the rear strip behind the module: two WAGO 221-415 lever nuts
+  (5 × 4 mm², 32 A), P+ and P−, glued standing on the upper cradle-screw seats one each
+  side of the centreline, levers toward it (`NODE_*`, `node_clear()` every run). Five
+  positions each: the pack lead and the four legs' 18 AWG pairs. The strip is 17.6 mm
+  deep and a 221's wire entry is 18.6, so the blocks lie flat and there is room for one
+  pair only; the charge branch and the buck feed hang off the fuse holder's stud instead
+  (`POWER.md`). The ESP32/URT-1 rib that split this strip is gone — neither board is a
+  robot part (`ref/urt1/README.md`); the bus adapter is still to be placed once measured.
 - **IMU** (BMI088 breakout, 20 × 15 mm): on the deck's **top** face on the centreline, on two
   2 mm standoffs inside the Orange Pi's own standoff gap, component face down, headerless
   (`ref/imu/README.md`). The position is `imu_xyz()` and both simulators emit their `imu`
@@ -231,8 +236,11 @@ through the **lateral** wall, the neutral axis for the bending the knee does.
   25° on the centreline. The deck's cable window sits off-centre (`IMU_WINDOW`) to leave
   solid deck under the board; the two M2.5 form their own thread 5 mm into standoff and deck
   (*Screws into plastic*). Everything about the board is **verify**.
-- **Rear connector panel**: a 22 × 16 bus window on the centreline inside the cradle
-  flange's frame opening, and one connector, the **XT30** (charge, own fused branch),
+- **End-wall openings**, both ends: a 22 × 16 bus window on the centreline inside the
+  cradle flange's frame opening (the front one was missing — the front frame was a sealed
+  box with the roll servos' ports inside it), a 14 × 6 low window on the floor
+  (`PANEL_LOW`, z = −19) for the pitch and knee leads coming back under the cradle rail,
+  and at the rear only one connector, the **XT30** (charge, own fused branch),
   *above* the cradle at z = +20 on the centreline. Nothing else leaves the tray: the pack's
   P+ runs inside to the power node and the module's own lead is the master disconnect;
   the balance lead stays in the case (balance-charge with the module out). The connector
@@ -241,8 +249,8 @@ through the **lateral** wall, the neutral axis for the bending the knee does.
   — and the band between `CRADLE_Z1` and `BODY_Z1` is 9.64 mm for a 6.6 mm body. The
   XT30 sits in a pocket in a locally thickened wall, goes in **from inside, before the
   deck**, and stands 1.5 mm proud on a 0.8 mm lip that takes the unplug force. Charge
-  lead 18 AWG. `panel_clear()` probes both openings every run — the window against the
-  body, the connector against the body *and* the servos.
+  lead 18 AWG. `panel_clear()` probes all five openings every run — the windows against
+  the body, the connector against the body *and* the servos.
 - **Orange Pi 5 Pro**: four printed standoffs on the deck, 92 × 54 pattern — **verify**.
   That pattern puts the rear pair at x = −68 on a deck ending at −63, so the deck grows a
   tab under each rear standoff (`OPI_TAB_*`, guarded by `if OPI_TAB_X < -BODY_L/2`, so a
@@ -337,6 +345,31 @@ through the **lateral** wall, the neutral axis for the bending the knee does.
     bed against 126 the right way up, 339 mm² of overhang against 2238).
   - Optional: leave it off and put the two M3 × 12 back.
 
+## Cables
+
+Each leg's chain follows the kinematic chain, so every lead crosses exactly one joint:
+`*1` (roll) is body-fixed, `*2` (pitch) crosses the roll axis, `*3` (knee) crosses the
+pitch axis and nothing crosses the knee. Both moving servos' ports face **up** the leg.
+
+| lead | route | crossing |
+|---|---|---|
+| `*1` | port at the centreline, out through the cradle's duct and the bus window | — |
+| `*2` | up out of the port, over the hip bracket to the **driven roll arm's outer face**, through the axis, inboard to the centreline, back under the cradle rail on the centreline, in through the low window | roll, x = ±114 |
+| `*3` | straight up the thigh's **outer arm face** through the pitch axis to the pitch servo's second port | pitch, y = 100 |
+
+A crossing is the only open air on either axis: the passive arm has `FORK_GAP` to the
+flange and the spine sweeps r 23…31. Two tie slots (`FORK_TIE_*`, in `fork()`) hold the
+lead on the driven arm 16 and 20 mm from the axis on the link side, where the arm is the
+spine web and not the disc with the hub screws in it; from there to the proximal link's
+first anchor the lead runs free across the axis — that ~40 mm is the service loop. The
+return path stays on the centreline (|y| < 12): at z = −20 further out, the passive arm's
+web sweeps through at 90° of roll. The front legs' leads and the front star's trunk reach
+the rear strip **outside** the tray, side port to side port: inside, the side strips are
+blocked at x = ±18 by the mid deck bosses.
+
+Still open: the model puts the two roll servos' port ends 1.8 mm apart at |y| = 0.9, and a
+5264 plug wants ~10 mm. How the built robot plugs them is not in the CAD.
+
 ## Printed BOM
 
 | part | qty | material / settings |
@@ -410,6 +443,9 @@ Counts are per robot and come off the geometry: 12 joints × (one `sleeve()` + o
 | M3 × 12 (Unitree L2 → bracket seat, into the L2's own M3 threads) | 4 |
 | M3 × 24 (GPS mast + deck → tray boss, **replaces** the rear two deck screws) | 2 |
 | cable tie, 2.5 mm (GPS receiver → platform) | 2 |
+| cable tie, 2.5 mm (servo leads at the roll and pitch crossings, 2 per fork) | 16 |
+| WAGO 221-415 lever nut (power node, P+ and P−; hot glue) | 2 |
+| 18 AWG silicone, red + black (fused node → each leg, ~0.4 m a leg) | 2 × 1.6 m |
 
 Lengths that are derived, and where a longer screw is *not* the safe direction:
 
@@ -467,7 +503,8 @@ off repeatedly wants a nut. Both radii are **verify**: print a coupon first.
    until they bottom (see *The cradle joint*).
 4. Cradles onto the tray, **before the battery module**: spigots into their pockets, four
    M3 × 10 from *inside* the tray into the counterbored seats. The front seats sit 1.25 mm
-   off the module's face, so heads first, pack after.
+   off the module's face, so heads first, pack after. The power node's two lever nuts are
+   glued onto the rear upper seats **after** these screws — they cover them.
 5. Legs: hip bracket → thigh → shin → press the TPU foot onto the ⌀18 spigot → M3 × 30 up
    through the foot into the nut in the ankle slot (the slot is above the foot's top face,
    so the foot stays removable).
@@ -479,7 +516,8 @@ off repeatedly wants a nut. Both radii are **verify**: print a coupon first.
 7. Chassis, in this order because half the nuts stop being reachable: 8 M3 nuts into the
    tray bosses' slots (**all eight before the module**) → XT30 into its pocket from
    inside → battery module into its seat, foam
-   strip on its lid, servo bus out through the side ports (never across the top) → 4 M3
+   strip on its lid, servo bus and leg power out through the side ports and the low
+   windows (never across the top) → 4 M3
    nuts into the LiDAR bracket's bosses (front pair from the sides) → camera mount's two
    tabs into the plate's underside pockets
    → bracket bolted to the deck **from underneath, deck off**, its two front M3 through
@@ -567,6 +605,7 @@ change both.
 
 - Stance is tall (~160 mm ground clearance nominal): good for snow, less good for tipping.
 - The thigh is a plain constant-section box with unblended corners.
-- No shell/covers, no connector strain reliefs.
+- No shell/covers; strain relief only at the two joint crossings (*Cables*), none at the
+  ports.
 - The ROM scan is a 10° sweep; refine with `step=2` before committing to joint limits, and
   ±90° of roll/pitch is the scan window, not a measured stop.

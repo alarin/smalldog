@@ -63,11 +63,23 @@ ARM_R      = 13.5
 ARM_BOT_TOP = -17.90                  # bottom-arm top face (0.4 under the case base)
 FORK_Y0, FORK_Y1 = ARM_BOT_TOP-ARM_T, HUB_TOP_Z+ARM_T   # fork outer faces, on the axis
 SPINE_R0, SPINE_R1, SPINE_W = 23.0, 31.0, 28.0
+# Where the next link's servo lead crosses this joint: on the DRIVEN arm's outer face,
+# through the axis - the only open air on either axis (the passive arm has FORK_GAP to
+# the flange, the spine sweeps 23..31).  Two ties hold it there, on the link side of the
+# axis where the arm is the SPINE_W web and not the ARM_R disc with the hub screws in
+# it: slots at FORK_TIE_X along the link, +-FORK_TIE_Y across the cable.  The tie's back
+# runs on the arm's inner face at r 16..20, in the 2.8 mm between hub plate and case
+# top (HUB_TOP_Z - S_H/2), past the case's output end and above the sleeve and the
+# thrust lug, which stop at the sleeve's length.  The cable then runs free across the
+# axis to the proximal link's first anchor: that ~40 mm is the service loop.
+FORK_TIE_X = (-16.0, -20.0)
+FORK_TIE_Y = 5.0
 LIGHT_L, LIGHT_D = 20.0, 12.0         # sleeve cooling window: obround, length x width
 M25_CLR, M3_CLR = 1.45, 1.70          # clearance-hole RADII: @2.9 / @3.4
 M25_NUT_AF, M25_NUT_H = 5.00, 2.00
 M3_NUT_AF, M3_NUT_H = 5.60, 2.70
 NUT_CLR    = 0.25                     # slide fit on a nut pocket's flats
+TIE_SLOT   = (3.4, 1.6)               # a 2.5 mm cable tie's slot: along the band x across
 # Thread-FORMING radii, for the one case a nut is not required: a cover or a bracket that
 # carries no torque path (see README, "Screws into plastic").  The screw cuts its own
 # thread, so the hole is between the thread's minor and pitch diameter - M3 is 2.459 and
@@ -403,10 +415,6 @@ BATT_VENT_D = 4.0                     # two vents high in the rear wall.  A seal
                                       # around six cells is the wrong kind of safe - a
                                       # cell that vents has to have somewhere to go, and
                                       # it goes out the back, away from the electronics.
-ESP_RIB_Y = 13.5                      # ... and its half length: clear of the driver run
-                                      # to the lower pair of rear CRADLE_BOLT screws
-ESP_X     = -51.0                     # the ESP32 + URT-1 divider rib, behind the
-                                      # module and in front of the connector panel's pads
 BATT_WIRE = (14.0, 8.0)               # grommet slot in the rear wall: the pack leads, to
                                       # the power node inside the tray.  The 3S balance
                                       # lead stays in the case - balance charge with the
@@ -610,6 +618,30 @@ PANEL_WIN    = (22.0, 16.0)           # the bus window: w x h, on the centreline
 PANEL_AT     = ((0.0, 20.0, PANEL_XT30),)     # (y, z, size) - ABOVE the cradle, on
                                       # the centreline.  y = +-32 at z = 0 is behind a
                                       # servo; y = +-32 at z = 20 is in a deck boss.
+# The bus window is cut in BOTH end walls now - the front cradle's frame was a sealed box
+# with the two front roll servos' ports inside it.  And each wall has a second, low
+# opening for the pitch and knee leads coming back under the cradle rail on the
+# centreline (README, "Cables"): the band below the flange, CRADLE_Z1 to the floor, is
+# 6.64 mm, so it sits on the floor.  Not off the centreline: at |y| > 12 and z = -20 the
+# passive fork arm's web sweeps through at 90 deg of roll.
+PANEL_LOW    = (14.0, 6.0)            # w x h, on the centreline, floor up
+PANEL_LOW_Z  = BODY_Z0 + 3.0 + PANEL_LOW[1]/2
+# The power node: where the fused P+ and the BMS's P- each meet the four legs' 18 AWG
+# pairs.  Two WAGO 221-415 lever nuts (5 x 4 mm2, 32 A; 29.9 x 18.6 x 8.3 - vendor
+# sheet, **verify** on the part), one per polarity, glued in the rear strip: standing on
+# the upper cradle-screw seats, one each side of the centreline, levers toward it, so the
+# pack leads (grommet, z +-4) and the leg pairs (PANEL_LOW, on the floor) both arrive
+# from the middle.  There is no room for a second pair: the strip is 17.6 deep, 14.8
+# behind the seats, and a 221's wire entry is 18.6 - it cannot stand on end.  Five
+# positions: the pack lead and four legs.  The charge branch and the buck feed take the
+# fuse holder's stud instead (POWER.md).  The blocks cover the rear cradle's upper
+# screws: they go in after the cradle is bolted on and come out (unglued) before it does.
+# Not a part - node_clear() probes the box against everything printed and the servos.
+WAGO_L, WAGO_W, WAGO_H = 29.9, 18.6, 8.3   # 221-415: along the wire, across, thick
+NODE_X0   = -BODY_L/2 + WALL + CRADLE_SEAT   # glued to the seats' faces
+NODE_Y0   = 12.0                      # inboard edge: past the XT30 pad's +-9 and the
+                                      # lower seats' driver run
+NODE_Z0   = -6.0                      # its foot on the lower seats' top edge
 OPI_X        = -22.0                  # Orange Pi 5 Pro board centre on the deck
 OPI_HOLES    = (92.0, 54.0)
 OPI_STAND_R, OPI_STAND_H = 4.8, 7.0   # standoff: r fits an M2.5 nut slot, h clears the nut
@@ -943,7 +975,7 @@ GPS_PLATE    = (40.0, 52.0, 3.0)      # platform x, y, t
 GPS_SEAT_Z   = GPS_KNEE[1] + (GPS_KNEE[0]-GPS_LAND) + GPS_PLATE[2]   # derived - see above
 GPS_BOARD    = (36.0, 26.0, 1.6)      # GY-NEO6MV2 PCB                        **verify**
 GPS_ANT      = (25.0, 25.0, 8.0)      # its active ceramic patch              **verify**
-GPS_TIE      = (3.4, 1.6)             # cable-tie slot through the platform
+GPS_TIE      = TIE_SLOT               # cable-tie slot through the platform
 GPS_TIE_X    = 14.0                   # ... at +-this, i.e. outside the 25 mm patch
 GPS_PHASE    = 6.0                    # patch phase centre, up from the patch's base plane
 GPS_STACK    = (GPS_BOARD[0], GPS_BOARD[1], GPS_BOARD[2]+GPS_ANT[2]+2.5)   # mass envelope
@@ -1512,8 +1544,9 @@ def head_clear():
     spare_d = (HUB_TOP_Z - HUB_T_TOP - S_H/2) - (HUB_SCREW_L - ARM_T - HUB_T_TOP)
     return gap, spare_p, spare_d
 
-def fork(spine_r0=SPINE_R0, spine_r1=SPINE_R1, spine_w=SPINE_W):
-    """distal-link end; link direction is servo -X."""
+def fork(spine_r0=SPINE_R0, spine_r1=SPINE_R1, spine_w=SPINE_W, ties=True):
+    """distal-link end; link direction is servo -X.  ties: the two cable-tie slot pairs
+    in the driven arm (FORK_TIE_*) - every fork but the shin's, which no lead crosses."""
     def arm(z0, z1):
         a = cyl(ARM_R, z1-z0, (0,0,z0))
         a = a.union(bxc(-spine_r1, 0.0, -spine_w/2, spine_w/2, z0, z1))
@@ -1549,7 +1582,14 @@ def fork(spine_r0=SPINE_R0, spine_r1=SPINE_R1, spine_w=SPINE_W):
     # arrived.  Only the hole grew - @2.9 to @3.4 - so a leg already printed can be
     # drilled out rather than reprinted; the counterbore can be spot-faced the same way.
     spine = bxc(-spine_r1, -spine_r0, -spine_w/2, spine_w/2, ARM_BOT_TOP-ARM_T, HUB_TOP_Z+ARM_T)
-    return top.union(bot).union(spine)
+    s = top.union(bot).union(spine)
+    if ties:                                      # see FORK_TIE_*: through the driven arm
+        ta, tb = TIE_SLOT
+        for tx in FORK_TIE_X:
+            for sy in (1.0, -1.0):
+                s = s.cut(bxc(tx-ta/2, tx+ta/2, sy*FORK_TIE_Y-tb/2, sy*FORK_TIE_Y+tb/2,
+                              HUB_TOP_Z-1.0, HUB_TOP_Z+ARM_T+1.0))
+    return s
 
 # =====================================================================================
 # joint frames (front-left leg, zero pose = legs straight down)
@@ -1777,8 +1817,9 @@ def chassis_bottom():
     # ESP_RIB_Y and not BMS_W/2+1.5: that half width was the BMS bay's and the BMS went
     # inside the battery module, so it was already stale - and at 15.0 it took 0.5 mm out
     # of the driver's run to the two lower REAR cradle screws.  cradle_clear() found it.
-    s = s.union(bxc(ESP_X-1.5, ESP_X+1.5, -ESP_RIB_Y, ESP_RIB_Y,
-                    BODY_Z0+3, BODY_Z0+16))
+    # (The ESP32/URT-1 divider rib stood here at x = -51 until 2026-09-13.  Neither board
+    # is a robot part - ref/urt1/README.md - and the rib split the strip the power node
+    # needs; see NODE_*.)
     # deck bosses.  The deck screw lands in a nut, not in a printed thread: the boss is
     # drilled M3 clearance and carries a nut slot near its top, opening toward the middle
     # of the tray - the one direction that is open air with the deck off, which is when
@@ -1799,8 +1840,12 @@ def chassis_bottom():
     for y in (-BODY_W/2-1, BODY_W/2-WALL-1):                  # vents / side cable ports
         for x in (-34.0, 0.0, 34.0):
             s = s.cut(bxc(x-11, x+11, y, y+WALL+2, -4.0, 14.0))
-    pw, ph = PANEL_WIN                                        # the bus window
-    s = s.cut(bxc(-BODY_L/2-1, -BODY_L/2+WALL+1, -pw/2, pw/2, -ph/2, ph/2))
+    pw, ph = PANEL_WIN                                        # the bus window, both ends
+    lw, lh = PANEL_LOW                                        # ... and the low one
+    for sx in (-1.0, 1.0):
+        xw = sx*BODY_L/2
+        s = s.cut(bxc(xw-sx, xw+sx*(WALL+1), -pw/2, pw/2, -ph/2, ph/2))
+        s = s.cut(bxc(xw-sx, xw+sx*(WALL+1), -lw/2, lw/2, PANEL_LOW_Z-lh/2, PANEL_LOW_Z+lh/2))
     # Rear connector panel - see the PANEL_* block.  Pad, then the pocket out of it, then
     # the lip's smaller opening through the wall's outer skin.  The pad is clamped at BOTH
     # ends: the XT30 sits high enough that an unclamped pad would stand proud of the
@@ -2645,7 +2690,7 @@ def shin_beam():
 
 def shin():
     zf = FOOT_Z
-    s = mv(fork(), KNEE_LOC).union(shin_beam())   # the fork spine caps the box at the top
+    s = mv(fork(ties=False), KNEE_LOC).union(shin_beam())   # the fork spine caps the box at the top
     s = s.union(cyl(SPIGOT_R, SPIGOT_H, (PITCH_X, LEG_Y, zf+SPIGOT_Z0)))   # foot spigot
     # Foot bolt.  This one used to be an M3 self-tapped straight up the spigot - the worst
     # thread-into-plastic on the robot: impact-loaded, and in pull-out on every step.  Now
@@ -2832,16 +2877,41 @@ def panel_clear():
             continue
         body = PARTS[nm][0] if body is None else body.union(PARTS[nm][0])
     hard = body.union(servo_hardware())
-    xw = -BODY_L/2
     pw, ph = PANEL_WIN
-    tgt = [("bus window", 0.0, 0.0, pw, ph, body)]
+    lw, lh = PANEL_LOW
+    tgt = []
+    for end, sx in (("rear", -1.0), ("front", 1.0)):
+        tgt.append((f"{end} bus window", sx, 0.0, 0.0, pw, ph, body))
+        tgt.append((f"{end} low window", sx, 0.0, PANEL_LOW_Z, lw, lh, body))
     for cy, cz, (w, h) in PANEL_AT:
-        tgt.append((f"panel y{cy:+.0f} z{cz:+.0f}", cy, cz, w, h, hard))
+        tgt.append((f"panel y{cy:+.0f} z{cz:+.0f}", -1.0, cy, cz, w, h, hard))
     out = {}
-    for name, cy, cz, w, h, against in tgt:
-        probe = bxc(xw-PANEL_REACH, xw-CLR, cy-w/2, cy+w/2, cz-h/2, cz+h/2)
+    for name, sx, cy, cz, w, h, against in tgt:
+        xw = sx*BODY_L/2
+        probe = bxc(xw+sx*CLR, xw+sx*PANEL_REACH, cy-w/2, cy+w/2, cz-h/2, cz+h/2)
         out[name] = overlap(against.val(), probe.val())
     return out
+
+def node_box(sy=1.0):
+    """One of the two 221-415 lever nuts of the power node (NODE_*), as a keep-out."""
+    return bxc(NODE_X0, NODE_X0+WAGO_H, sy*NODE_Y0, sy*(NODE_Y0+WAGO_W),
+               NODE_Z0, NODE_Z0+WAGO_L)
+
+def node_clear():
+    """Do the power node's two lever nuts fit where NODE_* puts them?  Returns
+    {side: blocked_mm3}; 0.0 is the only passing value.  Probed against every body part
+    and the servos, because a lever nut is not a part and interference() cannot see it -
+    the same blindness batt_clear() and imu_clear() exist for.  The one thing it does not
+    ask is whether the wires can get in: the levers face the centreline, and that side is
+    the strip's own air by construction (NODE_Y0)."""
+    body = None
+    for nm in BODY_PARTS:
+        if nm not in PARTS:
+            continue
+        body = PARTS[nm][0] if body is None else body.union(PARTS[nm][0])
+    hard = body.union(servo_hardware())
+    return {("+y" if sy > 0 else "-y"): overlap(hard.val(), node_box(sy).val())
+            for sy in (1.0, -1.0)}
 
 def cradle_clear():
     """Can a driver reach the four screws that hold each cradle on?  Returns
@@ -3218,8 +3288,19 @@ def main():
         print(f"  !! PANEL  the {k} opening has {v:.0f} mm3 of solid in front of it -"
               f" nothing can be plugged in or routed out there")
     if not bad:
-        print(f"  panel clear: bus window {PANEL_WIN[0]:.0f}x{PANEL_WIN[1]:.0f} open to the"
-              f" rear roll servos, XT30 clear of body and servos over {PANEL_REACH:.0f} mm")
+        print(f"  panel clear: bus windows {PANEL_WIN[0]:.0f}x{PANEL_WIN[1]:.0f} open to the"
+              f" roll servos at both ends, low windows {PANEL_LOW[0]:.0f}x{PANEL_LOW[1]:.0f}"
+              f" at z {PANEL_LOW_Z:+.0f} open under the rails, XT30 clear of body and"
+              f" servos over {PANEL_REACH:.0f} mm")
+    nc = node_clear()
+    bad = {k: v for k, v in nc.items() if v > INTERF_TOL or v < 0}
+    for k, v in bad.items():
+        print(f"  !! NODE  the {k} lever nut has {v:.0f} mm3 of solid in its box -"
+              f" the power node does not fit the rear strip")
+    if not bad:
+        print(f"  node clear: two 221-415 at x {NODE_X0:.1f}..{NODE_X0+WAGO_H:.1f},"
+              f" |y| {NODE_Y0:.0f}..{NODE_Y0+WAGO_W:.1f}, z {NODE_Z0:.0f}..{NODE_Z0+WAGO_L:.1f},"
+              f" levers to the centreline")
     hv, hgap = cradle_head_clear()
     if hv > INTERF_TOL or hv < 0:
         print(f"  !! CRADLE HEAD  {hv:.0f} mm3 of screw head inside the battery module -"
