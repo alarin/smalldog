@@ -454,6 +454,8 @@ def main():
     ap.add_argument("--preflight", action="store_true", help="check everything, no motion")
     ap.add_argument("--stand", action="store_true", help="stand up and hold, no gait")
     ap.add_argument("--profile", action="store_true", help="run the scripted demo")
+    ap.add_argument("--go", type=float, metavar="S",
+                    help="stand 2 s, walk straight at --speed for S seconds, stand; a distance run")
     ap.add_argument("--seconds", type=float, default=None)
     ap.add_argument("--ramp", type=float, default=2.0, help="s to stand up in")
     ap.add_argument("--no-sit", action="store_true", help="cut torque where it stands")
@@ -617,11 +619,16 @@ def main():
                 tick = TickLog(rt, gait, lambda: (0.0, 0.0, 0.0)) if a.log else None
                 rt.run(lambda dt_, fb: gait.joint_targets(dt_, 0.0, 0.0, 0.0),
                        seconds=a.seconds, on_tick=tick)
-            elif a.profile or not Teleop.available():
-                if not a.profile:
-                    print("no TTY for the keyboard; running the scripted profile")
-                cmd = profile_source(PROFILE if a.as_commanded
-                                     else clamp_profile(PROFILE, a.speed, a.turn))
+            elif a.go or a.profile or not Teleop.available():
+                if a.go:
+                    steps = [(2.0, 0.0, 0.0, 0.0), (a.go, a.speed, 0.0, 0.0), (1.5, 0.0, 0.0, 0.0)]
+                    print(f"straight run: {a.go:.0f} s at {a.speed:.2f} m/s, "
+                          f"about {a.go * a.speed:.1f} m")
+                else:
+                    if not a.profile:
+                        print("no TTY for the keyboard; running the scripted profile")
+                    steps = PROFILE if a.as_commanded else clamp_profile(PROFILE, a.speed, a.turn)
+                cmd = profile_source(steps)
 
                 last = [0.0, 0.0, 0.0]
 
