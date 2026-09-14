@@ -154,9 +154,13 @@ ladders mean three different things.
 | `train_ppo.py` | MJX + Brax PPO, a checkpoint per eval — step 5 |
 | `eval.py` | deterministic rollouts, metrics, sim-to-sim in vanilla MuJoCo — step 5 |
 | `replay.py` | a herd of checkpoints replayed kinematically, to mp4 — step 5 |
+| `export_onnx.py` | the policy and its normaliser as one ONNX graph + a JSON sidecar, verified against brax before it is written — step 6 |
 | `runs/` | ignored |
 
-Step 6 — the ONNX export of the policy and its observation normaliser in one
-graph — has no file yet. There used to be an `export_onnx.py` row here, naming
-something that was never written.
+Step 6 is `export_onnx.py`: `python export_onnx.py runs/<name> --bench` writes
+`runs/<name>/policy.onnx` (normaliser + MLP + tanh, opset 13, ~260 kB) and
+`policy.json` (observation layout and scalings, action scale, stance, soft limits,
+joint order). It refuses to write if onnxruntime and brax disagree by more than
+1e-5 on 512 observations. The robot side is `robot/runtime/policy.py`; the two
+files cross machines as files, not through git (`runs/` is ignored).
 

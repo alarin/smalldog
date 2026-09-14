@@ -70,8 +70,10 @@ Two things the bus does, understood and not:
 
 `loop.Runtime` takes `source(dt, feedback) -> 12 joint angles` in `robot_params.json`'s
 joint order and does the bus, the timing and the safety layer around it. Today the source
-is `smalldog_walker`'s analytic trot, imported from `ros2/` (pure Python); tomorrow the ONNX
-policy out of `rl/`. Neither gets its own idea of a soft limit.
+is `smalldog_walker`'s analytic trot, imported from `ros2/` (pure Python), or the ONNX
+policy out of `rl/` through `runtime/policy.py` (`pip install onnxruntime spidev`; the IMU
+driver is `imu/bmi088.py`, SPI, two chip selects, `--selftest` first and then `--ids` on the
+chip). Neither gets its own idea of a soft limit.
 
 ### Bring-up
 
@@ -188,8 +190,10 @@ old behaviour and names the defect. `walk.py --dry-run --profile`:
 | 0.12 and up | — | — | — | infeasible at any period |
 
 Ground runs at the previous fit (0.14 / 1.20 s) measured **350–450 mm in 3 s = 0.12–0.15 m/s
-against 0.067** — the cap is a faster robot than the drag was. Nothing has measured
-0.11 / 1.35 on the ground yet. `feasible_turn()` fits the turn the same way: the teleop's
+against 0.067** — the cap is a faster robot than the drag was. **At 0.11 / 1.35 s: 660 mm
+in 8 s = 0.083 m/s**, 75 % of the command, on the 1 m bench at 2.5 kg (three 18650 in the
+new case, 12.3–12.7 V, 0.25 A peak, 30° peak tracking error, no drag) — the longer stride
+slips more than the 0.14 point did. `feasible_turn()` fits the turn the same way: the teleop's
 1.2 rad/s is capped to 0.65; `clamp_profile()` caps the scripted demo's own velocities.
 
 The sim does not have this bug — MuJoCo's feet grip at μ ≈ 1.2 — so `gait.py` is untouched;
