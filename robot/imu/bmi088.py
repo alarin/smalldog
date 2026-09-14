@@ -1,16 +1,18 @@
 #!/usr/bin/env python
 """
-bmi088.py — the BMI088 over SPI, and the gravity vector the policy is trained on.
+bmi088.py — the BMI088 over I2C, and the gravity vector the policy is trained on.
 
     python imu/bmi088.py --selftest                      # no hardware: a fake chip
-    python imu/bmi088.py --bus 0 --cs-accel 0 --cs-gyro 1 --ids      # chip IDs only
-    python imu/bmi088.py --bus 0 --cs-accel 0 --cs-gyro 1            # stream, 50 Hz
-    python imu/bmi088.py --bus 0 --cs-accel 0 --cs-gyro 1 --bias 5   # 5 s still, gyro bias
+    python imu/bmi088.py --ids                           # find the two dies on the bus
+    python imu/bmi088.py                                 # stream, 50 Hz
+    python imu/bmi088.py --bias 5                        # 5 s still, gyro bias
+    python imu/bmi088.py --i2c-bus 1 --acc-addr 0x19 --gyro-addr 0x69
 
-The BMI088 is two dies with two chip selects (POWER.md: "SPI, 2 x CS"), and the
-two speak slightly different SPI: the accelerometer answers a read with one dummy
-byte before the data and needs one dummy read after power-up to leave I2C mode;
-the gyroscope does neither. Both return little-endian int16 x, y, z.
+The BMI088 is two dies with two I2C addresses: accelerometer 0x18 or 0x19 (SDO1
+pin), gyroscope 0x68 or 0x69 (SDO2). `--ids` probes all four and says which
+answered with the right chip ID (0x1E and 0x0F). The default bus is the Orange
+Pi 5 Pro's header I2C; `i2cdetect -y N` shows which N has the pair once the
+overlay is on. Both dies return little-endian int16 x, y, z.
 
 What the policy needs, and why not the quaternion
 -------------------------------------------------
@@ -27,8 +29,8 @@ after power-on the robot should be standing still.
 Axes
 ----
 `AXES` maps the chip's (x, y, z) onto the model's base_link frame: x forward
-(nose), y left, z up. It is a guess until `--selftest` has been run on the
-robot: level, the stream must read gravity ~(0, 0, -1) and accel ~(0, 0, +9.8);
+(nose), y left, z up. It is a guess until the stream has been read on the
+robot: level, it must read gravity ~(0, 0, -1) and accel ~(0, 0, +9.8);
 nose DOWN must send gravity's x POSITIVE (the body's x axis now points partly
 at the ground, so gravity has a component along it) and the accelerometer's x
 negative; rolled onto its LEFT side (y axis toward the ground), gravity's y
@@ -70,48 +72,65 @@ def remap(v, axes=AXES):
 
 
 # ----------------------------------------------------------------- the chip
-class BMI088:
-    """Two spidev handles and the register dance. Units out: m/s^2 and rad/s."""
+ACC_ADDRS, GYR_ADDRS = (0x18, 0x19), (0x68, 0x69)
 
-    def __init__(self, bus=0, cs_accel=0, cs_gyro=1, hz=10_000_000, axes=AXES):
-        import spidev
-        self.acc = spidev.SpiDev(); self.acc.open(bus, cs_accel)
-        self.gyr = spidev.SpiDev(); self.gyr.open(bus, cs_gyro)
-        for dev in (self.acc, self.gyr):
-            dev.max_speed_hz = hz
-            dev.mode = 0b00
+
+def probe(bus_no):
+    """Which of the four addresses answer with a BMI088 chip ID: {addr: id}."""
+    from smbus2 import SMBus
+    found = {}
+    with SMBus(bus_no) as b:
+        for addr, reg, want in [(a, ACC_CHIP_ID, ACC_CHIP_ID_VALUE) for a in ACC_ADDRS] + \
+                               [(a, GYR_CHIP_ID, GYR_CHIP_ID_VALUE) for a in GYR_ADDRS]:
+            try:
+                v = b.read_byte_data(addr, reg)
+            except OSError:
+                continue
+            found[addr] = (v, v == want)
+    return found
+
+
+class BMI088:
+    """One smbus2 handle, two addresses, the register dance. Units out: m/s^2, rad/s."""
+
+    def __init__(self, bus=1, acc_addr=None, gyro_addr=None, axes=AXES):
+        from smbus2 import SMBus
+        self.bus = SMBus(bus)
+        if acc_addr is None or gyro_addr is None:
+            hits = probe(bus)
+            accs = [a for a, (v, ok) in hits.items() if ok and a in ACC_ADDRS]
+            gyrs = [a for a, (v, ok) in hits.items() if ok and a in GYR_ADDRS]
+            if not accs or not gyrs:
+                raise RuntimeError(f"BMI088 not found on i2c-{bus}: answered {hits or 'nothing'} "
+                                   f"— bus number, overlay, SDO pins or wiring")
+            acc_addr, gyro_addr = acc_addr or accs[0], gyro_addr or gyrs[0]
+        self.acc_addr, self.gyr_addr = acc_addr, gyro_addr
         self.axes = axes
         self._acc_scale = None
         self._gyr_scale = None
 
-    # accel: address | 0x80, one dummy byte, then data
     def _acc_read(self, reg, n=1):
-        r = self.acc.xfer2([reg | 0x80, 0x00] + [0x00] * n)
-        return bytes(r[2:])
+        return bytes(self.bus.read_i2c_block_data(self.acc_addr, reg, n))
 
     def _acc_write(self, reg, val):
-        self.acc.xfer2([reg & 0x7F, val & 0xFF])
+        self.bus.write_byte_data(self.acc_addr, reg, val & 0xFF)
 
-    # gyro: address | 0x80, then data
     def _gyr_read(self, reg, n=1):
-        r = self.gyr.xfer2([reg | 0x80] + [0x00] * n)
-        return bytes(r[1:])
+        return bytes(self.bus.read_i2c_block_data(self.gyr_addr, reg, n))
 
     def _gyr_write(self, reg, val):
-        self.gyr.xfer2([reg & 0x7F, val & 0xFF])
+        self.bus.write_byte_data(self.gyr_addr, reg, val & 0xFF)
 
     def ids(self):
-        self._acc_read(ACC_CHIP_ID)                 # the dummy read that selects SPI
-        time.sleep(0.001)
         return self._acc_read(ACC_CHIP_ID)[0], self._gyr_read(GYR_CHIP_ID)[0]
 
     def configure(self):
         acc_id, gyr_id = self.ids()
         if acc_id != ACC_CHIP_ID_VALUE or gyr_id != GYR_CHIP_ID_VALUE:
-            raise RuntimeError(f"BMI088 not found: accel id 0x{acc_id:02X} (want 0x1E), "
-                               f"gyro id 0x{gyr_id:02X} (want 0x0F) — bus, CS or wiring")
+            raise RuntimeError(f"BMI088 ids wrong: accel 0x{acc_id:02X} (want 0x1E) at "
+                               f"0x{self.acc_addr:02X}, gyro 0x{gyr_id:02X} (want 0x0F) at "
+                               f"0x{self.gyr_addr:02X}")
         self._acc_write(ACC_SOFTRESET, 0xB6); time.sleep(0.05)
-        self._acc_read(ACC_CHIP_ID); time.sleep(0.001)      # SPI mode again after reset
         self._acc_write(ACC_PWR_CONF, 0x00); time.sleep(0.005)   # active
         self._acc_write(ACC_PWR_CTRL, 0x04); time.sleep(0.05)    # accel on
         self._acc_write(ACC_CONF, ACC_CONF_400HZ_NORMAL)
@@ -135,7 +154,7 @@ class BMI088:
         return accel, gyro
 
     def close(self):
-        self.acc.close(); self.gyr.close()
+        self.bus.close()
 
 
 class FakeBMI088:
@@ -209,10 +228,10 @@ def measure_bias(imu, seconds=5.0, hz=50.0):
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--bus", type=int, default=0)
-    ap.add_argument("--cs-accel", type=int, default=0)
-    ap.add_argument("--cs-gyro", type=int, default=1)
-    ap.add_argument("--ids", action="store_true", help="read the two chip IDs and stop")
+    ap.add_argument("--i2c-bus", type=int, default=1, help="the N of /dev/i2c-N")
+    ap.add_argument("--acc-addr", type=lambda x: int(x, 0), default=None, help="0x18 or 0x19")
+    ap.add_argument("--gyro-addr", type=lambda x: int(x, 0), default=None, help="0x68 or 0x69")
+    ap.add_argument("--ids", action="store_true", help="probe the four addresses and stop")
     ap.add_argument("--bias", type=float, default=0.0, help="seconds still, then print gyro bias")
     ap.add_argument("--seconds", type=float, default=10.0)
     ap.add_argument("--hz", type=float, default=50.0)
@@ -223,13 +242,21 @@ def main():
         imu = FakeBMI088(tilt_deg=10.0)
     else:
         try:
-            imu = BMI088(a.bus, a.cs_accel, a.cs_gyro)
+            import smbus2  # noqa: F401
         except ImportError:
-            sys.exit("spidev is not installed: pip install spidev (and the SPI overlay must be on)")
+            sys.exit("smbus2 is not installed: pip install smbus2 (and the I2C overlay must be on)")
+        if a.ids:
+            hits = probe(a.i2c_bus)
+            for addr, (v, ok) in sorted(hits.items()):
+                kind = "accel" if addr in ACC_ADDRS else "gyro"
+                print(f"  0x{addr:02X} {kind}: id 0x{v:02X} {'OK' if ok else '?? not a BMI088'}")
+            if not hits:
+                print(f"  nothing answered on /dev/i2c-{a.i2c_bus}; try `i2cdetect -l` for the bus")
+            return 0 if any(ok for _, ok in hits.values()) else 1
+        imu = BMI088(a.i2c_bus, a.acc_addr, a.gyro_addr)
     acc_id, gyr_id = imu.configure()
-    print(f"accel id 0x{acc_id:02X}  gyro id 0x{gyr_id:02X}" + ("  (fake)" if a.selftest else ""))
-    if a.ids:
-        return 0
+    print(f"accel id 0x{acc_id:02X}  gyro id 0x{gyr_id:02X}" + ("  (fake)" if a.selftest else
+          f"  (i2c-{a.i2c_bus}: 0x{imu.acc_addr:02X} / 0x{imu.gyr_addr:02X})"))
 
     bias = (0.0, 0.0, 0.0)
     if a.bias > 0:

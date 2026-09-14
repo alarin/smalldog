@@ -25,7 +25,7 @@ from the JSON rather than typed, so they cannot drift from the training frame.
 
 `q` and `w` come straight off the bus feedback the loop already reads every
 tick (`Runtime.read()`), in radians and rad/s after `calib`'s centre and sign.
-`gravity_b`, `gyro`, `accel` come from `imu.bmi088.Attitude` — the projected
+`gravity_b`, `gyro`, `accel` come from `imu.bmi088.Attitude` (I2C) — the projected
 gravity the policy was trained on is a filtered thing here, not a sensor.
 
 The action becomes a target the same way as in training:
@@ -181,9 +181,9 @@ def main():
     ap.add_argument("--seconds", type=float, default=8.0)
     ap.add_argument("--ramp", type=float, default=2.0)
     ap.add_argument("--no-imu", action="store_true", help="bench mode: a still, level IMU stub")
-    ap.add_argument("--spi-bus", type=int, default=0)
-    ap.add_argument("--cs-accel", type=int, default=0)
-    ap.add_argument("--cs-gyro", type=int, default=1)
+    ap.add_argument("--i2c-bus", type=int, default=1, help="the N of /dev/i2c-N")
+    ap.add_argument("--acc-addr", type=lambda x: int(x, 0), default=None)
+    ap.add_argument("--gyro-addr", type=lambda x: int(x, 0), default=None)
     ap.add_argument("--bias-seconds", type=float, default=3.0, help="gyro bias, robot still")
     ap.add_argument("--temp-c", type=float, default=60.0)
     ap.add_argument("--current-a", type=float, default=2.5)
@@ -213,7 +213,7 @@ def main():
         imu = StillIMU()
     else:
         from imu.bmi088 import BMI088, measure_bias
-        chip = BMI088(a.spi_bus, a.cs_accel, a.cs_gyro)
+        chip = BMI088(a.i2c_bus, a.acc_addr, a.gyro_addr)
         chip.configure()
         print(f"IMU: hold still {a.bias_seconds:g} s for the gyro bias ...")
         bias = measure_bias(chip, a.bias_seconds, CTRL_HZ)
