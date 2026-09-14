@@ -273,9 +273,7 @@ def link_masses(parts):
             # guess: 90 x 15 mm of board with the lens block on the optical axis.
             + box_mp(md.CAMERA_KG, (md.CAM_LENS_H, md.CAM_BOARD[0], md.CAM_BOARD[1]),
                      md.camera_com())
-            + box_mp(md.IMU_KG, (md.IMU_BOARD[0], md.IMU_BOARD[1],
-                                 md.IMU_BOARD[2]+md.IMU_STACK),
-                     (md.IMU_X, md.IMU_Y, md.IMU_Z0-(md.IMU_BOARD[2]+md.IMU_STACK)/2.0))
+            + box_mp(md.IMU_KG, md.imu_box()[1], md.imu_box()[0])
             # The L2, at the pose mini_dog.py holds for it.  Envelope and mass are the
             # sensor's own drawing; the box stays axis-aligned while the real one leans
             # LIDAR_TILT forward, which is exact in mass and centroid and ~7 % out on one

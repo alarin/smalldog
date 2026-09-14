@@ -129,14 +129,16 @@ STL only.
   the fix for a clash is in the camera block, not in a part function.
 - **The battery is a module** (`cell_holder` ×2 combs → welded brick → heatshrink →
   `battery_case` + `battery_lid`, BMS inside), dropped into the tray as one payload. Not
-  structure — its lid screws are one of the two places a screw threads into plastic. The
+  structure — its lid screws are the one place a screw threads into plastic. The
   combs are clipped flush with the outer cells' tangent planes (no material outboard of any
   cell); `CELL_GAP` is the one number that costs height; the printed web between bores is
   `CELL_GAP − CH_FIT`. `batt_clear()` (lid to deck: 0.60 mm, a foam strip, never
   negative), `holder_clear()` and `module_clear()` exist because payloads are invisible to
   `interference()`.
-- **The IMU sits on the deck's top face**, on the centreline inside the Orange Pi's
-  standoff gap; `imu_clear()` measures against the Pi's *board*. The mount is `IMU_*` in
+- **The IMU is inside the Orange Pi's case**, taped face up to its bottom plate at (0, +15),
+  in the strip beside the M.2 module; `imu_clear()` measures it against the M.2 band,
+  the case's corner spacers and the PCB — all payload geometry. The
+  mount is `IMU_*` in
   section 3 via `imu_xyz()`, and both exporters emit the `imu` site from it.
   `rl/checks/imu_placement.py` is the argument for the position — run it whenever the
   mount or the gait moves (it runs on the mac). Moving the site is a re-baseline for `rl/`
@@ -180,7 +182,8 @@ body parts only) and `rom_scan` (moving parts only) are each blind to a class of
   wrong.** Two answers to the hip fork screws (four coaxial bores, then two 20° channels
   through the corner, eight holes) were deleted when the cradle became a bolted part and
   the screws ended up in open air. `README.md`, "Reaching the fork screws".
-- **Payload gaps get their own probe**: `gps_clear()` (`OPI_BOX`), `imu_clear()`,
+- **Payload gaps get their own probe**: `gps_clear()` (`OPI_BOX`), `opi_clear()` (the
+  Pi case against the LiDAR bracket, and its rear standoffs against the deck's end), `imu_clear()`,
   `batt_clear()`, `holder_clear()`, `module_clear()`, `panel_clear()`, `lidar_fov_clear()`,
   `camera_clear()`. Every `!! …` line the build prints is a failure like `!! INTERFERENCE`.
 - **OCC booleans on the shin lofts fail silently**: a tool crossing a lofted spline end cap
@@ -222,31 +225,42 @@ disagree. A "cosmetic" parameter still moves the moment arms `fea.py` derives.
 7. `rom_scan(..., step=2)` before committing to real joint limits; `export_sim.py
    --rom-step 2` re-scans.
 
-### Current baseline (2026-09-13, 2.493 kg)
+### Current baseline (2026-09-14, 2.549 kg)
 
 Inter-layer SF per load case. `stall` scales with `SERVO_STALL_NM` only, the three ground
 columns with `fea.robot_mass()`. Read `--orient` for `thigh_A` and `cradle_front`.
 
 | | stand4 | stand2 | land3g | stall | `--orient` |
 |---|---|---|---|---|---|
-| `hip_bracket_A` | 46.0 | 23.0 | 7.7 | 2.2 | 7.79 |
-| `thigh_A` | 17.9 | 9.0 | 3.0 | 1.1 | 2.82 |
-| `shin_A` | 59.2 | 29.6 | 9.9 | 4.5 | 12.65 |
-| `cradle_front` | 4.9 | 2.5 | 0.8 | 3.0 | **1.42** |
+| `hip_bracket_A` | 45.0 | 22.5 | 7.5 | 2.2 | 7.79 |
+| `thigh_A` | 17.5 | 8.8 | 2.9 | 1.1 | 2.82 |
+| `shin_A` | 57.9 | 29.0 | 9.7 | 4.5 | 12.65 |
+| `cradle_front` | 4.8 | 2.4 | 0.8 | 3.0 | **1.42** |
 
 (`--orient` is the `<- current` row. The tie slots cost `hip_bracket_A` 7.83 → 7.79 and
 `thigh_A` 2.83 → 2.82 on the same run.)
 
 `export_sim.py --check`: `4 feet down, upright +1.00`, base z 187 mm, camera axis
 (+0.99 0 +0.10), ROM ±90 / ±90 / ±110 (±90 is the scan window, not a stop). Probes:
-`imu clear +3.40`, `batt clear +0.60`, `clamp clear +1.43`, `head clear +0.65`,
+`imu clear +1.20` (to the case's corner spacer, inside the case), `opi clear +1.15` (case front to the LiDAR
+leg bosses; rear standoff feet 1.7 mm inside the deck's end), `opi bolts` 6.4 mm into
+the case's spacers, `gps clear` knee 76.9 /
+seat 95.7, `batt clear +0.60`, `clamp clear +1.43`, `head clear +0.65`,
 `cradle bolts +5.15`, `fork access: all six arms`, `panel clear` (bus and low windows
 at both ends, XT30 clear of body and servos), `node clear` (two 221-415 at
 x −57.4..−49.1, |y| 12..30.6, z −6..23.9), `lidar fov 22.0 / 26.4 / 57.0 / 14.4`
 (chassis_top / lidar_mount / gps_mount / camera_mount), `camera view: out of frame` for
 all four including the L2, `lidar ... +4 mm past the leading foot`.
 
-Step 6, same seeds: **flat trot 534.7 mm** (the four cable windows, the rib and the tie
+Step 6, same seeds: **flat trot 526.0 mm** on the cased Orange Pi (box −85.5..19.5 ×
+70.5 × 40 over 6.5 mm standoffs, mast seat 65 → 95.7, `ELECTRONICS_KG` 195 → 250 g
+measured, the IMU inside the case; the default terrain seed reads 445 upright, the
+default course seed 4/7 at 2348 mm — it read **0/7, down at 645 mm** one pass earlier
+with the IMU's 3 g on the deck instead: the mass cliff, as the +Δm control below
+predicts). The
+terrain and course arms below are the previous tree's: the base link's CoM moved 11 mm
+aft and 15 mm up and 55 g heavier, which is a re-baseline, and the `--orient` column is
+unchanged (stall-driven). Previous tree: **534.7 mm** (the four cable windows, the rib and the tie
 slots: −3.5 g, nearly all off the base link; the control — the same mass out of
 `ELECTRONICS_KG` on the previous geometry — reads 536.5, the previous tree 543.8);
 **terrain seeds 7…12: 485 / 420 mm on the two upright, 4/6 down (8, 9, 10, 12)** — the
@@ -284,7 +298,7 @@ of this is read further.
 
 - FEA meshes in `out/fea/` are cached on the STEP content hash; stale entries are safe to
   delete.
-- `README.md` marks several dimensions **verify** (Orange Pi hole pattern, `OPI_BOX`,
+- `README.md` marks several dimensions **verify** (where the Orange Pi sits in its case,
   connector bodies, GPS board, camera lens); keep the marker until measured.
 - `tools/section_check.py` gives exact section moments along the shin in seconds — use it
   to converge a profile, then still run `fea.py`.

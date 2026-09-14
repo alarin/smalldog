@@ -195,9 +195,7 @@ base.add_box(M_BMS,     md.bms_com(),   (R.BMS_H, R.BMS_L, R.BMS_W))
 base.add_box(M_ELECTR,  md.opi_com(), md.OPI_BOX)
 # the NEO-6M and its active patch, sitting on gps_mount's platform
 base.add_box(M_GPS,     md.gps_com(), md.GPS_STACK)
-base.add_box(M_IMU, (md.IMU_X, md.IMU_Y,
-                     md.IMU_Z0-(md.IMU_BOARD[2]+md.IMU_STACK)/2.0),
-             (md.IMU_BOARD[0], md.IMU_BOARD[1], md.IMU_BOARD[2]+md.IMU_STACK))
+base.add_box(M_IMU, *md.imu_box())          # the BMI088 inside the Pi's case
 # Unitree L2, at the pose mini_dog.py holds for it (md.lidar_com(), md.lidar_box_xyz() -
 # LIDAR_L2_BOX turned by LIDAR_TILT into robot axes; envelope and mass both off the
 # sensor's own drawing).  This used to be a 42.0 literal and a guessed 70x70x60, which is

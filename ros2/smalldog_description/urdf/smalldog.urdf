@@ -6,9 +6,9 @@
   <material name="servo"><color rgba="0.12 0.12 0.14 1"/></material>
   <link name="base_link">
     <inertial>
-      <origin xyz="0.013190 -0.000049 0.023082" rpy="0 0 0"/>
-      <mass value="1.55906"/>
-      <inertia ixx="0.00352124" ixy="0.00000401" ixz="-0.00148784" iyy="0.00793988" iyz="0.00000003" izz="0.00701796"/>
+      <origin xyz="0.010230 -0.000020 0.026903" rpy="0 0 0"/>
+      <mass value="1.61547"/>
+      <inertia ixx="0.00391507" ixy="0.00000470" ixz="-0.00116594" iyy="0.00863642" iyz="-0.00000086" izz="0.00741121"/>
     </inertial>
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0"/>
@@ -340,6 +340,6 @@
   <link name="gps_link"/>
   <joint name="gps_joint" type="fixed">
     <parent link="base_link"/><child link="gps_link"/>
-    <origin xyz="-0.05200 0.00000 0.07260" rpy="0 0 0"/>
+    <origin xyz="-0.05200 0.00000 0.10330" rpy="0 0 0"/>
   </joint>
 </robot>

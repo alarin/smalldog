@@ -1,31 +1,29 @@
-# BMI088 breakout — transcribed, not measured
+# BMI088 breakout
 
-The IMU is the one payload on this robot that arrived in the model before it arrived on
-the bench. Every number here is a **nominal** for a generic 20 × 15 mm BMI088 breakout,
-transcribed from vendor listings rather than measured off the part in hand, and the model
-is built on it. Treat the whole file the way `ref/camera/README.md` asks you to treat its
-two flagged readings: a dimension that measures different is a dimension to correct here
-and re-run, never one to shave in `mini_dog.py`.
+The outline and the overall thickness are measured off the board in hand; the rest is
+still the nominal for a generic BMI088 breakout. Treat the file the way
+`ref/camera/README.md` asks you to treat its flagged readings: a dimension that measures
+different is a dimension to correct here and re-run, never one to shave in `mini_dog.py`.
 
-| what | nominal | in `mini_dog.py` | confidence |
+| what | value | in `mini_dog.py` | confidence |
 |---|---|---|---|
-| PCB outline | 20.0 × 15.0 mm | `IMU_BOARD[0:2]` | **verify** |
+| PCB outline | 20.5 × 10.6 mm | `IMU_BOARD[0:2]` | measured |
 | PCB thickness | 1.6 mm | `IMU_BOARD[2]` | 1.6 is the industry default; low risk |
-| component stack over the PCB | 1.2 mm | `IMU_STACK` | **verify**, and see the header note |
-| mounting holes | 2 × M2.5, 15.0 mm apart on the long axis | `IMU_HOLE_P` | **verify** |
+| component stack over the PCB | 1.0 mm (2.6 overall, measured) | `IMU_STACK` | measured; see the header note |
+| mounting | no holes — double-sided tape, ~0.5 mm | `IMU_TAPE` | **verify** the tape |
 | mass | 3 g | `IMU_KG` | **verify** — weigh it |
 
 ## The header is not optional to leave off
 
-`IMU_STACK` = 1.2 mm is a **headerless** board: the BMI088 package, its passives and
-nothing else. A 2.54 mm pin header is 8.5 mm tall on its own and does not fit in this bay
-by a factor of three — the slot the board lives in is 3.6 mm from the battery pack's top
-to the deck's underside, and the board and its components already spend 2.8 of that.
+`IMU_STACK` = 1.0 mm is a **headerless** board: the BMI088 package, its passives and
+nothing else. A 2.54 mm pin header is 8.5 mm tall on its own and does not fit: the board
+lies face up on the Orange Pi case's bottom plate, under the Pi, in the 8 mm between
+plate and PCB (`imu_clear()` reads 5.4 mm over the package, 1.2 mm to the case's spacer).
 
 Solder the six wires (VCC, GND, SDA/SDI, SCL/SCK, and the two chip selects — the BMI088
-is two devices, accelerometer and gyroscope, on one bus) directly to the pads, on the
-side the model puts them: the component face looks **down**, at the battery. Fit a header
-and the deck will not close.
+is two devices, accelerometer and gyroscope, on one bus) directly to the pads, and run
+them to the Pi's own I2C pads on its underside — they are 40 mm away, on the same side of
+the board. The component face looks **up**, at the Pi.
 
 ## Orientation
 

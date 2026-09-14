@@ -642,38 +642,58 @@ NODE_X0   = -BODY_L/2 + WALL + CRADLE_SEAT   # glued to the seats' faces
 NODE_Y0   = 12.0                      # inboard edge: past the XT30 pad's +-9 and the
                                       # lower seats' driver run
 NODE_Z0   = -6.0                      # its foot on the lower seats' top edge
-OPI_X        = -22.0                  # Orange Pi 5 Pro board centre on the deck
-OPI_HOLES    = (92.0, 54.0)
-OPI_STAND_R, OPI_STAND_H = 4.8, 7.0   # standoff: r fits an M2.5 nut slot, h clears the nut
-OPI_NUT_DZ   = 1.5                    # ... its floor, above the deck's top face
-# THE REAR PAIR HAS NO DECK UNDER IT, and the deck grows a tab rather than the hole
-# pattern moving.  OPI_HOLES at OPI_X puts that pair at x = -68 on a deck that ends at
-# -63: at OPI_STAND_R the standoff's nearest material is at -63.20, so it floated 0.2 mm
-# clear of the edge and chassis_top came back as THREE solids - the deck, and two 383.8
-# mm3 bosses attached to nothing.  isValid() and Volume() > 0 both pass on that, and
-# PART_SOLIDS said 3, so it shipped.  OPI_HOLES is still **verify** and has never met a
-# real board (README, "Orange Pi 5 Pro"), so it is deliberately NOT adjusted to make the
-# geometry close - that would bake a guess into printed material.  Moving OPI_X forward
-# is not available either: the Pi would have to come 9.8 mm forward and OPI_BOX would
-# then run into the LiDAR bracket, which is the same clash LIDAR_BASE_R was shrunk to
-# 26.0 to avoid.  So the deck is extended locally under each rear standoff, and the tab
-# DISAPPEARS on its own the moment a measured hole pattern puts the standoff back on the
-# deck (chassis_top only unions it while OPI_TAB_X is outboard of the deck's end).
-# Nothing is behind the rear wall at deck height to object: measured 0.0 mm3 against
-# chassis_bottom, cradle_rear (z <= 15.36) and battery_case over x -80..-63, |y| <= 36,
-# z 25..29, and the XT30 above the cradle tops out at the deck's underside.
-OPI_TAB_RIM  = 1.2                    # ... rim of deck left round the standoff's foot
-OPI_TAB_X    = OPI_X - OPI_HOLES[0]/2 - OPI_STAND_R - OPI_TAB_RIM
-OPI_TAB_W    = OPI_STAND_R + OPI_TAB_RIM      # ... half width of the tab, in y
-# The Orange Pi as an ENVELOPE rather than as a hole pattern.  100 x 62 is the board;
-# 20 mm is the stack allowance over the deck's own standoffs - board, its connector row and
-# a heatsink.  It is here, in the model, because it is a keep-out that two other things
-# now have to respect: the mass box every exporter builds for ELECTRONICS_KG (this file's
-# section 4 rule - anything the robot carries lives once, here), and gps_mount, whose arms
-# arch over it.  It used to be a literal on each side and they had already drifted - 92 x
-# 62 x 20 at z 29..49 in export_sim.py against 100 x 62 x 18 at z 28..46 in the ROS 2
-# generator.  **verify** with the hole pattern, off a real board.
-OPI_BOX      = (100.0, 62.0, 20.0)
+# Orange Pi 5 Pro, IN ITS CASE.  The board is the vendor drawing (ref/opi/: 89.1 x 56 x
+# 1.6, holes 58 x 49, their column 7.6 mm in from the micro-SD end) and it lives inside a
+# bought 105 x 70.5 x 40 case with a flat floor, its cooler inside; the robot sees the
+# case.  It is bolted on from BELOW: four M2.5 x 17 up through the deck, the deck's
+# standoffs and the case's bottom plate into the case's own brass spacers - the same
+# holes the board is screwed to from above, so the Pi stays assembled as bought and the
+# deck's hole pattern is the board's, offset by wherever the board sits inside the case -
+# OPI_CASE_PCB, and that is the one number still to measure.  The heads sit in
+# counterbores in the deck's underside, flush, because the battery module's lid is 0.6 mm
+# below it; the deck goes onto the tray with the case already on it.  What the bare board measured (8 under, 16 over) is in
+# ref/opi/README.md and no longer in the model: the case's outline is the keep-out.
+OPI_BOX      = (105.0, 70.5, 40.0)    # the case, over the standoffs: the keep-out
+                                      # gps_mount arches over, the box every exporter
+                                      # hangs ELECTRONICS_KG on, opi_clear()'s probe
+OPI_PCB_L    = 89.1                   # the PCB, along x                     drawing
+OPI_CASE_PCB = 5.5                    # the PCB's -x edge inboard of the case's -x face:
+                                      # a 2.5 mm wall and the 3 mm the connector row
+                                      # stands proud of the PCB     **verify** - measure
+                                      # case face to hole centre before the deck prints
+OPI_X        = -33.0                  # case centre, x.  Micro-SD end forward (+x): the
+                                      # front face at 19.5 is over the LiDAR bracket's
+                                      # base disc (z <= 35, under the case floor) and
+                                      # 1.15 mm short of its rear leg bosses, which rise
+                                      # to 43.  Every mm further back is a mm less deck
+                                      # under the rear standoffs, which end 1.7 mm
+                                      # inside the deck's end; the connector end hangs
+                                      # 22.5 mm past the rear wall, over the XT30.  The
+                                      # card slot faces the bracket: the case comes off
+                                      # to reach it.
+OPI_HOLES    = (58.0, 49.0)           # hole to hole                        drawing
+OPI_HOLE_EDGE = 7.6                   # the +x pair, in from the PCB's +x edge   drawing
+OPI_HOLE_DX  = (-OPI_BOX[0]/2 + OPI_CASE_PCB + OPI_PCB_L - OPI_HOLE_EDGE
+                - OPI_HOLES[0]/2)     # pattern centre, from OPI_X
+OPI_STAND_R, OPI_STAND_H = 4.8, 6.5   # standoff: a plain spacer boss round the bolt;
+                                      # h is the least that lifts the case floor over the
+                                      # LiDAR bracket's base disc (top at 35, so 6 + 0.5)
+                                      # - every mm here is a mm of GPS mast
+OPI_BOLT_L   = 17.0                   # M2.5 x 17 from under the deck: 4 deck + 6.5
+                                      # standoff + 2.8 plate = 13.3, and the rest threads
+                                      # into the case's brass spacer (opi_bolt_engage())
+OPI_HEAD_R, OPI_HEAD_K = 2.6, 2.5     # ISO 4762 M2.5 head: @4.5, k 2.5, in a @5.2
+                                      # counterbore from the deck's underside, 2.7 deep
+                                      # - 1.3 mm of deck left under the boss, which is
+                                      # a 6.5 mm boss on top of it
+OPI_CASE_FLOOR = 2.8                  # the case's bottom plate               measured
+OPI_CASE_GAP   = 8.0                  # plate top face to the PCB's underside - the
+                                      # case's own spacers, sized for the M.2 module
+                                      # under the board                     **verify**
+OPI_CASE_POST_R = 3.0                 # ... those spacers' radius            **verify**
+OPI_M2_Y     = (-16.0, 8.0)           # the 2280 module's band under the PCB, y: 12..36
+                                      # from the 40-pin header's edge on the drawing, and
+                                      # that edge is -y (micro-SD end forward, top up)
 
 # The IMU, as a payload: a BMI088 breakout, and WHERE it is bolted is a model constant.
 # Both sim exporters emit an `imu` site at it, and rl/checks/imu_placement.py measures what
@@ -688,69 +708,46 @@ OPI_BOX      = (100.0, 62.0, 20.0)
 # export_sim.py's BODY_Z1, so the two files described robots whose IMUs were 25 mm apart -
 # the same defect a fourth time, and the one rl/ was reading.
 #
-# WHERE THE BAY IS, AND WHY IT IS NO LONGER UNDER THE DECK.  The board used to hang from
-# two tabs bridging the deck's own window, component face down, in the 3.6 mm between the
-# pack's top at 21.4 and the deck's underside at 25 - 2.8 mm of board and 0.8 mm of
-# margin.  That slot was the only reason the battery could not be a module: a cased pack
-# needs about 3.5 mm the bay did not have, and this was the only 3.5 mm anywhere near it.
-# So the board moved UP, out of the tray entirely, onto the deck's TOP face - inside the
-# Orange Pi's own standoff gap, which is 7 mm of air nothing else uses.  Two M2.5
-# standoffs on the centreline, component face DOWN into the gap under the board, the same
-# nut-in-a-slot as the Pi's own four.  The battery module's lid now runs to 23.6 and the
-# deck's underside above it is solid.
+# WHERE THE BAY IS: INSIDE THE ORANGE PI'S CASE, on its bottom plate, under the board.
+# The board has moved twice.  It hung under the deck's window first, in the 3.6 mm over
+# the battery pack, and that slot was the one reason the battery could not be a cased
+# module.  Then it sat on the deck's top face in the Pi's standoff gap - until the Pi
+# was measured: its M.2 module fills that gap, over exactly that footprint.  The case
+# ended it: its plate is flat, the gap between plate and PCB is OPI_CASE_GAP of air
+# everywhere the M.2 band is not, and the Pi's I2C pads are on the underside at the
+# ports end, on the same side as the free strip - so the six wires never leave the case.
 #
-# WHAT THAT COSTS, STATED PLAINLY: the site rises from z = 23.4 to 31.0, so |r| from the
-# body origin grows by 7.6 mm and the omega x (omega x r) term the paragraph above is
-# about grows with it - about a third, on the centreline, where the whole term is small.
-# It is not a guess that has to be lived with: rl/checks/imu_placement.py measures exactly
-# this by adding real accelerometers at candidate mounts through MjSpec, and it is the
-# check to re-run whenever this block or the gait moves.  The board is still ON the
-# centreline, which is the part of the argument above that mattered - 42 deg of apparent
-# tilt was a board out beside the Pi in x and y, not one 7.6 mm higher.
-#
-# imu_clear() still exists but now looks UP: the wall that is thin is the Pi's own board
-# over it (OPI_BOX's floor), not a battery under it.
-IMU_BOARD    = (20.0, 15.0, 1.6)      # PCB: x, y, thickness          **verify** ref/imu/
-IMU_STACK    = 1.2                    # components under the PCB, and HEADERLESS: a
-                                      # 2.54 mm pin header is 8.5 mm and would fill the
-                                      # standoff gap.  Solder to the pads.  **verify**
-IMU_HOLE_P   = 15.0                   # M2.5 mounting holes, on x     **verify** ref/imu/
-IMU_X, IMU_Y = 0.0, 0.0               # the centreline - as near the body origin as the
-                                      # deck allows, which is what the whole block is for
-IMU_STAND_R  = 4.4                    # standoff: 3.35 mm of wall round an M25_TAP hole,
-                                      # against the >= 1 x D the rule wants; two of them
-                                      # IMU_HOLE_P apart still leave 6.2 mm between their
-                                      # walls for the board's own components
-IMU_STAND_H  = 2.0                    # ... and its height: IMU_STACK plus 0.8 mm, so the
-                                      # component face clears the deck's top face
-IMU_TAP_L    = 5.0                    # M2.5 FORMED thread, 2 x D, down through the 2 mm
-                                      # standoff and 3 mm into the deck's own 4 - it does
-                                      # not break through the underside.  This is the
-                                      # second of the two places on the robot that thread
-                                      # into plastic (battery_lid() is the other): a 3 g
-                                      # breakout that holds nothing but itself, exactly
-                                      # the case CLAUDE.md's "off the torque path" rule
-                                      # was written for.  A nut cannot go here - a 2 mm
-                                      # standoff cannot swallow a 2.25 mm pocket, and
-                                      # under the deck is the battery module.  It is a
-                                      # ONE-ASSEMBLY thread; a board reseated often wants
-                                      # the hole drilled out and a nut under the deck.
-IMU_WINDOW   = (-34.0, -12.0)         # the deck's cable window, x.  It used to be at
-                                      # x +-16 and the IMU hung in it; the board needs
-                                      # solid deck under it now, so the window moved off
-                                      # the centreline to the Pi's side.  It clears the
-                                      # board's -x hole at -7.5 by 4.5 mm, and |y| <= 34
-                                      # keeps it clear of the deck screws at |y| = 41.
-IMU_Z0       = BODY_Z1 + DECK_T + IMU_STAND_H + IMU_BOARD[2]
-                                      # the PCB's TOP face, at 32.6.  imu_xyz() takes one
-                                      # board thickness off it to get the component face,
-                                      # which is where the BMI088's package actually is,
-                                      # exactly as before - only the plane moved.
+# So: face UP on the plate (no standoffs - the plate is the flat), at x = 0 (9 mm
+# behind the micro-SD edge), y = +15: the strip between the M.2 band (to +8) and the
+# edge opposite the 40-pin header, 1.7 mm off the band and ~1 mm off the case's corner
+# spacer.  The board has no holes: it is double-sided-taped to the plate (IMU_TAPE), so
+# what README.md gives is its EDGES against the case's own faces.  Not on the centreline
+# any more, and
+# 9 mm higher: rl/checks/imu_placement.py reads ~35 deg of worst apparent tilt against
+# the old site on the current trot - the size of the re-baseline, and the policy is
+# retrained for the cased Pi anyway.  imu_clear() looks at the M.2 band, the spacers and
+# the PCB above, all of which are payload geometry interference() cannot see.
+IMU_BOARD    = (20.5, 10.6, 1.6)      # PCB: x, y, thickness      measured, ref/imu/
+IMU_STACK    = 1.0                    # components on the PCB (2.6 overall, measured),
+                                      # and HEADERLESS: a 2.54 mm pin header is 8.5 mm
+                                      # and would reach the Pi.  Solder to the pads.
+IMU_TAPE     = 0.5                    # double-sided tape under it - no holes  **verify**
+IMU_X, IMU_Y = 0.0, 15.0              # see above: as near the body origin as the M.2
+                                      # module and the case's spacer allow
+IMU_WINDOW   = (-34.0, -12.0)         # the deck's cable window, x - the harness's way
+                                      # up out of the tray, under the Pi case's floor.
+                                      # The name is history: the IMU hung in it once.
+                                      # |y| <= 34 keeps it clear of the deck screws at
+                                      # |y| = 41 and of the Pi's standoffs at |y| 24.5.
+IMU_Z0       = BODY_Z1 + DECK_T + OPI_STAND_H + OPI_CASE_FLOOR + IMU_TAPE + IMU_BOARD[2]
+                                      # the PCB's TOP face, at 40.4: taped to the plate.
+                                      # The package is on it - imu_xyz() is this plane.
 # LiDAR bracket.  LIDAR_X is shared: chassis_top drills the bolt circle at it and
 # lidar_mount is built on it, and they used to be two independent literals.
-# LIDAR_BASE_R is set by the Orange Pi standoffs, not by the bracket: at the old 30.0 the
-# base disc and the two standoffs at (OPI_X+46, +-27) shared 95 mm3 of solid.  26.0 still
-# covers the bolt circle with a 1.8 mm rim and clears the standoffs by 1.6 mm.
+# LIDAR_BASE_R is set by the Orange Pi, not by the bracket: the disc's rear tangent is at
+# LIDAR_X - LIDAR_BASE_R = 16 on the deck and the PCB's front edge is at 15 (OPI_X).  At
+# the old 30.0 it shared 95 mm3 with the standoffs of the pattern before the board was
+# measured.  26.0 still covers the bolt circle with a 1.8 mm rim.
 #
 # TWO bolt circles, and they are deliberately different.  LIDAR_BC is ours: bracket down
 # onto the deck, on the same 45 deg rays as the four legs so every screw is under a post.
@@ -827,7 +824,7 @@ LIDAR_RIB_T, LIDAR_RIB_Y   = 3.0, 16.5    # two ribs behind the stem, outboard f
                                           # +-RIB_Y: between the L2's inner screw heads
                                           # (|y| <= 12.6) and its outer ones (>= 20.8), so
                                           # a driver reaches all four from behind
-LIDAR_RIB_X0, LIDAR_RIB_Z1 = 34.0, 100.0  # ... foot back to x 34 (OPI_BOX ends at 28),
+LIDAR_RIB_X0, LIDAR_RIB_Z1 = 34.0, 100.0  # ... foot back to x 34 (OPI_BOX ends at 15),
                                           # tip up the stem to z 100: 20 deg off vertical
 LIDAR_LEG_R,  LIDAR_LEG_D  = 21.0, 13.0   # the four bosses round the deck bolts ...
 LIDAR_LEG_H  = 14.0                       # ... just tall enough to roof the nut slot
@@ -905,7 +902,7 @@ LIDAR_SIGMA  = 20.0                   # mm, 1-sigma range noise (+-2 cm spec) **
 # itself and everything that stands over it is a permanent hole in its view.  So it wants
 # the highest flat spot on the robot, and this robot has none free:
 #
-#   * the deck's top face is the Orange Pi.  OPI_BOX spans x -72..28, |y| <= 31, z 29..49
+#   * the deck's top face is the Orange Pi's case.  OPI_BOX spans x -85.5..19.5, |y| <= 35.25, z 35.5..75.5
 #     - which is the whole of the deck between its two stiffening lips,
 #   * ahead of the Pi is the LiDAR bracket (base plate r = 26 at x = 42) and then the L2,
 #   * the strips outboard of the Pi are 12 mm wide, against a 25 mm patch,
@@ -926,22 +923,24 @@ LIDAR_SIGMA  = 20.0                   # mm, 1-sigma range noise (+-2 cm spec) **
 # THE KINK IN THE ARMS IS NOT STYLING.  Two constraints fix it and they pull opposite ways:
 #   * no run of an arm may lean more than 45 deg off vertical, or the part stops printing
 #     without support - the same rule that shapes lidar_mount,
-#   * and the arm has to be clear of OPI_BOX, whose top corner is at (|y| = 31, z = 49),
+#   * and the arm has to be clear of OPI_BOX, whose top corner is at (|y| = 35.25, z = 75.5),
 #     before it gets inboard of it.  A straight arm from the pad cannot: at 45 deg its
 #     lower edge passes that corner 8 mm too low, whatever the platform's width.
 # So the arm rises out of its pad first and makes exactly one 45 deg run inboard, and
-# where it turns is derived, not chosen.  (That first run was vertical while the feet sat
-# at |y| = 38; on the deck's real screws at 41 it leans 18.4 deg - 3 mm inboard over 9 mm
-# of rise, which is well inside the same 45 deg print rule and changes nothing else.
-# GPS_KNEE stays at 38: taking it out to 41 would buy 3 mm of inboard reach at 3 mm of
-# extra mast height, for nothing.)  A rod leaning 45 deg carries its
-# lower edge GPS_ROD/sqrt(2) = 2.47 mm below and inboard of its axis, which puts the edge
-# at z = knee + 2.06 as it crosses |y| = 31: the knee goes at 48 and the solid clears the
-# envelope by 1 mm.  That is checked and not asserted - gps_clear() intersects the real
-# part with the real envelope on every build, the way interference() does the body parts.
+# where it turns is derived, not chosen.  (The first run leans from the pads at |y| = 41
+# in to the knee's |y| - 1.25 mm over 34 of rise on the case, well inside the same 45 deg
+# print rule.  The knee is not taken out to 41 and a vertical run: that would buy 1.25 mm
+# of inboard reach at 1.25 mm of mast, for nothing.)  A rod leaning 45 deg carries its
+# lower edge GPS_ROD/sqrt(2) = 2.47 mm below and inboard of its axis, i.e. GPS_ROD*sqrt(2)
+# = 4.95 below the axis at a given |y|: the knee's z is that, plus 1 mm of air, above the
+# envelope's top, less the 45 deg drop from the knee's |y| to the envelope's - 76.9 on
+# the case, and GPS_KNEE is that formula, not the number, so the mast follows the box.
+# The knee's |y| follows it too: the near-vertical first run's inboard edge has to pass
+# the case's side, so GPS_KNEE_Y = W/2 + GPS_ROD + 1, never under 38.  It is checked and not asserted - gps_clear() intersects the real part with
+# the real envelope on every build, the way interference() does the body parts.
 # From the knee, 45 deg buys exactly as much inboard reach as it buys height, so the
 # platform's half-width and its height are ONE number: land the arms at |y| = 24 and the
-# underside has to be at 48 + 14 = 62.  Widen the platform and the mast gets shorter and
+# underside has to be at knee + 14.  Widen the platform and the mast gets shorter and
 # heavier; narrow it and it gets taller and lighter.  24 is where it stops: past that the
 # platform is wider than the deck's own boss pair and the arms start leaning outward.
 #
@@ -949,7 +948,7 @@ LIDAR_SIGMA  = 20.0                   # mm, 1-sigma range noise (+-2 cm spec) **
 # elevation and the Pi's connector row blocks a little more of it, so this is a receiver
 # with a mask over one azimuth sector, not a survey antenna.  Nothing about the robot can
 # fix that - the other sensor is bigger than this one and it was here first.  What the
-# height does buy is 28 mm of separation from the Pi, which is the part that matters at
+# height does buy is ~20 mm of separation from the Pi's case, which is the part that matters at
 # 1.575 GHz: a USB 3 stack under a patch antenna is a well documented way to lose a fix.
 # THE FEET ARE READ FROM DECK_SCREWS AND NOT TYPED BESIDE IT, and that is the whole fix
 # for a defect that shipped: this line was `GPS_X, GPS_Y = -52.0, 38.0`, and when the
@@ -969,7 +968,12 @@ GPS_PAD_R, GPS_PAD_H = 4.8, 10.0      # r is 1 x D of wall round an M3 clearance
                                       # hole is 0.05 mm.  The lip gives way instead - see
                                       # DECK_LIP_* - and the pad is unchanged.
 GPS_ROD      = 3.5                    # arm radius
-GPS_KNEE     = (38.0, 48.0)           # (|y|, z) the arms turn inboard at - derived, see above
+GPS_KNEE_Y   = max(38.0, OPI_BOX[1]/2 + GPS_ROD + 1.0)
+                                      # |y| the arms turn inboard at: the first run is
+                                      # near-vertical and its inboard edge has to clear
+                                      # the case too - 39.75 on the 70.5 case
+GPS_KNEE     = (GPS_KNEE_Y, BODY_Z1+DECK_T+OPI_STAND_H+OPI_BOX[2] + GPS_ROD*math.sqrt(2) + 1.0
+                            - (GPS_KNEE_Y - OPI_BOX[1]/2))   # ... and z: derived, see above
 GPS_LAND     = 24.0                   # |y| where they meet the platform
 GPS_PLATE    = (40.0, 52.0, 3.0)      # platform x, y, t
 GPS_SEAT_Z   = GPS_KNEE[1] + (GPS_KNEE[0]-GPS_LAND) + GPS_PLATE[2]   # derived - see above
@@ -1138,7 +1142,11 @@ BMS_KG            = 0.055         # **verify** - split out of ELECTRONICS_KG whe
                                   # opi_com() and never was; it used to be averaged into
                                   # the Pi's box 46 mm away and 40 mm up.  Hangs at
                                   # bms_com().
-ELECTRONICS_KG    = 0.195         # Orange Pi 5 Pro / wiring - was 0.25 with the BMS in it
+ELECTRONICS_KG    = 0.200 + 0.050 # the Orange Pi in its case, MEASURED: 82 g board +
+                                  # 18 g cooler + 100 g case with its screws = 200 g;
+                                  # plus 50 g for the harness, bus adapter and buck -
+                                  # **verify**, weigh the loom once it exists.  (Was a
+                                  # 195 g guess for the bare board and wiring.)
 LIDAR_KG          = 0.230         # Unitree L2 on its bracket - confirmed, L2 manual
                                   # Parameter Specifications: 230 g, 75x75x65 mm, 12 V 10 W
 CAMERA_KG         = 0.012         # IMX415 module: PCB, M12 holder, lens, connector.
@@ -1888,9 +1896,10 @@ def battery_case():
     """The battery module: six 21700 welded into a 3 x 2 brick, heatshrunk, its BMS beside
     them, and this box around both.  It is a robot part - it has a PARTS entry, a mass in
     the budget and a place in interference() - but it is not structure: nothing on the
-    robot loads it, which is why its two lid screws are one of only two places on this
-    machine where a screw threads straight into the print - the IMU's standoffs are the
-    other (M25_TAP, see CLAUDE.md, "Off the torque path").
+    robot loads it, which is why its two lid screws are the one place on this machine
+    where a screw threads straight into the print (M25_TAP, see CLAUDE.md, "Off the
+    torque path").  The IMU's deck standoffs were the other, until the board moved into
+    the Pi's case.
 
     Two zones along x, and the order is not arbitrary.  The BMS stands on edge against the
     REAR wall, so its leads and the pack's leave through the same grommet slot and reach
@@ -2114,41 +2123,24 @@ def chassis_top():
     for x, ay, _ in DECK_SCREWS:
         for y in (-ay, ay):
             s = s.cut(cyl(M3_CLR, 20, (x, y, z0-1))).cut(cyl(3.2, 2.2, (x, y, z1-2.2)))
-    # Orange Pi 5 Pro standoffs.  M2.5 through the board, through the standoff, into a nut
-    # in a slot opening outboard in y - fitted before the board goes on, and still the only
-    # face you can reach once the deck is on the tray.  The M2.5 nut, not M3: the board's
-    # own holes are 2.5, and its 5.0 across-flats leaves 2.2 mm of standoff wall.
-    # ... and the rear pair needs a deck to stand on before it gets one: see OPI_TAB_*.
-    # The guard is the point - the tab exists only while the hole pattern hangs the
-    # standoff off the end, so a re-measured OPI_HOLES deletes it with no edit here.
-    if OPI_TAB_X < -BODY_L/2:
-        for sy in (-1.0, 1.0):
-            ty = sy*OPI_HOLES[1]/2
-            s = s.union(bxc(OPI_TAB_X, -BODY_L/2, ty-OPI_TAB_W, ty+OPI_TAB_W, z0, z1))
+    # Orange Pi case standoffs: plain spacer bosses, an M2.5 clearance hole straight
+    # through deck and boss, and the bolt head in a counterbore from the deck's UNDERSIDE
+    # - the bolt threads into the case's own brass spacer above (OPI_BOLT_L), so there is
+    # no nut here at all.  The pattern is the board's, where the board sits in its case
+    # (OPI_HOLE_DX): the rear pair lands at -56.5, 1.7 mm of deck behind its foot.
     for sx in (-1, 1):
         for sy in (-1, 1):
-            p = (OPI_X+sx*OPI_HOLES[0]/2, sy*OPI_HOLES[1]/2, z1)
-            s = s.union(cyl(OPI_STAND_R, OPI_STAND_H, p)).cut(cyl(M25_CLR, OPI_STAND_H+2, p))
-            s = s.cut(nut_slot((p[0], p[1], z1+OPI_NUT_DZ), (0.0, float(sy), 0.0),
-                               af=M25_NUT_AF, h=M25_NUT_H, back=3.2,
-                               run=OPI_STAND_R+6.0))
+            p = (OPI_X+OPI_HOLE_DX+sx*OPI_HOLES[0]/2, sy*OPI_HOLES[1]/2, z1)
+            s = s.union(cyl(OPI_STAND_R, OPI_STAND_H, p))
+            s = s.cut(cyl(M25_CLR, DECK_T+OPI_STAND_H+2, (p[0], p[1], z0-1)))
+            s = s.cut(cyl(OPI_HEAD_R, OPI_HEAD_K+0.2+1, (p[0], p[1], z0-1)))
     for i in range(LIDAR_N):
         a = math.radians(360.0*i/LIDAR_N+45.0)
         s = s.cut(cyl(M3_CLR, 20, (LIDAR_X+LIDAR_BC/2*math.cos(a), LIDAR_BC/2*math.sin(a), z0-1)))
     s = s.cut(cyl(LIDAR_CORE_R, 20, (LIDAR_X, 0, z0-1)))   # the LiDAR cable, into the tray
     s = s.cut(bxc(IMU_WINDOW[0], IMU_WINDOW[1], -34, 34, z0-1, z1+1))
     s = s.cut(bxc(58, 60, -26, 26, z0-1, z1+1))
-    # IMU standoffs, on the deck's TOP face on the centreline - see the IMU_* block.  The
-    # board used to hang under two tabs in the window below; a cased battery needs that
-    # 3.6 mm and the Orange Pi's standoff gap up here is 7 mm of air nothing else uses.
-    # Component face DOWN into the gap under the board, so nothing it carries reaches the
-    # Pi.  The window moved off the centreline (IMU_WINDOW) to leave solid deck here, and
-    # the two M2.5 form their own thread IMU_TAP_L deep through the standoff and into that
-    # deck - there is no nut, and the reason is in the IMU_* block.
-    for sx in (-1.0, 1.0):
-        hx = sx*IMU_HOLE_P/2
-        s = s.union(cyl(IMU_STAND_R, IMU_STAND_H, (hx, IMU_Y, z1)))
-        s = s.cut(cyl(M25_TAP, IMU_TAP_L, (hx, IMU_Y, z1+IMU_STAND_H-IMU_TAP_L)))
+    # No IMU standoffs: the board is inside the Orange Pi's case, on its plate (IMU_*).
     for y in (-BODY_W/2, BODY_W/2-DECK_LIP_W):               # stiffening lips
         s = s.union(bxc(-BODY_L/2, BODY_L/2, y, y+DECK_LIP_W, z1, z1+DECK_LIP_H))
     for x, ay, _ in DECK_SCREWS:              # ... notched at every screw: a socket head
@@ -2306,51 +2298,63 @@ def lidar_mount():
 def opi_com():
     """Centroid of the Orange Pi stack's envelope - the keep-out gps_mount arches over and
     the point every exporter hangs ELECTRONICS_KG on."""
-    return (OPI_X, 0.0, BODY_Z1+DECK_T+OPI_BOX[2]/2.0)
+    return (OPI_X, 0.0, BODY_Z1+DECK_T+OPI_STAND_H+OPI_BOX[2]/2.0)
 
 def imu_xyz():
     """The `imu` site in robot coordinates (mm): the BMI088's own package, at the centre of
-    the board's component face - which looks down, so it is one PCB thickness below the
-    tabs the board hangs from.
+    the board's component face - which looks UP off the case plate, so it is the PCB's
+    top face.
 
     Same contract as lidar_pose() and gps_pose(): export_sim.py and
     ../ros2/.../generate_model.py both read the site from here.  They did not, once - the
     ROS 2 generator wrote pos="0 0 0" while export_sim.py wrote BODY_Z1 - and rl/ loads the
     ROS 2 model, so the 25 mm went straight into the observation the policy trains on."""
-    return (IMU_X, IMU_Y, IMU_Z0 - IMU_BOARD[2])
+    return (IMU_X, IMU_Y, IMU_Z0)
+
+def imu_box():
+    """The breakout's envelope as (centre, size) in mm: PCB plus its component layer,
+    face up on the case plate.  Both sim exporters hang IMU_KG on this box; they used to
+    each rebuild it from IMU_Z0 with the stack on the wrong side."""
+    L, W_, T = IMU_BOARD
+    return ((IMU_X, IMU_Y, IMU_Z0 - T + (T+IMU_STACK)/2.0), (L, W_, T+IMU_STACK))
 
 def imu_module():
     """The breakout itself, not a printed part - here for the same reason camera_module()
     is: interference() and the assembly have to see the thing that is actually bolted on,
-    and neither can see a number in a table.  Component face down, per ref/imu/."""
-    L, W_, T = IMU_BOARD
-    s = bxc(IMU_X-L/2, IMU_X+L/2, IMU_Y-W_/2, IMU_Y+W_/2,
-            IMU_Z0-T-IMU_STACK, IMU_Z0)
-    # ... minus the two standoffs' footprints out of the COMPONENT layer only.  A board
-    # has clear annuli round its mounting holes - that is what a mounting hole is - and
-    # without this the envelope reports the deck's own standoffs as an interference with
-    # the board that is bolted to them.  The PCB above them is untouched.
-    for sx in (-1.0, 1.0):
-        s = s.cut(cyl(IMU_STAND_R+CLR, IMU_STACK+0.2,
-                      (sx*IMU_HOLE_P/2, IMU_Y, IMU_Z0-T-IMU_STACK-0.1)))
-    return s
+    and neither can see a number in a table.  Component face up, on the case plate."""
+    (cx, cy, cz), (L, W_, H) = imu_box()
+    return bxc(cx-L/2, cx+L/2, cy-W_/2, cy+W_/2, cz-H/2, cz+H/2)
 
 def imu_clear():
-    """The IMU board against the Orange Pi above it.  Returns (overlap_mm3, gap_mm).
-
-    It used to look DOWN, at the battery pack - that was the thin wall when the board hung
-    in the deck window.  The board now sits on the deck's top face inside the Pi's own
-    standoff gap, so the payload it can foul is the Pi, and neither is a part:
-    interference() sees a printed solid and this sees the two boxes it cannot.
-
-    Note this is deliberately measured against the Pi's BOARD (one OPI_STAND_H above the
-    deck), not against OPI_BOX, whose floor is the deck itself.  The board shares the
-    standoff gap with that envelope on purpose; OPI_BOX stays what it is for - the mass
-    box, and the keep-out gps_mount's arms are shaped around."""
-    z = BODY_Z1 + DECK_T + OPI_STAND_H
-    pi = bxc(OPI_X-OPI_BOX[0]/2, OPI_X+OPI_BOX[0]/2,
-             -OPI_BOX[1]/2, OPI_BOX[1]/2, z, z+OPI_BOX[2])
-    return overlap(imu_module().val(), pi.val()), z - IMU_Z0
+    """The IMU inside the Pi's case: against the M.2 module's band beside it, the case's
+    corner spacers, and the PCB over it.  Returns (overlap_mm3, gap_mm) - the overlap
+    against all three, and the least of the three gaps (y to the band, radial to the
+    nearest spacer, z to the PCB).  None of them is a part: interference() sees printed
+    solids, and this is the third home the board has had where the thin wall was a
+    payload's."""
+    zp = BODY_Z1 + DECK_T + OPI_STAND_H + OPI_CASE_FLOOR          # plate top face
+    zpcb = zp + OPI_CASE_GAP                                      # PCB underside
+    x1 = OPI_X + OPI_BOX[0]/2 - (OPI_BOX[0] - OPI_CASE_PCB - OPI_PCB_L)   # PCB +x edge
+    band = bxc(x1-OPI_PCB_L, x1, OPI_M2_Y[0], OPI_M2_Y[1], zp-1.0, zpcb)
+    posts = None
+    for sx in (-1, 1):
+        for sy in (-1, 1):
+            c = cyl(OPI_CASE_POST_R, OPI_CASE_GAP+2.0,
+                    (OPI_X+OPI_HOLE_DX+sx*OPI_HOLES[0]/2, sy*OPI_HOLES[1]/2, zp-1.0))
+            posts = c if posts is None else posts.union(c)
+    pcb = bxc(x1-OPI_PCB_L, x1, -OPI_BOX[1]/2, OPI_BOX[1]/2, zpcb, zpcb+2.0)
+    m = imu_module().val()
+    v = overlap(m, band.val()) + overlap(m, posts.val()) + overlap(m, pcb.val())
+    bb = m.BoundingBox()
+    gy = min(abs(bb.ymin-OPI_M2_Y[1]), abs(bb.ymax-OPI_M2_Y[0])) if not (bb.ymin < OPI_M2_Y[1] and bb.ymax > OPI_M2_Y[0]) else -1.0
+    gz = zpcb - bb.zmax
+    gr = float("inf")
+    for sx in (-1, 1):
+        for sy in (-1, 1):
+            px, py = OPI_X+OPI_HOLE_DX+sx*OPI_HOLES[0]/2, sy*OPI_HOLES[1]/2
+            dx = max(bb.xmin-px, 0.0, px-bb.xmax); dy = max(bb.ymin-py, 0.0, py-bb.ymax)
+            gr = min(gr, math.hypot(dx, dy) - OPI_CASE_POST_R)
+    return v, min(gy, gz, gr)
 
 def gps_pose():
     """The patch antenna's phase centre in robot coordinates.
@@ -2991,6 +2995,33 @@ def gps_clear():
     box = bxc(cx-L/2, cx+L/2, -W/2, W/2, cz-H/2, cz+H/2)
     return overlap(PARTS["gps_mount"][0].val(), box.val())
 
+def opi_bolt_engage():
+    """mm of the case bolt's thread inside the case's brass spacer: its length less the
+    deck (from the counterbore floor), the standoff and the plate.  The head sits
+    OPI_HEAD_K+0.2 up inside the deck, so the counterbore floor is the datum."""
+    return OPI_BOLT_L - (DECK_T - (OPI_HEAD_K+0.2) + OPI_STAND_H + OPI_CASE_FLOOR)
+
+def opi_clear():
+    """The Orange Pi's case against the LiDAR bracket in front of it.  Returns
+    (overlap_mm3, gap_mm): mm3 of lidar_mount inside OPI_BOX, and the air between the
+    case's front face and the nearest lidar_mount material at the case's own height -
+    the bracket's rear leg bosses, since the case floor rides over its base disc.  The
+    gap is what fixes OPI_X; the case slides back only at the cost of deck under the
+    rear standoffs."""
+    cx, _, cz = opi_com()
+    L, W, H = OPI_BOX
+    box = bxc(cx-L/2, cx+L/2, -W/2, W/2, cz-H/2, cz+H/2)
+    lm = PARTS["lidar_mount"][0].val()
+    v = overlap(lm, box.val())
+    x1 = cx + L/2
+    slab = bxc(x1, x1+40.0, -W/2, W/2, cz-H/2, cz+H/2)
+    try:
+        hit = lm.intersect(slab.val())
+        gap = (hit.BoundingBox().xmin - x1) if hit.Volume() > INTERF_TOL else 40.0
+    except Exception:
+        gap = float("-inf")
+    return v, gap
+
 def foot_bolt_check():
     """The foot bolt's path, checked against the real solid instead of against the numbers
     that were supposed to produce it.  Returns (blocked, reach, spare), all mm.
@@ -3087,8 +3118,9 @@ PARTS, REPORT = {}, {}
 # were DEFECTS this table permitted rather than described - chassis_top at 3 (the deck
 # plus the Orange Pi's rear standoff pair, two 383.8 mm3 bosses floating 0.2 mm off the
 # deck's edge) and camera_mount at 3 (the channel plus the front retaining wall in two
-# loose pieces of 529.3 and 104.9 mm3).  Both are geometry now: OPI_TAB_* puts a deck
-# under the standoffs, CAM_CAP and the shortened board pocket tie the wall back on.  The
+# loose pieces of 529.3 and 104.9 mm3).  Both are geometry now: the measured hole pattern
+# puts all four standoffs on the deck, CAM_CAP and the shortened board pocket tie the
+# wall back on.  The
 # lesson is in the number: a count check is only as good as the number a human typed, so
 # raising an entry here is a claim about the design and has to be argued like one.
 #   servo_gauge   2 - two test coupons on one plate, and this one is on purpose
@@ -3232,9 +3264,11 @@ def main():
     # the air over it, which is what the whole redesign was spent on.
     iv, igap = imu_clear()
     if iv > INTERF_TOL or iv < 0:
-        print(f"  !! INTERFERENCE  imu x Orange Pi  {iv:.1f} mm3")
+        print(f"  !! INTERFERENCE  imu x Orange Pi  {iv:.1f} mm3 - the board against the M.2"
+              f" band, the case spacers or the PCB inside the case")
     else:
-        print(f"  imu clear: {igap:+.2f} mm of air between the board and the Pi")
+        print(f"  imu clear: {igap:+.2f} mm at the least of the M.2 band / case spacer / PCB,"
+              f" inside the Pi's case at ({IMU_X:.0f}, {IMU_Y:+.0f}, {IMU_Z0:.1f})")
     bgap = batt_clear()
     if bgap < 0:
         print(f"  !! BATTERY  the module's lid is {-bgap:.2f} mm into the deck")
@@ -3348,8 +3382,24 @@ def main():
     if v > INTERF_TOL or v < 0:
         print(f"  !! GPS MAST  {v:.1f} mm3 of gps_mount is inside the Orange Pi envelope")
     else:
-        print(f"  gps clear:   mast over the {OPI_BOX[0]:.0f}x{OPI_BOX[1]:.0f}x{OPI_BOX[2]:.0f}"
-              f" Orange Pi envelope, seat {GPS_SEAT_Z:.0f}")
+        print(f"  gps clear:   mast over the {OPI_BOX[0]:.0f}x{OPI_BOX[1]:.1f}x{OPI_BOX[2]:.1f}"
+              f" Orange Pi envelope, knee {GPS_KNEE[1]:.1f}, seat {GPS_SEAT_Z:.1f}")
+    ov, cg = opi_clear()
+    xr = OPI_X+OPI_HOLE_DX-OPI_HOLES[0]/2 - OPI_STAND_R
+    eng = opi_bolt_engage()
+    if eng < 2.5:
+        print(f"  !! ORANGE PI  the M2.5 x {OPI_BOLT_L:.0f} reaches only {eng:.1f} mm into the"
+              f" case's spacer (want >= 1 D)")
+    else:
+        print(f"  opi bolts:   4 x M2.5 x {OPI_BOLT_L:.0f} from under the deck, heads flush in"
+              f" {OPI_HEAD_K+0.2:.1f} mm counterbores, {eng:.1f} mm into the case's spacers")
+    if ov > INTERF_TOL or ov < 0 or cg < 1.0 or xr < -BODY_L/2:
+        print(f"  !! ORANGE PI  {ov:.1f} mm3 of lidar_mount inside the case, {cg:.2f} mm in"
+              f" front of it, rear standoff foot at x {xr:.1f} on a deck ending at {-BODY_L/2:.0f}")
+    else:
+        print(f"  opi clear:   case front at x {OPI_X+OPI_BOX[0]/2:.1f}, lidar_mount"
+              f" {cg:+.2f} mm ahead; rear standoff foot at x {xr:.1f},"
+              f" {xr+BODY_L/2:.1f} mm inside the deck's end")
     for nm in ("chassis_top", "lidar_mount", "gps_mount", "camera_mount"):
         mg = lidar_fov_clear(PARTS[nm][0])
         if mg < 0:
@@ -3382,7 +3432,7 @@ def main():
                + GPS_KG + CAMERA_KG + IMU_KG)*1000.0
     print(f"\n  printed mass  ~{tm:.0f} g   + {N_SERVO} servos {N_SERVO*SERVO_KG*1000:.0f} g"
           f" + 3S2P cells ~{BATTERY_KG*1000:.0f} g + BMS ~{BMS_KG*1000:.0f} g"
-          f" + Orange Pi/wiring ~{ELECTRONICS_KG*1000:.0f} g"
+          f" + Orange Pi in its case/wiring ~{ELECTRONICS_KG*1000:.0f} g"
           f" + LiDAR ~{LIDAR_KG*1000:.0f} g + GPS ~{GPS_KG*1000:.0f} g"
           f" + camera ~{CAMERA_KG*1000:.0f} g + IMU ~{IMU_KG*1000:.0f} g"
           f"  ->  ~{(tm+carried)/1000:.2f} kg")

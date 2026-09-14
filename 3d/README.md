@@ -153,7 +153,7 @@ prints the head's air and the tip's distance to the case.
 | | mm |
 |---|---|
 | chassis tray | 126 × 92 × 50, walls 2.8, floor 3.0 |
-| deck | 4 mm plate + 6 mm side lips; 137 × 92 print bbox with the Orange Pi tabs |
+| deck | 4 mm plate + 6 mm side lips; 126 × 92 print bbox |
 | wheelbase / track | 180 / 152 |
 | hip-roll axis | X ±90, Y ±36, Z 0 (axis along X) |
 | hip-pitch axis | X ±90, Y ±76, Z −30 (axis along Y) |
@@ -228,14 +228,18 @@ through the **lateral** wall, the neutral axis for the bending the knee does.
   pair only; the charge branch and the buck feed hang off the fuse holder's stud instead
   (`POWER.md`). The ESP32/URT-1 rib that split this strip is gone — neither board is a
   robot part (`ref/urt1/README.md`); the bus adapter is still to be placed once measured.
-- **IMU** (BMI088 breakout, 20 × 15 mm): on the deck's **top** face on the centreline, on two
-  2 mm standoffs inside the Orange Pi's own standoff gap, component face down, headerless
-  (`ref/imu/README.md`). The position is `imu_xyz()` and both simulators emit their `imu`
-  site there. `rl/checks/imu_placement.py` is what chose it: a board out on the deck beside
-  the Pi reads 9.0 m/s² of ω × (ω × r) + α × r on the trot — 42° of apparent tilt — against
-  25° on the centreline. The deck's cable window sits off-centre (`IMU_WINDOW`) to leave
-  solid deck under the board; the two M2.5 form their own thread 5 mm into standoff and deck
-  (*Screws into plastic*). Everything about the board is **verify**.
+- **IMU** (BMI088 breakout, 20.5 × 10.6 mm): **inside the Orange Pi's case**, face up on
+  its bottom plate under the board, at x = 0, y = +15 — the strip between the M.2 module's
+  band and the long edge opposite the 40-pin header, where the Pi's I2C pads are, so the
+  six wires never leave the case. Headerless (`ref/imu/README.md`). The position is
+  `imu_xyz()` (z 39.9) and both simulators emit their `imu` site there;
+  `rl/checks/imu_placement.py` reads ~35° of worst apparent tilt against the old deck
+  site on the current trot, which is the size of the re-baseline, not an error. The board
+  has no holes: double-sided tape (`IMU_TAPE` = 0.5) on the plate, its edges **9.25 and
+  29.75 mm from the case's micro-SD face, 14.95 and 25.55 mm from the side face opposite
+  the header** (the face the I2C pads are nearest), long axis along the robot, +X toward
+  the micro-SD end. `imu_clear()` reads the M.2 band, the case's corner spacer (Ø6
+  **verify**) and the PCB above: 1.2 mm to the spacer is the tightest.
 - **End-wall openings**, both ends: a 22 × 16 bus window on the centreline inside the
   cradle flange's frame opening (the front one was missing — the front frame was a sealed
   box with the roll servos' ports inside it), a 14 × 6 low window on the floor
@@ -251,13 +255,22 @@ through the **lateral** wall, the neutral axis for the bending the knee does.
   deck**, and stands 1.5 mm proud on a 0.8 mm lip that takes the unplug force. Charge
   lead 18 AWG. `panel_clear()` probes all five openings every run — the windows against
   the body, the connector against the body *and* the servos.
-- **Orange Pi 5 Pro**: four printed standoffs on the deck, 92 × 54 pattern — **verify**.
-  That pattern puts the rear pair at x = −68 on a deck ending at −63, so the deck grows a
-  tab under each rear standoff (`OPI_TAB_*`, guarded by `if OPI_TAB_X < -BODY_L/2`, so a
-  measured pattern that lands on the deck deletes it). Moving `OPI_X` forward is not
-  available: the Pi would hit the LiDAR bracket. `OPI_BOX` = 100 × 62 × 20 over the deck
-  is the envelope every exporter hangs `ELECTRONICS_KG` on *and* the keep-out `gps_mount`
-  arches over — **verify** with the hole pattern.
+- **Orange Pi 5 Pro, in its case** (`ref/opi/`: the vendor drawing, plus the board and
+  case in hand). The board is 89.1 × 56 with four M2.5 holes 58 × 49, their column 7.6 mm
+  in from the micro-SD end; the case is a bought 105 × 70.5 × 40 with a flat floor and
+  the cooler inside, and the case is what the robot sees: `OPI_BOX` is the envelope every
+  exporter hangs `ELECTRONICS_KG` on *and* the keep-out `gps_mount` arches over, and both
+  the mast's knee height and its knee |y| are derived from it. Bolted on **from below**:
+  four M2.5 × 17 up through the deck, its 6.5 mm spacer bosses and the case's bottom
+  plate into the case's own brass spacers — the board's holes, so the Pi stays assembled
+  as bought; heads flush in counterbores in the deck's underside (the battery lid is
+  0.6 mm below). The deck's pattern is the board's, offset by where the board sits in
+  the case (`OPI_CASE_PCB` = 5.5, **verify**: measure case face → hole centre before the
+  deck prints). Micro-SD end forward, `OPI_X` = −33: the case front at x = 19.5 rides over the
+  LiDAR bracket's base disc and stops 1.15 mm short of its leg bosses (`opi_clear()`), the
+  rear standoffs' feet end 1.7 mm inside the deck's end, the connector end hangs 22.5 mm
+  past the rear wall over the XT30, and the mast's rods pass the case at 1 mm. The card
+  slot faces the bracket: the case comes off to reach it.
 - **LiDAR**: a **nose bracket, axis forward**, not a mast and not a tilted seat. The Unitree
   L2 scans a hemisphere *above* its own base plane (NEGA buys 6° below it), and it fills it
   densest **on its axis**, ~30× the rim (`ref/lidar/`; the manual's "densest mid-FOV" is
@@ -272,7 +285,7 @@ through the **lateral** wall, the neutral axis for the bending the knee does.
     at z 132, where the tilted seat had it; its mass sits 30 mm further forward (base-link
     CoM +4.9 mm).
   - `LIDAR_X` = 42 is the **deck interface** and is pinned: the base plate must clear the
-    Orange Pi standoffs behind it (≥ 38.8) and its bolts must land on a deck ending at 63
+    Orange Pi's case behind it (leg bosses at 20.65, case front at 19.5) and its bolts must land on a deck ending at 63
     (≤ 44.1). The stem stands on that plate, flush with the chassis front face, and two
     ribs behind it carry the sensor's moment back to the four deck bolts. The ribs thread
     between the L2's inner and outer screw heads so a driver reaches all four from behind.
@@ -334,10 +347,11 @@ through the **lateral** wall, the neutral axis for the bending the knee does.
   stiffening lip gets a full-depth notch at that pair (`DECK_LIP_H`), because a ⌀9.6 pad at
   |y| = 41 would otherwise leave 0.05 mm of lip wall outboard of the hole.
   - **The kink in the arms is derived**: no run may lean more than 45° (print rule), and the
-    arm must clear `OPI_BOX`'s top corner at (|y| = 31, z = 49). A straight 45° arm off the
-    pad passes 8 mm too low, so the arm goes up first and kinks once at `GPS_KNEE` = 48;
-    from there 45° buys as much inboard reach as height, so the platform's half-width and
-    height are one number (arms landing at |y| = 24 → seat at 65). `gps_clear()` checks it.
+    arm must clear `OPI_BOX`'s top corner (|y| = 35.25, z = 75.5 on the case). A straight
+    45° arm off the pad cannot, so the arm goes up first and kinks once at `GPS_KNEE`,
+    both of whose numbers are derived from the box (|y| 39.75, z 76.9); from there 45°
+    buys as much inboard reach as height, so the platform's half-width and height are one
+    number (arms landing at |y| = 24 → seat at 95.7). `gps_clear()` checks it.
   - The board is strapped by two ties at x = ±14, outside the 25 mm patch; its ends are
     held by nothing, because several board variants share the silkscreen.
   - The L2 blocks the forward sky below ~28°; nothing about the robot can fix that.
@@ -435,8 +449,7 @@ Counts are per robot and come off the geometry: 12 joints × (one `sleeve()` + o
 
 | | qty |
 |---|---|
-| M2.5 × 8 + M2.5 nut (Orange Pi → deck standoffs) | 4 |
-| M2.5 × 8 **thread-forming**, no nut (BMI088 → the deck's top, through its standoff) | 2 |
+| M2.5 × 17, ISO 4762 (deck, from below → spacer boss → Pi case plate → the case's brass spacers) | 4 |
 | M2.5 × 8 **thread-forming**, no nut (battery lid → the module's front wall) | 2 |
 | foam strip, ~1.4 × 20 × 90 mm (over the battery lid, under the deck — the gap is 0.60 mm) | 1 |
 | M3 × 16 + M3 nut (LiDAR bracket → deck, from underneath) | 4 |
@@ -455,13 +468,13 @@ Lengths that are derived, and where a longer screw is *not* the safe direction:
   it. Driven: 4.0 arm + 2.5 hub + 0.3 to the case = 6.8, an M3 × 6 engages 2.0 of 2.5.
   Passive: 2.8 arm (after the `FORK_CB` = 1.2 counterbore) + 0.95 pedestal + 2.2 hub =
   5.95, with 0.5 of the case's 0.55 recess spare. `head_clear()` prints both.
-- **Orange Pi standoffs, M2.5 × 8 not × 10**: the hole does not pass through the deck, so
-  the screw has `OPI_STAND_H` + board = 8.6 mm and no more.
+- **Orange Pi case, M2.5 × 17 from below**: head in a 2.7 mm counterbore, then 1.3 of
+  deck + 6.5 boss + 2.8 plate = 10.6 of shank, so **6.4 mm** goes into the case's brass
+  spacer (`opi_bolt_engage()`). That spacer is ~8 mm and the Pi's own screw comes into
+  it from the top — a through-threaded spacer takes both only if the top screw engages
+  ≤ 1.6 mm; otherwise × 14 (3.4 mm in) is the bolt. **verify** on the case.
 - **cradle, M3 × 10**: counterbore floor 59.4 into the insert at 64.5…70.5 by 4.9 of its
   6; × 12 would stop 0.1 mm inside the boss, a burr from the servo's rear face.
-- **IMU, M2.5 × 8 thread-forming**: 1.6 of board then `IMU_TAP_L` = 5.0 of formed thread
-  (2 D: the 2 mm standoff plus 3 mm into the deck's 4, not through). × 10 breaks out
-  under the deck.
 - **foot, M3 × 30**: head seats `FOOT_CB_Z` = 8 mm below `FOOT_Z` in the sole's ⌀6.4
   pocket, nut's far face 17.7 mm above `FOOT_Z`; nothing shorter is fully engaged.
 
@@ -521,8 +534,8 @@ off repeatedly wants a nut. Both radii are **verify**: print a coupon first.
    nuts into the LiDAR bracket's bosses (front pair from the sides) → camera mount's two
    tabs into the plate's underside pockets
    → bracket bolted to the deck **from underneath, deck off**, its two front M3 through
-   the tabs → camera board into the mount from the +y end → deck onto the tray → BMI088 onto its standoffs, 2 M2.5, **before the Pi** → 4
-   M2.5 nuts into the standoff slots, Orange Pi, servo bus adapter → GPS mast onto the rear
+   the tabs → camera board into the mount from the +y end → BMI088 taped to the Pi case's plate, wired to the Pi's I2C pads, Pi case
+   bolted to the deck **from underneath, deck off** (4 M2.5 × 17) → deck onto the tray → servo bus adapter → GPS mast onto the rear
    deck screws (M3 × 24), receiver into its rails and two ties (the Pi goes in first; the
    mast comes off to lift the Pi) → L2 onto the flange, 4 × M3 × 12 into its own tapped holes (6 mm deep; a longer
    screw bottoms in the blind hole and lifts the sensor off its seat).
@@ -589,8 +602,9 @@ change both.
 
 1. `servo_gauge` fit — bore and ⌀14 circle. It cannot check the thread (the hub came back
    M3 after the gauge passed) or access; try a real screw, and read `fork access:`.
-2. Orange Pi 5 Pro hole pattern (92 × 54) and `OPI_BOX` (100 × 62 × 20 — a keep-out, not
-   just a mass box).
+2. Orange Pi 5 Pro: `OPI_CASE_PCB` — where the board's holes sit in the case, case face
+   to hole centre. (Its mass is measured: 200 g in the case; the 50 g harness allowance
+   in `ELECTRONICS_KG` is not.)
 3. Unitree L2: bolt circle, envelope, RJ45 + DC barrel — measured. Still **verify**: the
    range window and range noise.
 4. Rear-panel connector body — XT30 12.0 × 6.6 — is catalogue. A pocket 0.3 mm small is a
