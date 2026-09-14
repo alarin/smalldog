@@ -105,6 +105,8 @@ class PolicySource:
                                          providers=["CPUExecutionProvider"])
         self.infer_us = []
         self.blind_ticks = 0
+        self.nonfinite = 0             # ticks whose frame or action had a NaN/inf
+        self.log = []                  # (frame, action, target) per tick when --log
 
     def set_command(self, vx, vy, wz):
         self.command = np.array([vx, vy, wz], np.float32)
@@ -137,15 +139,30 @@ class PolicySource:
         t0 = time.perf_counter()
         a = self.sess.run(["action"], {"obs": obs})[0][0]
         self.infer_us.append((time.perf_counter() - t0) * 1e6)
+        if not (np.isfinite(f).all() and np.isfinite(a).all()):
+            # send() would hold the last goal on a NaN and nothing would say so
+            self.nonfinite += 1
         self.last_action = a.astype(np.float32)
         target = np.clip(self.stance + a * self.scale, self.lo, self.hi)
+        if self.log is not None:
+            self.log.append((f.copy(), a.astype(np.float32), target.astype(np.float32)))
         return [float(v) for v in target]
+
+    def save_log(self, path):
+        if not self.log:
+            return
+        fr, ac, tg = (np.stack(x) for x in zip(*self.log))
+        np.savez(path, frame=fr, action=ac, target=tg, stance=self.stance,
+                 joints=np.array(self.joints), command=self.command)
+        print(f"log: {len(self.log)} ticks -> {path}")
 
     def report(self):
         t = np.array(self.infer_us) if self.infer_us else np.zeros(1)
         return (f"inference p50 {np.percentile(t, 50):.0f} us, p95 {np.percentile(t, 95):.0f} us, "
                 f"max {t.max():.0f} us of a {1e6/CTRL_HZ:.0f} us tick; "
-                f"{self.blind_ticks} joint reads missing")
+                f"{self.blind_ticks} joint reads missing, {self.nonfinite} non-finite ticks; "
+                f"action |a| p50 {np.median(np.abs(np.stack([l[1] for l in self.log]))) if self.log else float('nan'):.3f} "
+                f"max {max((float(np.abs(l[1]).max()) for l in self.log), default=float('nan')):.3f}")
 
 
 def selftest(policy_dir, seconds=5.0):
@@ -189,6 +206,7 @@ def main():
     ap.add_argument("--current-a", type=float, default=2.5)
     ap.add_argument("--volt-min", type=float, default=9.9)
     ap.add_argument("--track-rad", type=float, default=0.6)
+    ap.add_argument("--log", metavar="FILE.npz", help="record every tick's frame, action, target")
     a = ap.parse_args()
 
     if a.selftest:
@@ -243,6 +261,8 @@ def main():
         code = 1
     finally:
         print("policy", src.report())
+        if a.log:
+            src.save_log(a.log)
     return code
 
 
