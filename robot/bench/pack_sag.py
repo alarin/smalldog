@@ -47,7 +47,9 @@ def load(path):
     fields = list(d["fields"])
     fb = d["fb"]
     col = {f: fb[:, :, fields.index(f)] for f in fields}
+    n = len(d["t"])
     return dict(t=d["t"], dt=d["dt"], goal=d["goal"], phase=d["phase"], cmd=d["cmd"],
+                imu=d["imu"] if "imu" in d.files else np.full((n, 9), np.nan),
                 joints=list(d["joints"]), legs=list(d["legs"]),
                 gait=d["gait"].item() if d["gait"].shape == () else {}, **col)
 

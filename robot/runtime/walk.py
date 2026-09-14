@@ -410,8 +410,8 @@ class TickLog:
     """
     FIELDS = ("q", "w", "load", "volt", "temp", "current")
 
-    def __init__(self, rt, gait, cmd=None):
-        self.rt, self.gait, self.cmd = rt, gait, cmd
+    def __init__(self, rt, gait, cmd=None, imu=None):
+        self.rt, self.gait, self.cmd, self.imu = rt, gait, cmd, imu
         self.t = 0.0
         self.rows = []
 
@@ -423,15 +423,19 @@ class TickLog:
         goal = [self.rt.goal[n] for n in self.rt.calib.joints]
         phase = [self.gait.leg_phase(l) for l in self.gait.legs]
         cmd = list(self.cmd()) if self.cmd else [math.nan] * 3
+        # gravity_b (3), gyro rad/s (3), accel m/s^2 (3): the same triple policy.py feeds
+        # the network, so a walk.py log and a policy.py log are read the same way
+        imu = [*sum(self.imu.update(dt), ())] if self.imu else [math.nan] * 9
         self.rows.append((self.t, dt, np.array(fbv, np.float32), np.array(goal, np.float32),
-                          np.array(phase, np.float32), np.array(cmd, np.float32)))
+                          np.array(phase, np.float32), np.array(cmd, np.float32),
+                          np.array(imu, np.float32)))
 
     def save(self, path, args):
         import numpy as np
         if not self.rows:
             return
-        t, dt, fb, goal, phase, cmd = (np.array(x) for x in zip(*self.rows))
-        np.savez(path, t=t, dt=dt, fb=fb, goal=goal, phase=phase, cmd=cmd,
+        t, dt, fb, goal, phase, cmd, imu = (np.array(x) for x in zip(*self.rows))
+        np.savez(path, t=t, dt=dt, fb=fb, goal=goal, phase=phase, cmd=cmd, imu=imu,
                  fields=np.array(self.FIELDS), joints=np.array(self.rt.calib.joints),
                  legs=np.array(self.gait.legs),
                  gait=np.array(dict(period=self.gait.period, speed=args.speed,
@@ -461,6 +465,10 @@ def main():
     ap.add_argument("--no-sit", action="store_true", help="cut torque where it stands")
     ap.add_argument("--log", metavar="FILE.npz",
                     help="record every tick: feedback, goals, gait phase (bench/pack_sag.py)")
+    ap.add_argument("--imu", action="store_true",
+                    help="read the BMI088 every tick into the --log (heading, attitude, footfalls)")
+    ap.add_argument("--i2c-bus", type=int, default=1)
+    ap.add_argument("--bias-seconds", type=float, default=3.0)
 
     ap.add_argument("--speed", type=float, default=0.20, help="m/s for the teleop keys")
     ap.add_argument("--turn", type=float, default=1.2, help="rad/s for the teleop keys")
@@ -605,6 +613,22 @@ def main():
         f"{l} " + "/".join(f"{math.degrees(q_stand[gait.joint_names.index(f'{l}_{k}')]):+.0f}"
                            for k in ("roll", "pitch", "knee")) for l in gait.legs))
 
+    imu = None
+    if a.imu and a.log:
+        # The walker never looks at it — the trot stays open-loop. It is logged so the run
+        # can be READ: yaw from the gyro says whether it held a line, the accelerometer
+        # says when the feet really land against when the gait thinks they do.
+        from imu.bmi088 import BMI088, measure_bias
+        from runtime.policy import LiveIMU
+        chip = BMI088(a.i2c_bus)
+        chip.configure()
+        print(f"IMU: hold still {a.bias_seconds:g} s for the gyro bias ...")
+        bias = measure_bias(chip, a.bias_seconds, a.hz)
+        print("gyro bias rad/s: " + " ".join(f"{b:+.4f}" for b in bias))
+        imu = LiveIMU(chip, bias)
+    elif a.imu:
+        print("!! --imu does nothing without --log")
+
     code = 0
     tick = None
     try:
@@ -616,7 +640,7 @@ def main():
                 record_baseline(rt, gait, a, a.baseline)
             elif a.stand:
                 print("standing. Ctrl-C to sit down.")
-                tick = TickLog(rt, gait, lambda: (0.0, 0.0, 0.0)) if a.log else None
+                tick = TickLog(rt, gait, lambda: (0.0, 0.0, 0.0), imu) if a.log else None
                 rt.run(lambda dt_, fb: gait.joint_targets(dt_, 0.0, 0.0, 0.0),
                        seconds=a.seconds, on_tick=tick)
             elif a.go or a.profile or not Teleop.available():
@@ -639,7 +663,7 @@ def main():
                             gait.feedback(contact=c)
                     last[:] = cmd(dt_)
                     return gait.joint_targets(dt_, *last)
-                tick = TickLog(rt, gait, lambda: last) if a.log else None
+                tick = TickLog(rt, gait, lambda: last, imu) if a.log else None
                 rt.run(source, seconds=a.seconds, on_tick=tick)
             else:
                 with Teleop(gait, a.speed, a.turn) as tele:
@@ -654,7 +678,7 @@ def main():
                                 gait.feedback(contact=c)
                         last[:] = tele()
                         return gait.joint_targets(dt_, *last)
-                    tick = TickLog(rt, gait, lambda: last) if a.log else None
+                    tick = TickLog(rt, gait, lambda: last, imu) if a.log else None
                     rt.run(source, seconds=a.seconds, on_tick=tick)
 
             if not a.no_sit:

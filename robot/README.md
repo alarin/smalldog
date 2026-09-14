@@ -18,10 +18,11 @@ because `robot/bench` had to run before there was a robot.
 | `bench/lift_test.py`, `bench/*.json` | is foot contact visible in the servo load? the recordings |
 | `bench/runlog.py` | the csv format, defined once and used from both ends |
 | `bench/pack_sag.py` | a `walk.py --log` recording → the pack's sag, R_eff and the bus draw by gait phase; the untethered measurement `POWER.md` asks for |
+| `bench/trot_report.py` | the same recording → heading and attitude from the IMU (`--imu`), footfalls against gait phase, and each joint's delay and reached amplitude |
 | `runtime/calib.py`, `calib.json` | which servo is which joint, its zero, its sign — a measurement of one robot, in git |
 | `runtime/safety.py` | the limits, and the one place that decides to cut torque |
 | `runtime/loop.py` | the 50 Hz tick, controller-agnostic |
-| `runtime/walk.py` | the CLI that runs the trot on the robot; `--log FILE.npz` records every tick |
+| `runtime/walk.py` | the CLI that runs the trot on the robot; `--go S` walks straight for S seconds, `--log FILE.npz` records every tick, `--imu` adds the BMI088 to it |
 
 Nothing here needs hardware to be exercised:
 
@@ -32,6 +33,7 @@ python bench/sweep.py --dry-run --traj all
 python bench/fit_bam.py --selftest    # generate a known servo, then find it again
 python bench/torque_limit.py --selftest
 python bench/pack_sag.py --selftest
+python bench/trot_report.py --selftest
 python runtime/calib.py --selftest    # ids, centres, signs, the clamp, the round trip
 python runtime/safety.py --selftest   # every limit trips, and only when it should
 python runtime/loop.py --selftest     # 2 s of the real loop against a loopback bus
