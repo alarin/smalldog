@@ -147,6 +147,16 @@ OBS_SIZE = OBS_FRAME * OBS_HIST
 # broken by wrapper semantics was the right trade when the wrapper was the only
 # defence, and it is a cheap one now that it is the second.
 HEADING_TAU = 5.0
+#: The tracking terms read the body velocity averaged over about a stride, not
+#: the instantaneous one. Measured in this env (2026-09-15, scratch reward_terms):
+#: at cmd 0.1 the IK trot at 0.075 m/s scored LESS on tracking_lin_vel than
+#: standing still (229 vs 246 over 4 s), and 280 vs 300 on yaw — a 2.5 kg body
+#: oscillates within every stride and exp(-err^2/sigma) charges the oscillation
+#: more than it pays the progress. Standing was the optimum of the reward by
+#: construction, and every run against the profiled servo found it. A trot's
+#: body oscillation is at twice the gait frequency (~1.5 Hz at period 1.35 s);
+#: 0.4 s averages it out and still follows a command change within a second.
+VEL_AVG_TAU = 0.4
 
 
 def rotate_inv(q, v, xp=jnp):
@@ -473,6 +483,9 @@ class Walk(PipelineEnv):
             # error the last few seconds have accumulated. Reward-side only —
             # yaw stays out of the observation. See HEADING_TAU.
             "heading_err": jnp.zeros(()),
+            # (vx, vy, wz) in the body frame, leaky-averaged over VEL_AVG_TAU:
+            # what the tracking terms score. Starts at rest.
+            "vel_avg": jnp.zeros(3),
             "foot_xy": ps.site_xpos[self._foot_site][:, :2],
             "step": jnp.array(0, jnp.int32),
             "next_push": jax.random.uniform(k_push, (), minval=gap_lo, maxval=gap_hi),
@@ -668,8 +681,16 @@ class Walk(PipelineEnv):
         done = jnp.where((upright < 0.4) | (ps.qpos[2] < 0.10), 1.0, 0.0)
         done = jnp.where(jnp.isnan(ps.qpos).any() | jnp.isnan(ps.qvel).any(), 1.0, done)
 
+        # The stride-averaged velocity the tracking terms score (VEL_AVG_TAU).
+        # Zeroed with the episode: a new episode starts at rest, and the old
+        # robot's motion must not be credited to it.
+        a = self.dt / VEL_AVG_TAU
+        vel_avg = info["vel_avg"] + a * (jnp.array([lin_vel_b[0], lin_vel_b[1], gyro[2]])
+                                         - info["vel_avg"])
+        info["vel_avg"] = jnp.where(done > 0.5, jnp.zeros(3), vel_avg)
+
         unweighted = rw.terms(
-            cmd=info["command"], lin_vel_b=lin_vel_b, ang_vel_b=gyro,
+            cmd=info["command"], lin_vel_b=lin_vel_b, ang_vel_b=gyro, vel_avg=vel_avg,
             gravity_b=gravity_b, base_z=ps.qpos[2], stance_z=self._stance_z,
             qpos_j=ps.qpos[self._qadr], qvel_j=ps.qvel[self._vadr], tau=tau,
             action=action, last_action=info["last_action"],

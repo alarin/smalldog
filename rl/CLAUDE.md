@@ -110,6 +110,13 @@ no policy trained before them is worth keeping.
   checkpoint before this trots at a 0.20 s period, which the real robot turned into a
   0.74 s rocking on the spot — and the old model with the profile added reproduces that
   (s4 at cmd 0.4: 1.35 m in 4 s → 0.22 m). A state per joint, `info["goal"]`.
+- **Tracking on the stride-averaged velocity, and the widths** (`walk.VEL_AVG_TAU` 0.4 s;
+  `tracking_sigma` 0.25 → 0.05, `tracking_sigma_ang` 0.15 → 0.5, `orientation` −5 → −2;
+  2026-09-15): measured with the IK trot as yardstick, the old reward paid standing still
+  87 points per 4 s more than an honest 0.08 m/s trot at cmd 0.2 — the instantaneous
+  body velocity oscillates within a stride and exp(−err²/σ) charged the oscillation more
+  than the progress. Standing was the reward's optimum; three runs against the profiled
+  servo found it. Now +41 for the trot. A different reward: retrain.
 - **Friction at rest** (`frictionloss` = `tau_c`, above): torque off from the stance the base
   fell 107.7 mm before and 65.6 after; residual joint speed holding the stance 0.0033 →
   0.0009 rad/s.

@@ -98,7 +98,9 @@ class Weights:
     # what a trot must not do
     lin_vel_z: float = -2.0
     ang_vel_xy: float = -0.05
-    orientation: float = -5.0
+    # -5 -> -2 (2026-09-15): see tracking_sigma below — the body tilt of an
+    # honest trot on this robot was being charged more than its progress paid.
+    orientation: float = -2.0
     base_height: float = -1.0
     # what the hardware cannot afford
     torque: float = -2.0e-4
@@ -121,16 +123,23 @@ class Weights:
     # the end
     termination: float = -1.0
 
-    # tracking sharpness: exp(-err^2 / sigma). Not a weight — a width. 0.25 puts
-    # the reward at 1/e when the tracking error is 0.5 m/s, which on a robot
-    # whose top command is 0.8 m/s is a forgiving but not meaningless target.
-    tracking_sigma: float = 0.25
-    # Angular gets its own, because it was sharing a width with a quantity in
-    # different units: yaw commands span +-1.0 rad/s. 0.15 is a modest tightening
-    # and is NOT the fix — bias_ang is. Both are here because they act in
-    # different places: the width where the error is large, the L1 where it is
-    # small.
-    tracking_sigma_ang: float = 0.15
+    # tracking sharpness: exp(-err^2 / sigma). Not a weight — a width.
+    #
+    # 0.25 / 0.15 -> 0.05 / 0.5, and orientation -5 -> -2 (2026-09-15), measured
+    # in this env with the IK trot (0.08 m/s at period 1.35 s) as the yardstick
+    # against standing still, 4 s at cmd 0.2: under the old widths the trot
+    # scored 87 points BELOW standing — moving earned 11 on tracking_lin_vel
+    # (0.25 pays standing 85 % at cmd 0.2), the body's wobble cost 85 on yaw
+    # tracking and orientation. Standing was the optimum of the reward by
+    # construction, and every run against the profiled servo found it. With
+    # these, and tracking scored on the stride-averaged velocity
+    # (walk.VEL_AVG_TAU), the same trot is +41 at cmd 0.2 and +4 at cmd 0.1.
+    # 0.05 puts the reward at 1/e at 0.22 m/s of error; standing under a 0.4
+    # command earns 4 %.
+    tracking_sigma: float = 0.05
+    # Angular gets its own width: yaw commands span +-1.0 rad/s, and a trot on
+    # this robot yaws +-0.3 rad/s within a stride even with the averaging.
+    tracking_sigma_ang: float = 0.5
 
     def asdict(self) -> dict:
         widths = ("tracking_sigma", "tracking_sigma_ang")
@@ -174,7 +183,7 @@ class Weights:
 FOOT_CLEARANCE_TARGET = 0.04
 
 
-def terms(*, cmd, lin_vel_b, ang_vel_b, gravity_b, base_z, stance_z,
+def terms(*, cmd, lin_vel_b, ang_vel_b, vel_avg, gravity_b, base_z, stance_z,
           qpos_j, qvel_j, tau, action, last_action, vel_limit, soft_lo, soft_hi,
           air_time, first_contact, foot_vel_xy, foot_h, in_contact, heading_err,
           done, dt) -> dict:
@@ -186,8 +195,14 @@ def terms(*, cmd, lin_vel_b, ang_vel_b, gravity_b, base_z, stance_z,
     cmd_xy, cmd_yaw = cmd[:2], cmd[2]
     still = jnp.linalg.norm(cmd) < 0.05          # "stand" is a command, not an absence
 
-    lin_err = jnp.sum((cmd_xy - lin_vel_b[:2]) ** 2)
-    ang_err = (cmd_yaw - ang_vel_b[2]) ** 2
+    # Tracking is scored on `vel_avg` — (vx, vy, wz) averaged over about a
+    # stride (walk.VEL_AVG_TAU) — and not on the instantaneous velocity, which
+    # oscillates within every stride of a 2.5 kg body and made standing still
+    # out-score an honest trot on these two terms. The instantaneous values
+    # still feed lin_vel_z, ang_vel_xy and the rest, where the oscillation IS
+    # the thing being charged.
+    lin_err = jnp.sum((cmd_xy - vel_avg[:2]) ** 2)
+    ang_err = (cmd_yaw - vel_avg[2]) ** 2
 
     # past the servo's no-load speed. Hinge, not quadratic-everywhere: below the
     # limit there is nothing to discourage.
@@ -202,7 +217,7 @@ def terms(*, cmd, lin_vel_b, ang_vel_b, gravity_b, base_z, stance_z,
         # The same two errors, L1 and unsaturated. Not a duplicate: these carry
         # gradient where the exp terms have none, which is exactly at the small
         # persistent offsets that have twice survived a whole training run.
-        "bias_lin": jnp.sum(jnp.abs(cmd_xy - lin_vel_b[:2])),
+        "bias_lin": jnp.sum(jnp.abs(cmd_xy - vel_avg[:2])),
         # How far off the commanded heading the robot has drifted over the last
         # few seconds. The env carries the leaky integral; this only reads it.
         "heading_drift": jnp.abs(heading_err),
