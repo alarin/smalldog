@@ -440,6 +440,7 @@ def rollout_mujoco(mj, policy_jit, env, p, cmd, seconds, shot=None, seed=None):
     dt_ctrl = float(env.dt)
     n_sub = int(round(dt_ctrl / mj.opt.timestep))
     last_action = np.zeros(12)
+    goal, goal_w = stance_j.copy(), np.zeros(12)   # the firmware's profiled goal
     hist = None                       # filled from the first frame, not from zeros
     command = np.array(cmd, float)
     u_bat = 12.0                      # nominal pack; the battery test is elsewhere
@@ -473,7 +474,9 @@ def rollout_mujoco(mj, policy_jit, env, p, cmd, seconds, shot=None, seed=None):
             #
             # tau_c_external: the Coulomb floor is MuJoCo's frictionloss on
             # every MuJoCo path (actuator.friction, model.build_spec).
-            d.ctrl[act] = actuator.bus_torque(p, target - q, w, u_bat, 0.0,
+            goal, goal_w = actuator.profile_goal(p, goal, goal_w, target,
+                                                 float(mj.opt.timestep), xp=np)
+            d.ctrl[act] = actuator.bus_torque(p, goal - q, w, u_bat, 0.0,
                                               xp=np, tau_c_external=True)
             mujoco.mj_step(mj, d)
 

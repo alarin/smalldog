@@ -49,7 +49,8 @@ until one exists. The mount is decided (`IMU_*` in `mini_dog.py`, checked by
 `noload_speed.py --pwm` ran on the second unit: open loop the speed is linear in duty
 through 1000 (5.0 rad/s at 12.1 V, k_e 2.39), while position mode on the same unit stops
 at 3.88 with the register flat at 2500 counts/s. What `rl/actuator.py` still lacks is a
-rate cap on the *goal* — a state per joint, not a duty cap. The rig then ran to full duty
+rate cap on the *goal* — a state per joint, not a duty cap (**done 2026-09-14**, as a speed
+*and* acceleration profile, `actuator.profile_goal`; `rl/CLAUDE.md`, "Re-baselines"). The rig then ran to full duty
 (3d): the loop does apply it, and the motor is what bends.
 
 ## 3d, decided: 3.2 in the model, damping in the same units, the held 2.3 is a budget

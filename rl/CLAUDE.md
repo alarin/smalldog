@@ -102,6 +102,14 @@ no policy trained before them is worth keeping.
   fixed: the box-height curriculum reached 12 of its declared 22 mm (one key drew both
   coin and height), the bus delay was 0 on every draw (now one tick late on ~32 %), and
   push magnitude and gap shared a key.
+- **The servo's goal profile** (`actuator.profile_goal`, `Params.goal_acc` = 8 rad/s²,
+  `goal_vel` = 3.86; 2026-09-14): the firmware moves an internal goal toward the target
+  under a speed and an acceleration cap and the P loop chases *that*. Measured on the
+  bench's step and chirp runs (`robot/bench/chirp_gain.py`): a ±15° sine passes 74 % at
+  1 Hz, 25 % at 2 Hz, 7 % at 5 Hz; the law without it passed 100 % at 2 Hz. Every
+  checkpoint before this trots at a 0.20 s period, which the real robot turned into a
+  0.74 s rocking on the spot — and the old model with the profile added reproduces that
+  (s4 at cmd 0.4: 1.35 m in 4 s → 0.22 m). A state per joint, `info["goal"]`.
 - **Friction at rest** (`frictionloss` = `tau_c`, above): torque off from the stance the base
   fell 107.7 mm before and 65.6 after; residual joint speed holding the stance 0.0033 →
   0.0009 rad/s.

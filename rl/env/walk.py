@@ -463,6 +463,11 @@ class Walk(PipelineEnv):
             "command": self._cmd.sample(k_cmd),
             "last_action": jnp.zeros(12),
             "action_buf": jnp.zeros((self._n_delay, 12)),
+            # the firmware's profiled goal, one per joint (actuator.profile_goal):
+            # starts ON the joint and at rest, which is what a servo whose
+            # torque has just come on does
+            "goal": ps.qpos[self._qadr],
+            "goal_w": jnp.zeros(12),
             "air_time": jnp.zeros(4),
             # leaky integral of (yaw rate - commanded yaw rate): the heading
             # error the last few seconds have accumulated. Reward-side only —
@@ -582,9 +587,18 @@ class Walk(PipelineEnv):
         p = self._params(info)
         u_bat, sag = info["u_bat"], info["sag"]
 
-        def one(ps, _):
+        # The servo does not chase `target`; its firmware moves an internal goal
+        # toward it under a speed and an acceleration cap, and the P loop chases
+        # THAT. Measured 8 rad/s^2 (actuator.Params.goal_acc): a +-15 deg sine
+        # passes 25 % at 2 Hz and 7 % at 5 Hz. Without this the policy learned
+        # a 5 Hz trot the real servos turned into a rocking on the spot.
+        dt_sub = float(self.sys.opt.timestep)
+
+        def one(carry, _):
+            ps, goal, goal_w = carry
             q = ps.qpos[self._qadr]
             w = ps.qvel[self._vadr]
+            goal, goal_w = actuator.profile_goal(p, goal, goal_w, target, dt_sub, xp=jnp)
             # One pack and one harness, so the sag is applied to the SUMMED
             # current of all twelve — actuator.bus_torque is that whole chain,
             # stated once and shared with eval.py's CPU pass and with
@@ -595,11 +609,13 @@ class Walk(PipelineEnv):
             # stance foot spends most of its time there. Counting it in both
             # places would double it (actuator.friction, model.build_spec,
             # PLAN.md 2b).
-            tau = actuator.bus_torque(p, target - q, w, u_bat, sag, xp=jnp,
+            tau = actuator.bus_torque(p, goal - q, w, u_bat, sag, xp=jnp,
                                       tau_c_external=True)
-            return self._pipeline.step(self.sys, ps, tau, self._debug), tau
+            return (self._pipeline.step(self.sys, ps, tau, self._debug), goal, goal_w), tau
 
-        ps, taus = jax.lax.scan(one, state.pipeline_state, (), self._n_frames)
+        (ps, goal, goal_w), taus = jax.lax.scan(
+            one, (state.pipeline_state, info["goal"], info["goal_w"]), (), self._n_frames)
+        info["goal"], info["goal_w"] = goal, goal_w
         tau = taus[-1]
 
         # A shove, on a schedule sampled per episode. Not a model of anything —

@@ -138,6 +138,23 @@ class Params:
     punch: float = 0.0        # minimum startup duty once outside the dead zone
     duty_max: float = 1.0
     loop_hz: float = 1000.0   # the servo's own loop rate
+    # --- the firmware's goal profile ---------------------------------------
+    # The position loop does not chase the target; it chases an internal goal
+    # the firmware moves toward the target under a speed cap and an
+    # ACCELERATION cap, with ACCELERATION = 0 in the register.  MEASURED
+    # (robot/bench/data/{step,chirp}_*.csv, bench/chirp_gain.py, 2026-09-14):
+    # a step's peak speed is 2.8*sqrt(step) — 1.1 rad/s for 5.6 deg, 2.5 for
+    # 46 — which is the triangle sqrt(a*d) at a = 8, the same on a 0.021 and a
+    # 0.028 kg*m^2 arm and at 8, 10 and 12 V, so it is a profile and not the
+    # torque; and a = 8 in simulate() reproduces the six chirp curves to 0.2
+    # in log gain where 18 misses by 0.5. The speed plateau is the 3.86 above.
+    # This one number is the whole of the servo's frequency response: a
+    # +-15 deg sine passes 74 % at 1 Hz, 25 % at 2 Hz and 7 % at 5 Hz, while
+    # the P loop alone (the law without the profile) passed 100 % at 2 Hz —
+    # which is how a policy learned a 5 Hz trot the servos turned into a
+    # 0.74 s rocking on the floor.  `profile_goal()`; a state per joint.
+    goal_acc: float = 8.0     # rad/s^2, the profile's acceleration cap
+    goal_vel: float = 3.86    # rad/s, the profile's speed cap (the measured plateau)
     # --- transmission -----------------------------------------------------
     theta_bl: float = math.radians(0.5)   # total backlash, rad at the output
     k_bl: float = 3000.0      # N*m/rad once engaged; stiff, not identified
@@ -205,7 +222,7 @@ try:
         Params,
         data_fields=["R", "k_e", "k_u", "J_m", "J_l", "tau_c", "b_v", "mu_load",
                      "kp", "kd", "deadband", "punch", "duty_max", "loop_hz",
-                     "theta_bl", "k_bl", "c_bl", "v_eps"],
+                     "goal_acc", "goal_vel", "theta_bl", "k_bl", "c_bl", "v_eps"],
         meta_fields=["enc_after_backlash", "fitted", "source", "servo_ids",
                      "rms_pos_deg", "rms_current_a"])
 except ImportError:                       # numpy-only machine; nothing to register
@@ -349,6 +366,26 @@ def motor_torque(p: Params, u_volt: float, w: float, driven=True, tau_t=None,
             - friction(p, w, tau_t, xp, tau_c_external=tau_c_external))
 
 
+def profile_goal(p: Params, goal, goal_w, target, dt, xp=np):
+    """One step of the firmware's goal profile: (goal, goal_w) -> (goal, goal_w).
+
+    The goal moves toward `target` at most `goal_vel` fast and changes speed at
+    most `goal_acc` per second, braking so as to arrive rather than overshoot —
+    the trapezoid every servo firmware runs. The P loop then sees `goal - q`,
+    never `target - q`. Array API: per joint, and `p`'s two fields may be
+    batched like the rest. Called at the physics substep on the MuJoCo paths
+    and at the servo's own loop rate in `simulate()`; the profile is a limit
+    on a rate, so the step size does not change what it does.
+    """
+    e = target - goal
+    # the speed that still lets the goal stop exactly at the target
+    v_stop = xp.sqrt(2.0 * p.goal_acc * xp.abs(e))
+    v_des = xp.sign(e) * xp.minimum(p.goal_vel, v_stop)
+    dv = p.goal_acc * dt
+    goal_w = xp.clip(v_des, goal_w - dv, goal_w + dv)
+    return goal + goal_w * dt, goal_w
+
+
 def bus_torque(p: Params, err, w, u_bat, sag, xp=np,
                tau_c_external: bool = False):
     """The whole chain a ROBOT joint sees: inner loop, pack sag, motor torque.
@@ -459,6 +496,8 @@ def simulate(p: Params, target, dt, q0=0.0, w0=0.0, u_bat=12.0, load_torque=None
 
     # hoisted, because they are read once per inner step
     kp, kd, dead, punch, dmax = p.kp, p.kd, p.deadband, p.punch, p.duty_max
+    g_acc, g_vel = p.goal_acc, p.goal_vel
+    dt_loop = ctrl_every * h
     k_u, k_e, k_w, R_, tau_c, b_v = p.k_u, p.k_e, p.k_w, p.R, p.tau_c, p.b_v
     mu_l = p.mu_load
     J_m, J_l = p.J_m, max(p.J_l, 1e-9)
@@ -468,6 +507,7 @@ def simulate(p: Params, target, dt, q0=0.0, w0=0.0, u_bat=12.0, load_torque=None
 
     th_m = th_l = float(q0)
     w_m = w_l = float(w0)
+    goal, goal_w = float(q0), 0.0           # the firmware's profiled goal
     q_o = np.empty(n); w_o = np.empty(n); i_o = np.empty(n)
     u_o = np.empty(n); t_o = np.empty(n); m_o = np.empty(n)
 
@@ -479,10 +519,18 @@ def simulate(p: Params, target, dt, q0=0.0, w0=0.0, u_bat=12.0, load_torque=None
             if k % ctrl_every == 0:
                 if not driven:
                     d = 0.0
+                    goal, goal_w = (th_l if after else th_m), 0.0   # torque off: the goal follows
                 else:
                     q_fb = th_l if after else th_m
                     w_fb = w_l if after else w_m
-                    e = round((tgt - q_fb) / enc) * enc
+                    # the same trapezoid profile_goal() runs, in scalars
+                    e_g = tgt - goal
+                    v_stop = math.sqrt(2.0 * g_acc * abs(e_g))
+                    v_des = math.copysign(min(g_vel, v_stop), e_g) if e_g != 0.0 else 0.0
+                    dv = g_acc * dt_loop
+                    goal_w = min(max(v_des, goal_w - dv), goal_w + dv)
+                    goal += goal_w * dt_loop
+                    e = round((goal - q_fb) / enc) * enc
                     if abs(e) <= dead:
                         e = 0.0
                     u = kp * e - kd * w_fb
@@ -709,10 +757,24 @@ def _selftest() -> int:
 
     # vendor consistency: the free-running speed is U / k_e, less friction
     # target far enough away that it never arrives: what is wanted is the
-    # terminal speed, which is where the back-EMF cancels the applied voltage
+    # terminal speed, which is where the back-EMF cancels the applied voltage.
+    # The goal profile is lifted (goal_vel/goal_acc -> 1e6): this asks the
+    # MOTOR its speed, and on a real unit the firmware's 3.86 plateau answers
+    # first (the "no-load speed" note above).
     free = simulate(Params(J_l=1e-4, theta_bl=0.0, tau_c=0.0, b_v=0.0,
-                           mu_load=0.0),
+                           mu_load=0.0, goal_vel=1e6, goal_acc=1e6),
                     np.full(1200, 60.0), 0.005, u_bat=12.0)
+    # and with the profile in place the plateau wins, as measured on the hub
+    capped = simulate(Params(J_l=1e-4, theta_bl=0.0, tau_c=0.0, b_v=0.0, mu_load=0.0),
+                      np.full(1200, 60.0), 0.005, u_bat=12.0)
+    check("the goal profile caps the free speed at goal_vel",
+          round(float(np.max(capped["w"])), 2), 3.86, tol=0.10)
+    # a 0.5 rad step is a triangle under goal_acc: peak speed sqrt(a*d) = 2.0,
+    # where the P loop alone would have run it up to the 4.7 terminal speed
+    stepped = simulate(Params(J_l=1e-4, theta_bl=0.0, tau_c=0.0, b_v=0.0, mu_load=0.0),
+                       np.full(200, 0.5), 0.005, u_bat=12.0)
+    check("a step's peak speed is the profile's triangle",
+          round(float(np.max(stepped["w"])), 2), math.sqrt(8.0 * 0.5), tol=0.3)
     check("terminal speed is U / k_e",
           round(float(np.max(free["w"])), 3), round(p.no_load_speed(12.0), 3),
           tol=0.05)
