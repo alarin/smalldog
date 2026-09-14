@@ -399,6 +399,47 @@ def record_baseline(rt, gait, args, out_path):
     print("saved:", b.save(out_path))
 
 
+class TickLog:
+    """Every tick's feedback, goal and gait phase -> one .npz (`--log`).
+
+    This is the recording `POWER.md` asks for and the bench cannot make: the pack's
+    terminal sag and the whole-bus current during a trot at the design mass, which
+    only exists untethered. The servo's own registers are the meter — volt and
+    supply current arrive in the same 15-byte read the loop already does — so it
+    costs nothing on the tick. `bench/pack_sag.py` reads the file.
+    """
+    FIELDS = ("q", "w", "load", "volt", "temp", "current")
+
+    def __init__(self, rt, gait, cmd=None):
+        self.rt, self.gait, self.cmd = rt, gait, cmd
+        self.t = 0.0
+        self.rows = []
+
+    def __call__(self, k, dt, fb):
+        import numpy as np
+        self.t += dt
+        fbv = [[fb[n][f] if fb[n] else math.nan for f in self.FIELDS]
+               for n in self.rt.calib.joints]
+        goal = [self.rt.goal[n] for n in self.rt.calib.joints]
+        phase = [self.gait.leg_phase(l) for l in self.gait.legs]
+        cmd = list(self.cmd()) if self.cmd else [math.nan] * 3
+        self.rows.append((self.t, dt, np.array(fbv, np.float32), np.array(goal, np.float32),
+                          np.array(phase, np.float32), np.array(cmd, np.float32)))
+
+    def save(self, path, args):
+        import numpy as np
+        if not self.rows:
+            return
+        t, dt, fb, goal, phase, cmd = (np.array(x) for x in zip(*self.rows))
+        np.savez(path, t=t, dt=dt, fb=fb, goal=goal, phase=phase, cmd=cmd,
+                 fields=np.array(self.FIELDS), joints=np.array(self.rt.calib.joints),
+                 legs=np.array(self.gait.legs),
+                 gait=np.array(dict(period=self.gait.period, speed=args.speed,
+                                    swing_height=self.gait.swing_height,
+                                    body_height=self.gait.body_height, hz=args.hz)))
+        print(f"log: {len(self.rows)} ticks -> {path}")
+
+
 # --------------------------------------------------------------------- main
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
@@ -416,6 +457,8 @@ def main():
     ap.add_argument("--seconds", type=float, default=None)
     ap.add_argument("--ramp", type=float, default=2.0, help="s to stand up in")
     ap.add_argument("--no-sit", action="store_true", help="cut torque where it stands")
+    ap.add_argument("--log", metavar="FILE.npz",
+                    help="record every tick: feedback, goals, gait phase (bench/pack_sag.py)")
 
     ap.add_argument("--speed", type=float, default=0.20, help="m/s for the teleop keys")
     ap.add_argument("--turn", type=float, default=1.2, help="rad/s for the teleop keys")
@@ -561,6 +604,7 @@ def main():
                            for k in ("roll", "pitch", "knee")) for l in gait.legs))
 
     code = 0
+    tick = None
     try:
         with rt:
             rt.engage(q_stand, ramp_s=a.ramp)
@@ -570,32 +614,41 @@ def main():
                 record_baseline(rt, gait, a, a.baseline)
             elif a.stand:
                 print("standing. Ctrl-C to sit down.")
+                tick = TickLog(rt, gait, lambda: (0.0, 0.0, 0.0)) if a.log else None
                 rt.run(lambda dt_, fb: gait.joint_targets(dt_, 0.0, 0.0, 0.0),
-                       seconds=a.seconds)
+                       seconds=a.seconds, on_tick=tick)
             elif a.profile or not Teleop.available():
                 if not a.profile:
                     print("no TTY for the keyboard; running the scripted profile")
                 cmd = profile_source(PROFILE if a.as_commanded
                                      else clamp_profile(PROFILE, a.speed, a.turn))
 
+                last = [0.0, 0.0, 0.0]
+
                 def source(dt_, fb):
                     if contact:
                         c = contact(dt_, fb)
                         if c:
                             gait.feedback(contact=c)
-                    return gait.joint_targets(dt_, *cmd(dt_))
-                rt.run(source, seconds=a.seconds)
+                    last[:] = cmd(dt_)
+                    return gait.joint_targets(dt_, *last)
+                tick = TickLog(rt, gait, lambda: last) if a.log else None
+                rt.run(source, seconds=a.seconds, on_tick=tick)
             else:
                 with Teleop(gait, a.speed, a.turn) as tele:
                     tele.status()
+
+                    last = [0.0, 0.0, 0.0]
 
                     def source(dt_, fb):
                         if contact:
                             c = contact(dt_, fb)
                             if c:
                                 gait.feedback(contact=c)
-                        return gait.joint_targets(dt_, *tele())
-                    rt.run(source, seconds=a.seconds)
+                        last[:] = tele()
+                        return gait.joint_targets(dt_, *last)
+                    tick = TickLog(rt, gait, lambda: last) if a.log else None
+                    rt.run(source, seconds=a.seconds, on_tick=tick)
 
             if not a.no_sit:
                 h = gait.body_height
@@ -609,6 +662,8 @@ def main():
         code = 1
     finally:
         print(rt.report_lines())
+        if a.log and tick is not None:
+            tick.save(a.log, a)
     return code
 
 
