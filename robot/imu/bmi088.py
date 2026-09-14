@@ -121,6 +121,17 @@ class BMI088:
     def _gyr_write(self, reg, val):
         self.bus.write_byte_data(self.gyr_addr, reg, val & 0xFF)
 
+    def _softreset(self, write, reg):
+        # Measured on the board: the gyro die resets on the byte and never ACKs it, so
+        # the kernel reports ENXIO on a write that worked (the id reads back after).
+        # Swallow that one NACK; every other write still raises.
+        try:
+            write(reg, 0xB6)
+        except OSError as e:
+            if e.errno != 6:
+                raise
+        time.sleep(0.05)
+
     def ids(self):
         return self._acc_read(ACC_CHIP_ID)[0], self._gyr_read(GYR_CHIP_ID)[0]
 
@@ -130,14 +141,14 @@ class BMI088:
             raise RuntimeError(f"BMI088 ids wrong: accel 0x{acc_id:02X} (want 0x1E) at "
                                f"0x{self.acc_addr:02X}, gyro 0x{gyr_id:02X} (want 0x0F) at "
                                f"0x{self.gyr_addr:02X}")
-        self._acc_write(ACC_SOFTRESET, 0xB6); time.sleep(0.05)
+        self._softreset(self._acc_write, ACC_SOFTRESET)
         self._acc_write(ACC_PWR_CONF, 0x00); time.sleep(0.005)   # active
         self._acc_write(ACC_PWR_CTRL, 0x04); time.sleep(0.05)    # accel on
         self._acc_write(ACC_CONF, ACC_CONF_400HZ_NORMAL)
         self._acc_write(ACC_RANGE, ACC_RANGE_6G)
         self._acc_scale = 1.5 * (2 ** (ACC_RANGE_6G + 1)) * G / 32768.0
 
-        self._gyr_write(GYR_SOFTRESET, 0xB6); time.sleep(0.05)
+        self._softreset(self._gyr_write, GYR_SOFTRESET)
         self._gyr_write(GYR_RANGE, GYR_RANGE_500DPS)
         self._gyr_write(GYR_BANDWIDTH, GYR_BW_400HZ_47HZ)
         self._gyr_write(GYR_LPM1, 0x00)                          # normal
