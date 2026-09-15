@@ -19,6 +19,7 @@ setup(
     entry_points={
         'console_scripts': [
             'keyboard = smalldog_teleop.keyboard_teleop:main',
+            'joy = smalldog_teleop.joy_teleop:main',
         ],
     },
 )

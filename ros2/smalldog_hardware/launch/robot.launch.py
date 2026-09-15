@@ -2,6 +2,7 @@
 
     ros2 launch smalldog_hardware robot.launch.py                  # stand, wait for /cmd_vel
     ros2 launch smalldog_hardware robot.launch.py imu:=true        # levelling + heading hold
+    ros2 launch smalldog_hardware robot.launch.py joy:=true        # + the gamepad (joy_node + smalldog_teleop joy)
     ros2 launch smalldog_hardware robot.launch.py dry_run:=true    # loopback bus, no hardware
     ros2 run smalldog_teleop keyboard --ros-args -p speed:=0.08 -p turn:=0.65   # 2nd terminal
 
@@ -56,6 +57,14 @@ def _nodes(context):
              output='screen', condition=IfCondition(LaunchConfiguration('teleop')),
              parameters=[{'speed': speed, 'turn': TURN, 'read_stdin': False,
                           'key_topic': '/smalldog/key'}]),
+
+        # the gamepad: joy_node owns /dev/input/js0, the mapping node turns it into /cmd_vel
+        Node(package='joy', executable='joy_node', name='joy_node', output='screen',
+             condition=IfCondition(LaunchConfiguration('joy')),
+             parameters=[{'device_id': 0, 'deadzone': 0.05, 'autorepeat_rate': 20.0}]),
+        Node(package='smalldog_teleop', executable='joy', name='smalldog_joy_teleop',
+             output='screen', condition=IfCondition(LaunchConfiguration('joy')),
+             parameters=[{'speed': speed, 'turn': TURN}]),
     ]
 
 
@@ -70,5 +79,6 @@ def generate_launch_description():
                               description='rad/s the heading hold may add; 0 = the gait\'s own 0.5'),
         # off by default: the teleop reads keys from a TTY it does not have under launch
         DeclareLaunchArgument('teleop', default_value='false'),
+        DeclareLaunchArgument('joy', default_value='false', description='the USB gamepad'),
         OpaqueFunction(function=_nodes),
     ])
