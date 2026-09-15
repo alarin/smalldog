@@ -68,10 +68,36 @@ this, not the pixel count, is what shaped `camera_mount`.
 ### Not on the drawing at all
 
 `CAM_OPT` (entrance pupil, up the axis from the PCB face — 12 mm assumed), `CAM_RATE`
-(frames/s achievable at 4K over USB 2.0 MJPEG — 15 assumed) and `CAMERA_KG` (12 g
-assumed; the vendor gives no mass). All three are marked `**verify**` in `mini_dog.py`.
-Weigh the module and read the real UVC mode list off the device — `v4l2-ctl --list-formats-ext`
-on the Orange Pi — before trusting the last two.
+(frames/s at 4K over USB 2.0 MJPEG) and `CAMERA_KG` (12 g assumed; the vendor gives no
+mass). All three are marked `**verify**` in `mini_dog.py`; weigh the module before
+trusting the last.
+
+**The frame rate is measured (2026-09-15, on the Orange Pi):** the module enumerates as a
+UVC "WN Lightburn Camera" (`1bcf:28c4`, `/dev/video0`; `/dev/video1` is its metadata
+node), advertises 30 fps in every MJPEG mode from 160×120 to 3840×2160, and delivers
+**30 fps at 4K only when the exposure is short**: with `auto_exposure=1` and
+`exposure_time_absolute` ≤ 100 (10 ms) it runs 29.5 fps at 3840×2160 (5.3 MB/s); with the
+default aperture-priority auto exposure in room light it drops to **19.6 fps** in every
+mode alike (4K and 1080p both 157 frames in 8 s), because the exposure it picks is longer
+than a 30 fps frame. `power_line_frequency` makes no difference. There is no gain control,
+so a 10 ms manual exposure indoors is nearly black — 30 fps is a daylight number and 20 is
+the indoor one. YUYV is 5 fps at 1080p. So `CAM_RATE` is 20 indoors, 30 in the light,
+not the 15 assumed; changing it is a `mini_dog.py` edit and goes through the ladder.
+
+**The image comes out upside-down (180°) on the standing robot**: floor in the top half,
+the skirting at the floor's edge, a socket and the door handle at their true heights
+below it. It is a flip, not a 90° turn, so H and V FOV stay as `camera_fov()` derives them;
+the pipeline rotates by 180° (`-vf hflip,vflip`) or the board goes in the mount the other
+way up. No UVC flip control on this module (`v4l2-ctl --list-ctrls`: brightness …
+backlight_compensation, auto_exposure, exposure_time_absolute, focus — the focus pair is
+inert on a fixed-focus lens).
+
+The counting recipe, because `ffprobe` reports the advertised 30:
+
+```bash
+ffmpeg -f v4l2 -input_format mjpeg -video_size 3840x2160 -i /dev/video0 -t 8 -c:v copy \
+    -f rawvideo /tmp/x.mjpg && python3 -c 'print(open("/tmp/x.mjpg","rb").read().count(b"\xff\xd8\xff")/8)'
+```
 
 ## How it is used
 

@@ -338,7 +338,9 @@ through the **lateral** wall, the neutral axis for the bending the knee does.
     REP-145 (+Z out, +X right, +Y down), differing by (−90°, 0, −90°). MuJoCo looks down its
     own −Z with +Y up, so [camera.py](camera.py) builds that quaternion from the axes.
   - **verify**: `CAM_OPT` (12 mm), `CAM_FOV_D` (the catalogue's single number, read as the
-    diagonal), `CAM_RATE`, `CAMERA_KG` (12 g, unweighed).
+    diagonal), `CAMERA_KG` (12 g, unweighed). `CAM_RATE` is measured: 20 fps under auto
+    exposure indoors, 30 with a ≤ 10 ms exposure; the frame arrives upside-down
+    ([ref/camera/README.md](ref/camera/README.md)).
 - **GPS** — GY-NEO6MV2 + active patch, `gps_mount`. A patch antenna looks at the hemisphere
   above itself, and the only free sky on this robot is above the Pi and behind the L2 — free
   because the L2's cone leans 45° forward, so *up and behind* is below it (69 mm of margin,

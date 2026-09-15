@@ -62,11 +62,22 @@ model. The ratio is not an integer, so successive precession turns interleave an
 pattern never closes. `lidar.py` and `mujoco_lidar.cpp` now emit exactly this; the
 reproduced profile is within ±6 % of the table to 88°.
 
-What it does to `LIDAR_TILT`: at 45° the dense axis points 45° above the horizon. See the
+What it does to `LIDAR_TILT`: the dense axis is wherever the axis points — 90 (forward, as built) puts it on the horizon, 45 would put it 45° up. See the
 tilt block in `mini_dog.py` and `tools/lidar_tilt.py`.
 
 `tools/pcview.py --stats` prints points **and** points-per-steradian — the count column on
 its own argues the sensor is uniform, which is the opposite of what it does.
+
+## On the robot (2026-09-15)
+
+`l2_onboard.pcd` — 10 s, 120 frames, the sensor bolted on the standing robot in the same
+room, decimated 1:11 by stride like the desk capture. 63299 pts/s, 12.0 Hz, dirty 2.0 %,
+range 0.15 … 7.2 m (the room again, not the sensor). Its `# imu_accel_xyz` is
+(7.03, 6.99, −0.34): the optical axis is 2° below level — `LIDAR_TILT` = 90, axis forward,
+as built — and gravity splits evenly between the sensor's x and y, which is only how the
+L2 is clocked in its bracket (the scan is axisymmetric, it does not matter). `pcview
+--stats` reads it "92° off upright" for the same reason. Ground at −0.45 m below the scan
+core, the ceiling at +2.5 … 2.9.
 
 ## The capture
 
@@ -116,8 +127,14 @@ no address at all, so the sensor was ARPing into silence — link up, 5 packets/
 listening. One address fixes it:
 
 ```bash
-sudo ip addr add 192.168.1.2/24 dev enP4p65s0     # gone on reboot; make it an NM profile to keep
+sudo nmcli con modify "Wired connection 1" ipv4.method manual ipv4.addresses 192.168.1.2/24 \
+    ipv4.never-default yes connection.autoconnect yes && sudo nmcli con up "Wired connection 1"
 ```
+
+That is the Pi's profile since 2026-09-15 (`never-default` keeps `wlan0` as the route out);
+the link then carries ~440 packets/s and `capture_pcd` reads 63.3 k pts/s at 12.0 Hz with
+the sensor on the robot. Before the address it carries ~5/s — the L2's ARPs — which is the
+one-line test for "is it wired and powered".
 
 Ethernet is **not** PoE here: the L2 takes 12 V 1 A on its own DC3.5-1.35 barrel. The USB
 adapter's DC jack is the alternative for the serial path, not an addition — power one, not

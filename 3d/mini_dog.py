@@ -1037,7 +1037,9 @@ CAM_TILT     = 6.0                    # nose-up, about +y
 CAM_OPT      = 12.0                   # entrance pupil, up the axis from the PCB  **verify**
 CAM_FOV_D    = 90.0                   # the fitted lens, DIAGONAL                 **verify**
 CAM_PIX      = (3840, 2160)           # the mode the pipeline runs; H and V FOV follow
-CAM_RATE     = 15.0                   # frames/s at CAM_PIX over USB 2.0 MJPEG    **verify**
+CAM_RATE     = 20.0                   # frames/s at CAM_PIX, MJPEG, auto exposure in room
+                                      # light; 30 with exposure <= 10 ms (daylight).
+                                      # Measured on the Pi, ref/camera/README.md.
 CAM_LEDGE    = CRADLE_Z1              # 15.36 - the front cradle's own top face, and the
                                       # only flat surface anywhere near the camera.  It
                                       # used to be spelled S_W/2 + SLEEVE_W a second time
