@@ -3,6 +3,7 @@
 
     ros2 run smalldog_nav explore                 # the launch does this with explore:=true
     ros2 topic pub -1 /smalldog/explore std_msgs/msg/Bool "{data: false}"   # pause / resume
+                                                  # (the gamepad's Back button does the same)
 
 A frontier is a free cell of slam_toolbox's `/map` with an unknown neighbour: the edge of
 what has been seen. The node clusters them, walks to the biggest one that is not too far
@@ -133,6 +134,7 @@ class Explorer(Node):
         self.empty_checks = 0
         self.spun = not bool(g('spin_first'))
         self.spinning = False
+        self.spin_handle = None
         self.spin_tries = 0
         self.done = False
         self.homing = False
@@ -167,6 +169,14 @@ class Explorer(Node):
         self.get_logger().info('exploring' if self.active else 'paused')
         if not self.active:
             self.cancel()
+            if self.spin_handle is not None:
+                self.spin_handle.cancel_goal_async()
+                self.spin_handle = None
+                self.spinning = False
+        else:
+            # switched on again after "explored": look for new edges rather than sit
+            self.done = self.homing = False
+            self.empty_checks = 0
 
     def pose(self):
         try:
@@ -340,10 +350,11 @@ class Explorer(Node):
                 self.get_logger().warn('spin rejected 10 times; exploring from the wedge')
                 self.spun = True
             return
+        self.spin_handle = h
         h.get_result_async().add_done_callback(self.on_spin_done)
 
     def on_spin_done(self, fut):
-        self.spun, self.spinning = True, False
+        self.spun, self.spinning, self.spin_handle = True, False, None
         self.get_logger().info(f'spin done (status {fut.result().status})')
 
     def _retry_home(self):

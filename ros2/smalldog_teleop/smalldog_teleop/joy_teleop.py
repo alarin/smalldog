@@ -19,6 +19,14 @@ The layout is the Xbox 360 one the kernel's xpad driver presents for most 2.4 GH
     B               stop (zero the command)         button 1
     Start           gait enable / disable           button 7
     RB (hold)       turbo: full speed; without it the sticks reach `slow` of it   button 5
+    Back            explore on / off (smalldog_nav)  button 6
+
+Exploration and the pad share /cmd_vel, so they take turns rather than fight: Back hands
+the robot to Nav2 (`/smalldog/explore` true) and this node goes quiet — it publishes
+nothing, not even zeros, while `exploring`. Any stick push or B takes it back: the node
+publishes `explore` false (the explorer cancels its goal, Nav2 sends one zero) and
+resumes its 20 Hz command. The operator always wins. When the explorer reports
+`/smalldog/explored`, the pad is back in charge on its own.
 
 A stick returns to centre, so letting go stops the robot, and so does the pad going
 away: `/cmd_vel` is republished at `repeat_rate` because the walker drops a command
@@ -33,6 +41,7 @@ walking that works.
 import rclpy
 import rclpy.executors
 from rclpy.node import Node
+from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
 from geometry_msgs.msg import Twist
 from sensor_msgs.msg import Joy
 from std_msgs.msg import Bool, Float64
@@ -70,13 +79,15 @@ class JoyTeleop(Node):
         p('button_stop', 1)
         p('button_enable', 7)
         p('button_turbo', 5)
+        p('button_explore', 6)
         g = lambda k: self.get_parameter(k).value    # noqa: E731
 
         self.speed, self.strafe, self.turn, self.slow = g('speed'), g('strafe'), g('turn'), g('slow')
         self.height = g('body_height')
         self.band = g('deadband')
         self.ax = {k: int(g(f'axis_{k}')) for k in ('vx', 'vy', 'wz', 'hat_x', 'hat_y')}
-        self.bt = {k: int(g(f'button_{k}')) for k in ('up', 'down', 'stop', 'enable', 'turbo')}
+        self.bt = {k: int(g(f'button_{k}'))
+                   for k in ('up', 'down', 'stop', 'enable', 'turbo', 'explore')}
 
         self.cmd = Twist()
         self.enabled = True
@@ -86,10 +97,17 @@ class JoyTeleop(Node):
         self._joy_timeout = float(g('joy_timeout'))
         self._stale_said = False
 
+        self.exploring = False
         self.pub = self.create_publisher(Twist, '/cmd_vel', 10)
         self.pub_h = self.create_publisher(Float64, '/smalldog/body_height', 10)
         self.pub_e = self.create_publisher(Bool, '/smalldog/enable', 10)
+        self.pub_x = self.create_publisher(Bool, '/smalldog/explore', 10)
         self.create_subscription(Joy, '/joy', self.on_joy, 10)
+        # the explorer says when it is done (latched), and any other hand on the switch
+        latched = QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE,
+                             durability=DurabilityPolicy.TRANSIENT_LOCAL)
+        self.create_subscription(Bool, '/smalldog/explored', self.on_explored, latched)
+        self.create_subscription(Bool, '/smalldog/explore', self.on_explore, 10)
         self.create_timer(1.0 / float(g('repeat_rate')), self.publish_cmd)
         self.get_logger().info(
             f'joy teleop up: {self.speed:.2f} m/s, {self.turn:.2f} rad/s at full stick '
@@ -121,9 +139,16 @@ class JoyTeleop(Node):
         t.linear.x = vx * self.speed * scale
         t.linear.y = vy * self.strafe * scale
         t.angular.z = wz * self.turn * scale
-        if self._get(b, self.bt['stop'], 0):
+        stop = self._get(b, self.bt['stop'], 0)
+        if stop:
             t = Twist()
         self.cmd = t
+
+        if self._pressed(b, self.bt['explore']):
+            self.set_explore(not self.exploring)
+        elif self.exploring and (stop or vx or vy or wz):
+            self.get_logger().info('pad moved — taking the robot back from the explorer')
+            self.set_explore(False)
 
         step = (H_STEP if self._pressed(b, self.bt['up']) else
                 -H_STEP if self._pressed(b, self.bt['down']) else 0.0)
@@ -138,7 +163,26 @@ class JoyTeleop(Node):
             self.get_logger().info(f'gait {"enabled" if self.enabled else "disabled"}')
         self._prev_buttons = list(b)
 
+    def set_explore(self, on):
+        self.exploring = on
+        self.pub_x.publish(Bool(data=on))
+        self.get_logger().info('exploring: Nav2 has /cmd_vel' if on else
+                               'manual: the pad has /cmd_vel')
+
+    def on_explore(self, msg):
+        if msg.data != self.exploring:        # someone else threw the switch
+            self.exploring = msg.data
+            self.get_logger().info('exploring (switched elsewhere)' if msg.data else
+                                   'manual (switched elsewhere)')
+
+    def on_explored(self, msg):
+        if msg.data and self.exploring:
+            self.exploring = False
+            self.get_logger().info('explorer is done — the pad has /cmd_vel')
+
     def publish_cmd(self):
+        if self.exploring:
+            return                            # Nav2's turn; two publishers would fight
         stale = (self._last_joy is None or
                  (self.get_clock().now() - self._last_joy).nanoseconds * 1e-9 > self._joy_timeout)
         if stale:

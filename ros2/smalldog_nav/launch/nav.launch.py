@@ -2,8 +2,9 @@
 
     ros2 launch smalldog_nav nav.launch.py                        # sim: cloud from MuJoCo
     ros2 launch smalldog_nav nav.launch.py explore:=true          # ... and walk the room out
-    ros2 launch smalldog_nav nav.launch.py use_sim_time:=false cloud:=/lidar/points speed:=0.08
-                                                                  # the robot (robot.launch.py lidar:=true)
+    ros2 launch smalldog_nav nav.launch.py use_sim_time:=false cloud:=/lidar/points speed:=0.08 \
+                                           explore:=true autostart:=false
+                          # the robot (robot.launch.py imu:=true lidar:=true joy:=true): Back starts it
     ros2 launch smalldog_nav nav.launch.py explore:=true save_map:=/tmp/room
 
 The chain:  <cloud> --cloud_to_scan--> /scan --slam_toolbox--> /map, map->odom
@@ -90,7 +91,8 @@ def _nodes(context):
              output='screen', condition=IfCondition(LaunchConfiguration('explore')),
              parameters=[common, {
                  'save_map': ParameterValue(LaunchConfiguration('save_map'), value_type=str),
-                 'home': ParameterValue(LaunchConfiguration('home'), value_type=bool)}]),
+                 'home': ParameterValue(LaunchConfiguration('home'), value_type=bool),
+                 'autostart': ParameterValue(LaunchConfiguration('autostart'), value_type=bool)}]),
     ]
 
 
@@ -113,5 +115,9 @@ def generate_launch_description():
                                           'empty = do not'),
         DeclareLaunchArgument('home', default_value='true',
                               description='walk back to where SLAM started when explored'),
+        DeclareLaunchArgument('autostart', default_value='true',
+                              description='explore as soon as the map is there; false = '
+                                          'wait for /smalldog/explore true, i.e. the '
+                                          'gamepad\'s Back button (robot.launch.py joy:=true)'),
         OpaqueFunction(function=_nodes),
     ])

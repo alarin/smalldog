@@ -323,6 +323,11 @@ ros2 launch smalldog_nav nav.launch.py use_sim_time:=false cloud:=/lidar/points 
 ros2 topic pub -1 /smalldog/explore std_msgs/msg/Bool "{data: false}"   # pause; true resumes
 ```
 
+**With the gamepad** the two take turns on `/cmd_vel` instead of fighting: launch with
+`explore:=true autostart:=false`, and **Back** hands the robot to Nav2 (the pad goes
+silent — no zeros either); any stick push or B takes it back and pauses the explorer;
+Back again resumes. When the explorer finishes it hands the pad back on its own.
+
 **Odometry** is dead reckoning: the walker integrates the velocity its stance feet are
 sweeping (the command after the heading hold and the stride clamps, `TrotGait.body_velocity()`)
 times `odom_scale`, and takes heading from the IMU (truth in the sim, an integrated gyro on the
@@ -551,7 +556,7 @@ The gamepad (a 2.4 GHz "Barrot" pad the kernel drives as an Xbox 360 controller,
 `/dev/input/js0`) goes through the `joy` package's `joy_node` and
 `smalldog_teleop/joy_teleop.py`: left stick walks and strafes, right stick turns, D-pad
 up/down is body height, B stops, Start toggles the gait, LB held is full speed (0.6 of
-it otherwise). Let go of the stick and it stops; lose the pad and it stops within 0.5 s.
+it otherwise), Back starts and stops the explorer ("SLAM and navigation"). Let go of the stick and it stops; lose the pad and it stops within 0.5 s.
 One stick at a time — forward plus a turn is over the servo's speed budget.
 
 Ctrl-C sits the robot down and cuts torque (the node's own signal handler; the loop

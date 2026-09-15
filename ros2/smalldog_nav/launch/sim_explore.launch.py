@@ -27,6 +27,7 @@ def generate_launch_description():
         DeclareLaunchArgument('explore', default_value='true'),
         DeclareLaunchArgument('save_map', default_value=''),
         DeclareLaunchArgument('home', default_value='true'),
+        DeclareLaunchArgument('autostart', default_value='true'),
         DeclareLaunchArgument('foxglove', default_value='true'),
         IncludeLaunchDescription(PythonLaunchDescriptionSource(sim), launch_arguments={
             'room': 'true', 'teleop': 'false', 'imu': 'true',
@@ -37,5 +38,6 @@ def generate_launch_description():
             'speed': LaunchConfiguration('speed'),
             'explore': LaunchConfiguration('explore'),
             'save_map': LaunchConfiguration('save_map'),
-            'home': LaunchConfiguration('home')}.items()),
+            'home': LaunchConfiguration('home'),
+            'autostart': LaunchConfiguration('autostart')}.items()),
     ])
