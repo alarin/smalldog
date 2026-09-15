@@ -46,9 +46,9 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--name", required=True)
-    ap.add_argument("--envs", type=int, default=256)
+    ap.add_argument("--envs", type=int, default=64)
     ap.add_argument("--steps", type=int, default=400, help="control steps per rollout (8 s)")
-    ap.add_argument("--rollouts", type=int, default=4)
+    ap.add_argument("--rollouts", type=int, default=8)
     ap.add_argument("--exec-noise", type=float, default=0.08,
                     help="std of the noise added to the EXECUTED action; labels stay clean")
     ap.add_argument("--epochs", type=int, default=60)
@@ -112,6 +112,8 @@ def main():
             noisy = clean + rng.normal(0.0, a.exec_noise, clean.shape).astype(np.float32)
             st = step(st, jnp.asarray(noisy))
             alive &= np.asarray(st.done) < 0.5
+            if t % 100 == 99:
+                print(f"  rollout {r + 1} step {t + 1}/{a.steps}, {alive.sum()} upright, {time.time() - t0:.0f} s", flush=True)
         print(f"rollout {r + 1}/{a.rollouts}: {alive.sum()}/{a.envs} upright at {a.steps * env.dt:.0f} s, "
               f"{sum(len(o) for o in OBS)} samples, {time.time() - t0:.0f} s")
     X = np.concatenate(OBS).astype(np.float32); Y = np.concatenate(ACT).astype(np.float32)
