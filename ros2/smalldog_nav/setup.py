@@ -1,8 +1,7 @@
-import os
 from glob import glob
 from setuptools import find_packages, setup
 
-package_name = 'smalldog_hardware'
+package_name = 'smalldog_nav'
 
 setup(
     name=package_name,
@@ -11,19 +10,19 @@ setup(
     data_files=[
         ('share/ament_index/resource_index/packages', ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
-        (os.path.join('share', package_name, 'launch'),
-         glob(os.path.join('launch', '*.launch.py'))),
+        ('share/' + package_name + '/launch', glob('launch/*.launch.py')),
+        ('share/' + package_name + '/config', glob('config/*.yaml')),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
     maintainer='alarin',
     maintainer_email='me@alarin.ru',
-    description='The real robot as a ROS 2 node',
+    description='SLAM, Nav2 and frontier exploration for SmallDog',
     license='MIT',
     entry_points={
         'console_scripts': [
-            'servos = smalldog_hardware.servo_node:main',
-            'lidar = smalldog_hardware.lidar_node:main',
+            'explore = smalldog_nav.explore:main',
+            'cloud_to_scan = smalldog_nav.cloud_to_scan:main',
         ],
     },
 )

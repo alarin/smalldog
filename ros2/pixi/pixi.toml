@@ -79,3 +79,21 @@ python = "*"
 # controller_manager's spawner imports it; without it every spawner dies with
 # ModuleNotFoundError and the robot comes up with no controllers loaded at all
 filelock = "*"
+# --- SLAM + navigation --------------------------------------------------------------
+# The individual Nav2 servers, not the `navigation2` metapackage: that one pulls
+# nav2-rviz-plugins (and so rviz2 and Qt), and nav2-bringup pulls Gazebo on top.  This is
+# the set smalldog_nav/launch/nav.launch.py actually starts.  The cloud -> scan step is
+# smalldog_nav's own node, not pointcloud-to-laserscan (its TF message filter dropped
+# every cloud here; smalldog_nav/cloud_to_scan.py says how).
+ros-kilted-slam-toolbox = "*"
+ros-kilted-nav2-controller = "*"
+ros-kilted-nav2-planner = "*"
+ros-kilted-nav2-behaviors = "*"
+ros-kilted-nav2-bt-navigator = "*"
+ros-kilted-nav2-lifecycle-manager = "*"
+ros-kilted-nav2-map-server = "*"
+ros-kilted-nav2-navfn-planner = "*"
+ros-kilted-nav2-regulated-pure-pursuit-controller = "*"
+ros-kilted-nav2-rotation-shim-controller = "*"
+ros-kilted-nav2-simple-commander = "*"
+ros-kilted-nav2-velocity-smoother = "*"

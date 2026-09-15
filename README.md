@@ -7,7 +7,7 @@ the hardware runtime, all of one robot.
 | | |
 |---|---|
 | [`3d/`](3d/) | **the source of truth.** Pure code-CAD (CadQuery): every dimension, mass and joint limit lives in [`3d/mini_dog.py`](3d/mini_dog.py). Also linear-static FEA ([`fea.py`](3d/fea.py)) and the URDF/MJCF exporter ([`export_sim.py`](3d/export_sim.py)). |
-| [`ros2/`](ros2/) | ROS 2 workspace: generated description, `ros2_control` wiring, trot gait, keyboard teleop, MuJoCo standing in for the hardware. |
+| [`ros2/`](ros2/) | ROS 2 workspace: generated description, `ros2_control` wiring, trot gait, teleop, SLAM + Nav2 + room exploration, MuJoCo standing in for the hardware. |
 | [`rl/`](rl/) | the RL walking policy: MJX/Brax PPO against the same generated model. |
 | [`robot/`](robot/) | the hardware side: ST3215 bus driver, the identification bench, the 50 Hz runtime. |
 
@@ -41,7 +41,7 @@ No shared filesystem between them: the git repository is the only thing that cro
 ## Where to read
 
 - Printed parts, servo interface, assembly: [`3d/README.md`](3d/README.md)
-- Simulation, gait, teleop, regressions: [`ros2/README.md`](ros2/README.md)
+- Simulation, gait, teleop, SLAM and navigation, regressions: [`ros2/README.md`](ros2/README.md)
 - Bench, bring-up, the measured servo: [`robot/README.md`](robot/README.md) and the public
   reference [`ST3215_STS3215_measured_parameters.md`](ST3215_STS3215_measured_parameters.md)
 - Power tree and its **verify** list: [`POWER.md`](POWER.md)

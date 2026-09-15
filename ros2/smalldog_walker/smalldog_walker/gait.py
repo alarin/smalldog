@@ -113,6 +113,7 @@ class TrotGait:
         self._airborne = {l: False for l in self.legs}
         self._con_t   = {l: 0.0 for l in self.legs}    # s this foot has felt the current contact
         self._fb_age = 1e9
+        self._v_exec = (0.0, 0.0, 0.0)  # what the stance feet are sweeping, see body_velocity()
 
     # ------------------------------------------------------------------
     @property
@@ -325,6 +326,21 @@ class TrotGait:
         self._pitch_f += (self._pitch - self._pitch_f) * k
 
         half = 0.5 * period                            # stance duration
+        # The body velocity the stance feet actually deliver, for odometry: the command,
+        # after the heading hold, after the per-leg stride clamps (one ratio for all four,
+        # so a clamped trot slows rather than curves) and faded by the stand/walk blend.
+        # Ground slip is not in it — that is the walker's `odom_scale`.
+        ratio = 1.0
+        for l in self.legs:
+            nx, ny, _ = self.nominal[l]
+            ax = abs(vx - wz * ny) * half * 0.5
+            ay = abs(vy + wz * nx) * half * 0.5
+            if ax > self.max_step:
+                ratio = min(ratio, self.max_step / ax)
+            if ay > self.max_step_y:
+                ratio = min(ratio, self.max_step_y / ay)
+        self._v_exec = (vx * ratio * self._moving, vy * ratio * self._moving,
+                        wz * ratio * self._moving)
         out = {}
         for l in self.legs:
             nx, ny, _ = self.nominal[l]
@@ -356,6 +372,19 @@ class TrotGait:
             m = self._moving
             out[l] = (nx + (px - nx) * m, ny + (py - ny) * m, pz)
         return out
+
+    def body_velocity(self):
+        """(vx, vy, wz) in the base frame that the last foot_targets() call is walking at
+        — the command as the legs execute it, not as it was sent.  Zero while standing."""
+        return self._v_exec
+
+    def attitude(self):
+        """(roll, pitch, yaw, live): the body attitude the gait last heard, and whether it
+        is fresh enough that the gait is using it.  All three are zero when it is not."""
+        live = self._fb_age <= self.fb_timeout
+        if not live:
+            return 0.0, 0.0, 0.0, False
+        return self._roll, self._pitch, self._yaw, True
 
     def joint_targets(self, dt, vx, vy, wz):
         """returns a list of joint angles ordered like self.joint_names."""

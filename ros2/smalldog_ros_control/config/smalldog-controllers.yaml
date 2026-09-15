@@ -42,4 +42,10 @@ smalldog_controller:
       - position
 
     allow_partial_joints_goal: false
-    open_loop_control: true
+    # Start each streamed point from the last COMMANDED state, not the measured one.
+    # ros2_controllers 5.7 renamed open_loop_control to this and silently dropped the
+    # old key: with it off, every 100 Hz point restarted the interpolation from where
+    # the lagging servo actually was, and the trot reached the joints at ~40 % of its
+    # amplitude (fl_knee commanded 1.18..1.65 rad, measured 1.26..1.45) - a 0.5 rad/s
+    # turn came out at 0.026 rad/s against 0.30 in the standalone sim.
+    interpolate_from_desired_state: true

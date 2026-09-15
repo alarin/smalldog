@@ -24,9 +24,12 @@ def generate_launch_description():
     controllers = PathJoinSubstitution([
         FindPackageShare('smalldog_ros_control'), 'config', 'smalldog-controllers.yaml'])
 
-    # same world either way; scene_terrain.xml swaps the ground plane for the heightfield
+    # same world either way; scene_terrain.xml swaps the ground plane for the heightfield,
+    # scene_room.xml walls the flat one in for SLAM
+    room = LaunchConfiguration('room')
     scene = PythonExpression(["'scene_terrain.xml' if '", terrain,
-                              "'.lower() in ('true', '1') else 'scene.xml'"])
+                              "'.lower() in ('true', '1') else ('scene_room.xml' if '",
+                              room, "'.lower() in ('true', '1') else 'scene.xml')"])
     mujoco_xml = PathJoinSubstitution([
         FindPackageShare('smalldog_description'), 'mujoco', scene])
 
@@ -58,10 +61,13 @@ def generate_launch_description():
     # The IMU is what makes the gait terrain-aware; without it the walker trots blind.
     # It needs imu_sensor_broadcaster, which is not in every ros2_controllers install --
     # if the spawner fails, everything else still comes up, blind. `imu:=false` skips it.
+    # --service-call-timeout: under the SLAM launch the controller_manager answers
+    # list_controllers late while everything else is coming up, and the spawner's default
+    # 10 s x 3 gave up on the IMU - and the gait ran blind, and the odometry unlevelled.
     imu_spawner = Node(
         package='controller_manager', executable='spawner',
         arguments=['imu_sensor_broadcaster', '--controller-manager', '/controller_manager',
-                   '--param-file', controllers],
+                   '--param-file', controllers, '--service-call-timeout', '30'],
         condition=IfCondition(LaunchConfiguration('imu')),
     )
     imu_after_jsb = RegisterEventHandler(
@@ -74,8 +80,13 @@ def generate_launch_description():
         # imu_topic is the broadcaster's own topic: controllers publish under their
         # controller name, and remapping into a controller_manager plugin is worse than
         # just telling the walker where to look.
+        # odom_scale: the sim trot delivers about half its commanded speed on the flat
+        # (0.53 at 0.15 m/s, 0.49 at 0.10, 0.67 at period 1.35; dead reckoning against
+        # qpos over 6 s), so the walker's odometry is scaled to match. Heading is the
+        # IMU's and needs no scale.
         parameters=[{'use_sim_time': True,
-                     'imu_topic': '/imu_sensor_broadcaster/imu'}],
+                     'imu_topic': '/imu_sensor_broadcaster/imu',
+                     'odom_scale': 0.5}],
     )
 
     # Foxglove instead of RViz: rviz2 on macOS is a large install and behaves badly, and
@@ -129,6 +140,10 @@ def generate_launch_description():
         DeclareLaunchArgument('terrain', default_value='false',
                               description='stand the robot on mujoco/scene_terrain.xml '
                                           '(rough ground) instead of the flat plane'),
+        DeclareLaunchArgument('room', default_value='false',
+                              description='the flat plane walled in '
+                                          '(mujoco/scene_room.xml), the world '
+                                          'smalldog_nav maps; terrain:=true wins'),
         mujoco_node,
         robot_state_pub,
         jsb_spawner,

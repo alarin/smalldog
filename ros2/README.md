@@ -13,7 +13,8 @@ description → ros2_control → gait node, with MuJoCo standing in for the hard
 | `smalldog_ros_control` | ament_cmake | ros2_control wiring + MuJoCo launch |
 | `smalldog_walker` | ament_python | trot gait + analytic leg IK, `/cmd_vel` → joint trajectory |
 | `smalldog_teleop` | ament_python | keyboard teleop |
-| `smalldog_hardware` | ament_python | **the real robot**: `robot/runtime`'s servo loop behind the walker's topics — "On the robot" below |
+| `smalldog_hardware` | ament_python | **the real robot**: `robot/runtime`'s servo loop behind the walker's topics, and the L2 as a topic — "On the robot" below |
+| `smalldog_nav` | ament_python | SLAM + Nav2 + the frontier explorer: the robot maps a room by itself — "SLAM and navigation" below |
 | `tools/` | — | standalone MuJoCo sim, no ROS needed |
 
 One external source dependency: **`mujoco_ros2_control`**, a fork on its `kilted` branch,
@@ -38,6 +39,15 @@ overload); `libmujoco 3.3` (`mjv_moveCamera` grew an argument after); `clang_osx
 name (without the conda wrapper's `-dead_strip_dylibs` the node links 18 rosidl dylibs it
 never calls and dies at startup on `_PyExc_RuntimeError`); and `filelock`, which the
 controller spawner imports.
+
+One controller parameter is load-bearing too: `interpolate_from_desired_state: true` on
+the trajectory controller (`config/smalldog-controllers.yaml`). ros2_controllers 5.7
+renamed `open_loop_control` to it and dropped the old key without a word, and with it off
+every streamed point restarts the interpolation from where the lagging servo actually is:
+the trot reached the joints at ~40 % of its amplitude, and a 0.5 rad/s turn came out at
+0.026 rad/s against 0.30 in the standalone sim (0.27 with the key). The walker also
+clocks the gait on measured elapsed time now, not the timer's nominal period — a loaded
+mac fires its 100 Hz timer at 65.
 
 ### Run
 
@@ -235,13 +245,14 @@ its optical centre and a `<custom>` block with the scan parameters, both written
 ```
 
 ~5195 points a frame (measured 62340 /s at 12 Hz), float32 xyz in `lidar_link`, whose +Z is
-the sensor's own axis, leaning 45° nose-down. Simulated time stamps. About a quarter of the
+the sensor's own axis, pointing forward (`LIDAR_TILT` 90). Simulated time stamps. About a quarter of the
 rays return: the ground from ~280 mm ahead outwards, the course, and the robot's own legs
 (the chassis it is bolted to is excluded; the legs are not, because a real sensor sees
 them). The publisher is `src/mujoco_ros2_control/.../mujoco_lidar.{hpp,cpp}`; it uses
 `mj_multiRay` with no GL context, runs at the sim cadence, and stays quiet on a model with no
 `lidar` site. The scan *pattern* (measured, `3d/ref/lidar/`) exists twice — Python and C++ — because neither can
-call the other; the parameters exist once, in the CAD. Nothing subscribes to the cloud yet.
+call the other; the parameters exist once, in the CAD. `smalldog_nav` is what subscribes
+to the cloud.
 
 **GPS**: mass and a frame only — 25 g on the mast, a `gps` site at the patch's phase centre
 and a `gps_link` on TF (+Z the patch normal). No simulated fix; on hardware it is an NMEA
@@ -269,6 +280,93 @@ ros2 bag record -s mcap /mujoco_ros2_control_node/lidar/points /tf /tf_static /c
 ```
 
 Foxglove opens an `.mcap` directly, which is how to look at a run from another machine.
+
+## SLAM and navigation
+
+`smalldog_nav` maps a room with the L2 and walks it by itself. One command in the sim:
+
+```bash
+./tools/explore.sh                          # MuJoCo in the walled room + SLAM + Nav2 + explorer
+./tools/explore.sh rtf:=2.0 save_map:=/tmp/room
+```
+
+Watch it on Foxglove (`ws://localhost:8765`, a 3D panel, frame `map`): `/map`, `/scan`,
+`/global_costmap/costmap`, `/plan`. The MuJoCo window shows the robot; keys typed over it
+do nothing here (`teleop:=false`, Nav2 owns `/cmd_vel`).
+
+![the room, explored](docs/explored_room.png)
+
+What one run reads (2026-09-15, real time, the mac in a video call beside it): a 25 s spin
+on the spot, then ten goals in 4.5 min, one blacklisted, and `explored: no frontier left.
+17.8 m2 known, 15.2 m2 free` — the two rooms are 18 m² of floor. The map above is that
+run's `save_map` output: both rooms, the doorway, the pillar, the couch and both crates,
+walls one cell thick. Most goals end as "is mapped, moving on" rather than "reached": a
+frontier is the edge of what the L2 has seen, and on a 6 m sensor in a 6 m world the edge
+moves before the robot gets there — that is the exploration working, not failing.
+
+The chain, each step one node:
+
+| step | node | in → out |
+|---|---|---|
+| odometry | `smalldog_walker` (in the walker, `odom:=true` default) | gait velocity + IMU yaw → `/odom`, TF `odom → base_footprint → base_link` |
+| cloud → scan | `smalldog_nav cloud_to_scan` | the L2 cloud → `/scan`, a 0.10..0.35 m slice in the level frame, ±96° |
+| SLAM | `slam_toolbox` (async, mapping) | `/scan` + `odom` → `/map`, TF `map → odom` |
+| navigation | Nav2: planner (NavFn), controller (regulated pure pursuit), behaviors, BT | `/map`, `/scan`, a goal → `/cmd_vel` |
+| exploration | `smalldog_nav explore` | `/map` → `navigate_to_pose` goals until no frontier is left |
+
+`nav.launch.py` is the chain without the sim, for either machine:
+
+```bash
+ros2 launch smalldog_nav nav.launch.py explore:=true                 # sim (sim.sh teleop:=false first)
+ros2 launch smalldog_nav nav.launch.py use_sim_time:=false cloud:=/lidar/points speed:=0.08 explore:=true
+                                                                     # robot (robot.launch.py imu:=true lidar:=true)
+ros2 topic pub -1 /smalldog/explore std_msgs/msg/Bool "{data: false}"   # pause; true resumes
+```
+
+**Odometry** is dead reckoning: the walker integrates the velocity its stance feet are
+sweeping (the command after the heading hold and the stride clamps, `TrotGait.body_velocity()`)
+times `odom_scale`, and takes heading from the IMU (truth in the sim, an integrated gyro on the
+robot). `odom_scale` is the foot slip: the sim trot delivers ~0.5 of its command on the flat
+(measured against `qpos` over 6 s: 0.53 at 0.15 m/s, 0.49 at 0.10, 0.67 at period 1.35), so
+the sim launch sets 0.5; the robot's is unmeasured (**verify** — walk a taped 2 m and compare
+`/odom`). slam_toolbox's scan matcher absorbs the rest; a scan node every 0.1 m keeps its
+0.5 m search window honest. `base_footprint` is the level frame: base_link lifted by the
+standing height and tilted back by the IMU's roll and pitch, so the scan slice keeps the
+floor out while the trot rocks the body ±3°.
+
+**The scan** is ±96° — the L2's cone about its forward axis — and no wider: behind the
+robot is unknown, not clear (an empty bin is `inf`, dropped by both consumers), which is
+why the explorer spins once before choosing a goal. `cloud_to_scan` is this package's own
+sixty lines rather than `pointcloud_to_laserscan`: that node's TF message filter held every
+cloud and dropped it ten seconds later under this Kilted env while `can_transform` said yes
+throughout (the header of `cloud_to_scan.py` has the details).
+
+**The explorer** takes free cells with an unknown neighbour, clusters them, and walks to
+the cluster that scores best on distance minus half its length — a long edge across the
+room beats a fragment beside the robot. A goal is a cluster cell with no obstacle within
+0.28 m, so the planner never has to reject one; a goal that stops being a frontier is
+dropped, not walked out; a goal Nav2 fails is blacklisted (0.4 m). No frontier three checks
+running → done: it prints the known and free area, saves the map (`save_map:=stem` →
+`stem.pgm` + `.yaml` through `/slam_toolbox/save_map`) and walks back to the origin.
+
+**Nav2's numbers that are this robot's** (`config/nav2.yaml`): `robot_radius` 0.18, inflation
+0.35, no reversing, rotate-to-heading on, 0.5 rad/s turns (the gait's own clamp), no lateral
+commands, `Twist` not `TwistStamped` (`enable_stamped_cmd_vel: false`, the walker reads
+`Twist`). The straight-line speed is the launch's `speed` (0.15 in the sim; 0.08 on the
+robot with the heading hold, robot.launch.py). slam_toolbox is a lifecycle node in Kilted
+and comes up unconfigured — its own `lifecycle_manager_slam` brings it up, before Nav2's
+manager, whose planner waits for the `map` frame at activation.
+
+Two things bit on the way in and are worth knowing: the pixi env for this came in with a
+truncated `libspqr.4.dylib` (a dropped download; slam_toolbox died at configure with
+"mutex lock failed") — sizes against `conda-meta/*.json` find such a file, delete it and its
+rattler cache dir and `pixi install` again; and the IMU spawner's default 10 s service
+timeout gave up under this launch's load, so the sim launch now passes
+`--service-call-timeout 30`.
+
+The room, `mujoco/scene_room.xml` (`room:=true` on the sim launch; `ROOM` in
+`generate_model.py`): 4 × 3 m with the robot at the centre facing +x, a 0.8 m doorway into
+a 2 × 3 m second room, a pillar, a couch and two crates, walls 0.5 m tall.
 
 ## Regenerating the model from CAD
 
@@ -408,9 +506,19 @@ cd ~/smalldog/ros2 && source /opt/ros/jazzy/setup.bash
 colcon build --symlink-install --packages-select smalldog_description smalldog_walker smalldog_teleop smalldog_hardware
 source install/setup.bash
 ros2 launch smalldog_hardware robot.launch.py imu:=true joy:=true   # stand; drive it from the gamepad
+ros2 launch smalldog_hardware robot.launch.py imu:=true lidar:=true  # + the L2 on /lidar/points, for smalldog_nav
 ros2 run smalldog_teleop keyboard --ros-args -p speed:=0.08 -p turn:=0.65   # or a keyboard, second terminal
 tools/robot_go.sh 5 0.08                                   # or: walk straight 5 s, hands off
 ```
+
+`lidar:=true` is `smalldog_hardware/lidar_node.py`: `3d/tools/stream_pcd`'s TCP feed
+(`robot/slam/slam.py`'s reader, imported) republished as `PointCloud2` in `lidar_link`,
+the same shape the sim publishes, so `nav.launch.py` is the same launch over either. Needs
+`stream_pcd` running on the Pi, and `ros-jazzy-slam-toolbox` plus the Nav2 servers
+`nav.launch.py` starts from apt (`ros-jazzy-nav2-controller -planner -behaviors
+-bt-navigator -lifecycle-manager -navfn-planner -regulated-pure-pursuit-controller`).
+Untested on the robot (**verify**): the SDK's X about the axis against the CAD's
+(`yaw_offset`), the odometry scale, and the scan slice against the real floor.
 
 The gamepad (a 2.4 GHz "Barrot" pad the kernel drives as an Xbox 360 controller,
 `/dev/input/js0`) goes through the `joy` package's `joy_node` and
@@ -446,10 +554,11 @@ floor, which is what the hold is correcting, at a speed cost.
   hardware there are no foot switches either — the topic is a *load*, so the knee servo's
   own load reading can drive it (`smalldog_walker/contact.py`; measured in
   `robot/README.md`).
-- No odometry: the GPS is framed but not read.
-- Nothing consumes the LiDAR: no mapping, no obstacle layer. The sensor model is not
-  motion-compensated (every point of a frame is cast from the end-of-frame pose — 20 mm at
-  0.2 m/s).
+- Odometry is dead reckoning off the gait (`odom_scale` unmeasured on the robot); the
+  GPS is framed but not read. The sensor model is not motion-compensated (every point of a
+  frame is cast from the end-of-frame pose — 20 mm at 0.2 m/s).
+- SLAM and navigation have run in the sim only; nothing under `smalldog_nav` has met the
+  real L2 or the real floor.
 - Keys reach the teleop only while the MuJoCo window has focus, on press only (GLFW
   auto-repeat dropped); non-printable keys are not forwarded.
 - `pkill -f robot_state_publisher` before relaunching, or the next `controller_manager`

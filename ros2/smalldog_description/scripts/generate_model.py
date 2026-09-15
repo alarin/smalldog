@@ -11,6 +11,7 @@ from the tessellated solids, and writes:
     mujoco/robot.xml    MJCF body tree + position actuators
     mujoco/scene.xml    world + ground plane
     mujoco/scene_terrain.xml  the same world on the procedural heightfield
+    mujoco/scene_room.xml     the same world walled in, for SLAM (ROOM below)
     meshes/terrain.png  that heightfield (from 3d/terrain.py)
     mujoco/defaults.xml joint / actuator / geom defaults
 
@@ -66,6 +67,7 @@ M_LIDAR   = md.LIDAR_KG
 M_GPS     = md.GPS_KG
 M_CAMERA  = md.CAMERA_KG
 M_IMU     = md.IMU_KG
+M_BUCK    = md.BUCK_KG
 
 def tri_inertia(verts, tris, density_g_mm3):
     """Exact mass properties of a closed triangle mesh (mm, g/mm^3).
@@ -196,6 +198,7 @@ base.add_box(M_ELECTR,  md.opi_com(), md.OPI_BOX)
 # the NEO-6M and its active patch, sitting on gps_mount's platform
 base.add_box(M_GPS,     md.gps_com(), md.GPS_STACK)
 base.add_box(M_IMU, *md.imu_box())          # the BMI088 inside the Pi's case
+base.add_box(M_BUCK, *md.buck_box())        # the XL4015 on the Pi's case top
 # Unitree L2, at the pose mini_dog.py holds for it (md.lidar_com(), md.lidar_box_xyz() -
 # LIDAR_L2_BOX turned by LIDAR_TILT into robot axes; envelope and mass both off the
 # sensor's own drawing).  This used to be a 42.0 literal and a guessed 70x70x60, which is
@@ -652,6 +655,40 @@ SCENE = f'''<mujoco model="smalldog_scene">
 FLOOR = SCENE[SCENE.index('    <geom name="floor"'):SCENE.index('/>', SCENE.index('    <geom name="floor"')) + 2]
 
 
+# The room, for SLAM: the flat scene with walls, a doorway and a few things on the floor,
+# so `smalldog_nav` has something to map (README, "SLAM and navigation").  Two rooms:
+# 4 x 3 m with the robot at its centre facing +x, a 0.8 m doorway in the +x wall, and a
+# 2 x 3 m one beyond it.  Walls are 0.5 m tall - the L2's axis is 0.25 m up, the scan
+# slice 0.10..0.35 - and everything is a box or a cylinder, so the ray-cast sees it (visual
+# meshes it would not).  Metres; (name, type, pos, size).
+WALL_T, WALL_H = 0.05, 0.5
+ROOM = (
+    ("wall_s",  "box",      (0.5, -1.5, WALL_H / 2),  (2.0, WALL_T / 2, WALL_H / 2)),
+    ("wall_n",  "box",      (0.5,  1.5, WALL_H / 2),  (2.0, WALL_T / 2, WALL_H / 2)),
+    ("wall_w",  "box",      (-1.5, 0.0, WALL_H / 2),  (WALL_T / 2, 1.5, WALL_H / 2)),
+    ("wall_e1", "box",      (2.5, -0.95, WALL_H / 2), (WALL_T / 2, 0.55, WALL_H / 2)),
+    ("wall_e2", "box",      (2.5,  0.95, WALL_H / 2), (WALL_T / 2, 0.55, WALL_H / 2)),
+    ("wall2_s", "box",      (3.5, -1.5, WALL_H / 2),  (1.0, WALL_T / 2, WALL_H / 2)),
+    ("wall2_n", "box",      (3.5,  1.5, WALL_H / 2),  (1.0, WALL_T / 2, WALL_H / 2)),
+    ("wall2_e", "box",      (4.5,  0.0, WALL_H / 2),  (WALL_T / 2, 1.5, WALL_H / 2)),
+    ("pillar",  "cylinder", (1.2,  0.8, 0.25),        (0.12, 0.25)),
+    ("couch",   "box",      (0.3, -1.15, 0.2),        (0.5, 0.25, 0.2)),
+    ("crate",   "box",      (3.6,  0.7, 0.15),        (0.2, 0.2, 0.15)),
+    ("crate2",  "box",      (-1.0, 1.0, 0.15),        (0.15, 0.15, 0.15)),
+)
+
+
+def room_xml(indent="    "):
+    x = []
+    for name, typ, pos, size in ROOM:
+        rgba = "0.75 0.72 0.65 1" if name.startswith("wall") else "0.55 0.35 0.25 1"
+        x.append(f'{indent}<geom name="{name}" type="{typ}"'
+                 f' pos="{" ".join(f"{v:.6g}" for v in pos)}"'
+                 f' size="{" ".join(f"{v:.6g}" for v in size)}" rgba="{rgba}"'
+                 f' condim="3" contype="1" conaffinity="15" friction="1.0 0.005 0.0001"/>')
+    return "\n".join(x)
+
+
 def write_scenes():
     open(os.path.join(MJCF, "defaults.xml"), "w").write(DEFAULTS)
     open(os.path.join(MJCF, "scene.xml"), "w").write(SCENE)
@@ -676,7 +713,11 @@ def write_scenes():
         scene = scene.replace("  </worldbody>", obs + "\n  </worldbody>")
     assert "type=\"hfield\"" in scene and 'type="plane"' not in scene
     open(os.path.join(MJCF, "scene_terrain.xml"), "w").write(scene)
+    room = SCENE.replace("smalldog_scene", "smalldog_scene_room").replace(
+        "  </worldbody>", room_xml() + "\n  </worldbody>")
+    open(os.path.join(MJCF, "scene_room.xml"), "w").write(room)
     print(f"wrote mujoco/defaults.xml, mujoco/scene.xml, mujoco/scene_terrain.xml,"
+          f" mujoco/scene_room.xml ({len(ROOM)} geoms),"
           f" meshes/{hf['file']} ({hf['nrow']}x{hf['nrow']}, +-{hf['amp_mm']:.1f} mm,"
           f" flat pad at the origin, {len(hf['obstacles'])} obstacle geoms)")
 

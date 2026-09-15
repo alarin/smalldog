@@ -4,6 +4,8 @@
     ros2 launch smalldog_hardware robot.launch.py imu:=true        # levelling + heading hold
     ros2 launch smalldog_hardware robot.launch.py joy:=true        # + the gamepad (joy_node + smalldog_teleop joy)
     ros2 launch smalldog_hardware robot.launch.py dry_run:=true    # loopback bus, no hardware
+    ros2 launch smalldog_hardware robot.launch.py imu:=true lidar:=true   # + the L2 on /lidar/points,
+                                                                   # for smalldog_nav (stream_pcd running)
     ros2 run smalldog_teleop keyboard --ros-args -p speed:=0.08 -p turn:=0.65   # 2nd terminal
 
 Or without a keyboard:
@@ -65,6 +67,11 @@ def _nodes(context):
         Node(package='smalldog_teleop', executable='joy', name='smalldog_joy_teleop',
              output='screen', condition=IfCondition(LaunchConfiguration('joy')),
              parameters=[{'speed': speed, 'turn': TURN}]),
+
+        # the L2, off stream_pcd's TCP feed (3d/tools/stream_pcd.cpp, running on the Pi)
+        Node(package='smalldog_hardware', executable='lidar', name='smalldog_lidar',
+             output='screen', condition=IfCondition(LaunchConfiguration('lidar')),
+             parameters=[{'source': LaunchConfiguration('lidar_source')}]),
     ]
 
 
@@ -80,5 +87,9 @@ def generate_launch_description():
         # off by default: the teleop reads keys from a TTY it does not have under launch
         DeclareLaunchArgument('teleop', default_value='false'),
         DeclareLaunchArgument('joy', default_value='false', description='the USB gamepad'),
+        DeclareLaunchArgument('lidar', default_value='false',
+                              description='publish the L2 on /lidar/points (needs stream_pcd)'),
+        DeclareLaunchArgument('lidar_source', default_value='127.0.0.1:9910',
+                              description='where stream_pcd serves'),
         OpaqueFunction(function=_nodes),
     ])
