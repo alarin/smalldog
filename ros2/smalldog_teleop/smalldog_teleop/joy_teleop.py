@@ -11,10 +11,14 @@ The layout is the Xbox 360 one the kernel's xpad driver presents for most 2.4 GH
 
     left stick      forward / back, strafe          axes 1, 0   (up and left are +1)
     right stick X   turn                            axis 3
-    D-pad up/down   body up / down                  axis 7, one step per press
+    D-pad           forward / back, turn left/right axes 7, 6 — the same as the sticks,
+                    because these pads have a MODE button that turns the left stick
+                    INTO the D-pad, and the first floor run spent its stick pushes
+                    stepping the body height up to the reach limit instead of walking
+    Y / A           body up / down, one step        buttons 3, 0
     B               stop (zero the command)         button 1
     Start           gait enable / disable           button 7
-    LB (hold)       turbo: full speed; without it the sticks reach `slow` of it   button 4
+    RB (hold)       turbo: full speed; without it the sticks reach `slow` of it   button 5
 
 A stick returns to centre, so letting go stops the robot, and so does the pad going
 away: `/cmd_vel` is republished at `repeat_rate` because the walker drops a command
@@ -59,22 +63,24 @@ class JoyTeleop(Node):
         p('axis_vx', 1)
         p('axis_vy', 0)
         p('axis_wz', 3)
-        p('axis_height', 7)
+        p('axis_hat_x', 6)
+        p('axis_hat_y', 7)
+        p('button_up', 3)
+        p('button_down', 0)
         p('button_stop', 1)
         p('button_enable', 7)
-        p('button_turbo', 4)
+        p('button_turbo', 5)
         g = lambda k: self.get_parameter(k).value    # noqa: E731
 
         self.speed, self.strafe, self.turn, self.slow = g('speed'), g('strafe'), g('turn'), g('slow')
         self.height = g('body_height')
         self.band = g('deadband')
-        self.ax = {k: int(g(f'axis_{k}')) for k in ('vx', 'vy', 'wz', 'height')}
-        self.bt = {k: int(g(f'button_{k}')) for k in ('stop', 'enable', 'turbo')}
+        self.ax = {k: int(g(f'axis_{k}')) for k in ('vx', 'vy', 'wz', 'hat_x', 'hat_y')}
+        self.bt = {k: int(g(f'button_{k}')) for k in ('up', 'down', 'stop', 'enable', 'turbo')}
 
         self.cmd = Twist()
         self.enabled = True
         self._prev_buttons = []
-        self._prev_height_axis = 0.0
         self._msgs = 0
         self._last_joy = None
         self._joy_timeout = float(g('joy_timeout'))
@@ -87,7 +93,7 @@ class JoyTeleop(Node):
         self.create_timer(1.0 / float(g('repeat_rate')), self.publish_cmd)
         self.get_logger().info(
             f'joy teleop up: {self.speed:.2f} m/s, {self.turn:.2f} rad/s at full stick '
-            f'(x{self.slow:.1f} without LB); waiting for /joy')
+            f'(x{self.slow:.1f} without RB); waiting for /joy')
 
     @staticmethod
     def _get(seq, i, default=0.0):
@@ -107,21 +113,24 @@ class JoyTeleop(Node):
         a, b = msg.axes, msg.buttons
         scale = 1.0 if self._get(b, self.bt['turbo'], 0) else self.slow
 
+        # the D-pad reads +-1 while held on axes 6/7 and is the sticks' equal here
+        vx = _dead(self._get(a, self.ax['vx']), self.band) or self._get(a, self.ax['hat_y'])
+        vy = _dead(self._get(a, self.ax['vy']), self.band)
+        wz = _dead(self._get(a, self.ax['wz']), self.band) or self._get(a, self.ax['hat_x'])
         t = Twist()
-        t.linear.x = _dead(self._get(a, self.ax['vx']), self.band) * self.speed * scale
-        t.linear.y = _dead(self._get(a, self.ax['vy']), self.band) * self.strafe * scale
-        t.angular.z = _dead(self._get(a, self.ax['wz']), self.band) * self.turn * scale
+        t.linear.x = vx * self.speed * scale
+        t.linear.y = vy * self.strafe * scale
+        t.angular.z = wz * self.turn * scale
         if self._get(b, self.bt['stop'], 0):
             t = Twist()
         self.cmd = t
 
-        # the D-pad is an axis that reads +-1 while held: one step per press, not per message
-        h = self._get(a, self.ax['height'])
-        if h and not self._prev_height_axis:
-            self.height = max(H_MIN, min(H_MAX, self.height + (H_STEP if h > 0 else -H_STEP)))
+        step = (H_STEP if self._pressed(b, self.bt['up']) else
+                -H_STEP if self._pressed(b, self.bt['down']) else 0.0)
+        if step:
+            self.height = max(H_MIN, min(H_MAX, self.height + step))
             self.pub_h.publish(Float64(data=self.height))
             self.get_logger().info(f'body height {self.height*1000:.0f} mm')
-        self._prev_height_axis = h
 
         if self._pressed(b, self.bt['enable']):
             self.enabled = not self.enabled
