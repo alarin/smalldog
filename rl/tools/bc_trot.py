@@ -92,7 +92,11 @@ def main():
         g.period = a.period
         g.swing_height = 0.022
         g.max_step = 0.06
-        g.body_height = 0.158
+        # 0.170, not walk.py's 0.158: the policy's action is tanh-bounded to
+        # +-ACTION_SCALE about the RL stance (-24/+60 deg), and at 0.158 the
+        # trot's pitch/knee sit 1.4/2.8 actions away — a label the network can
+        # never reach. At 0.170 the steady cycle stays within +-1.06.
+        g.body_height = 0.170
         return g
 
     # ---------------------------------------------------------- collect
@@ -116,7 +120,7 @@ def main():
         alive = np.ones(a.envs, bool)
         for t in range(a.steps):
             q = np.stack([g.joint_targets(dt, *[float(c) for c in cmd[i]]) for i, g in enumerate(gaits)])
-            clean = ((q - stance) / ACTION_SCALE).astype(np.float32)
+            clean = np.clip((q - stance) / ACTION_SCALE, -1.0, 1.0).astype(np.float32)
             OBS.append(np.asarray(st.obs)[alive]); ACT.append(clean[alive])
             noisy = clean + rng.normal(0.0, a.exec_noise, clean.shape).astype(np.float32)
             st = step(st, jnp.asarray(noisy))
