@@ -75,7 +75,11 @@ def _nodes(context):
                           'imu_topic': '/imu',
                           'period': PERIOD,
                           'stride_max': speed * PERIOD / 2.0,
-                          'yaw_max': yaw_max}]),
+                          'yaw_max': yaw_max,
+                          # levelling off: the roll loop diverges on this robot
+                          # (walker_node.py, level_kp); the IMU still feeds the
+                          # heading hold and the level frame for smalldog_nav
+                          'level_kp': 0.0}]),
 
         Node(package='smalldog_teleop', executable='keyboard', name='smalldog_keyboard_teleop',
              output='screen', condition=IfCondition(LaunchConfiguration('teleop')),

@@ -45,6 +45,14 @@ class SmallDogWalker(Node):
         # planted knee falls 0.7 rad behind its goal and the guard cuts torque (measured,
         # 2026-09-15). robot.launch.py sets the pair (speed, yaw_max) that fits.
         self.declare_parameter('yaw_max', 0.0)
+        # -1 = the gait's own. 0 turns the attitude levelling off while keeping the IMU
+        # for the heading hold and the level frame: robot.launch.py does that, because
+        # on the real robot the roll loop diverges (2026-09-15: IMU frame verified by
+        # hand tilts, legs verified by a turn, and the standing body still rolled itself
+        # 15 deg left-up against the 20 mm clamp; pitch converged). Unexplained - a hip
+        # roll direction is the next suspect - and a loop that fights the floor is worse
+        # than none.
+        self.declare_parameter('level_kp', -1.0)
         self.declare_parameter('cmd_timeout', 0.5)
         self.declare_parameter('imu_topic', '/imu')
         self.declare_parameter('foot_load_topic', '/smalldog/foot_load')
@@ -75,6 +83,9 @@ class SmallDogWalker(Node):
             self.gait.stride_max = self.get_parameter('stride_max').value
         if self.get_parameter('yaw_max').value > 0:
             self.gait.yaw_max = self.get_parameter('yaw_max').value
+        if self.get_parameter('level_kp').value >= 0:
+            self.gait.level_kp = self.get_parameter('level_kp').value
+            self.gait.level_kd = 0.0 if self.gait.level_kp == 0 else self.gait.level_kd
 
         ctrl = self.get_parameter('controller').value
         self.pub = self.create_publisher(JointTrajectory, f'/{ctrl}/joint_trajectory', 10)
