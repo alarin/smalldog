@@ -80,14 +80,25 @@ streamed over ROS 2 by `ros2/smalldog_hardware` (the walker node's trajectory is
 source; `ros2/README.md`, "On the robot"), or the ONNX
 policy out of `rl/` through `runtime/policy.py` (`pip install onnxruntime smbus2`; the IMU
 driver is `imu/bmi088.py`, I2C, two addresses, `--selftest` first and then `--ids` on the
-chip). Neither gets its own idea of a soft limit.
+chip). Neither gets its own idea of a soft limit. **The policy on the floor, 2026-09-15,
+on the corrected leg map** (`rl/policy` = 20260915-bc-ft @ 5.6 M, cmd 0.15, measured by
+`../ros2/tools/straight_test.py --watch` with the L2): **0.34 m in 5 s, +2.0° of
+heading** (IMU +2.6°) — the sim's 0.26–0.35 m for this command. That is with
+`policy.py`'s `HeadingHold` on its `wz` command (kp 3, on by default): the policy has no
+heading in its observation and arcs −21° in 5 s at cmd 0.2 in the sim on its own. Body
+rates while walking are still 0.5–0.6 rad/s std against the sim's 0.1–0.3. Backwards at
+−0.15 it turned −17° with the hold saturated a fifth of the time: not straight.
 
 ### Bring-up
 
 1. **Program the ids.** `python runtime/calib.py --ids` prints the map: **`<leg><joint>`**,
-   leg counted round from the front right, joint counted down the leg — 11-13, 21-23,
+   leg counted round from the front left, joint counted down the leg — 11-13, 21-23,
    31-33, 41-43. Not `robot_params.json`'s `fl, fr, rl, rr` order; `calib.py`'s `LEG_DIGIT`
-   is the one place the two are tied. No id lands in 1..12, so a factory-default servo
+   is the one place the two are tied. **This robot's count was made belly-up**, so it
+   said "front right" for the leg that is the front left upright, and every left/right
+   judgement in the same session went the same way (step 4). Walking forward cannot
+   show it; `../ros2/tools/straight_test.py --wz 0.3` and `--vy 0.05` can, in one run
+   each: the LiDAR must read a positive turn and a positive left. No id lands in 1..12, so a factory-default servo
    answers as nobody; the ids run to 43, so a scan has to go past 43 (`feetech/bus.py
    --scan` does). Set them over the URT-1 **before assembly**.
 2. **`python runtime/walk.py --preflight`** — pings all twelve, reads the control
@@ -108,7 +119,14 @@ chip). Neither gets its own idea of a soft limit.
    backward, positive knee folds the shin back), **and bring-up happens belly-up**, where
    left and right reverse. Do not settle roll by eye: command one axis on all four legs at
    once and compare the legs against each other, marking a side first. This robot came out
-   **roll +1,+1,−1,−1 (front/rear), pitch and knee +1,−1,+1,−1 (left/right)**.
+   **roll −1,−1,+1,+1 (front/rear), pitch and knee −1,+1,+1,−1 (fl, fr, rl, rr)** — after
+   the 2026-09-15 correction. The belly-up session had every roll sign inverted and the
+   leg names mirrored, and forward walking was fine: only `vy` and `wz` were reversed,
+   which turned the heading hold and the roll levelling into positive feedback (the robot
+   spiralled left at the hold's cap). MuJoCo with the gait's output re-wired the same way
+   reproduces the floor exactly (`wz +0.3` → −41° against +41° correct), which is how the
+   two errors were separated without a hand on the robot. Verified on the floor the same
+   day: `+wz` → +39°, `+vy` → 9 cm left (`../ros2/README.md`, "On the robot").
 5. **`--stand` before `--profile` before the keyboard.** Standing is the first real
    question: whether twelve ST3215 hold 2.5 kg at the commanded height without cooking.
 

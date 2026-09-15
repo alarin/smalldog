@@ -10,10 +10,15 @@ calib.py — which servo is which joint, where its zero is, and which way it tur
 Three numbers per joint, and none of them can be derived from the CAD:
 
   **id**       which servo answers for this joint. Free choice, so it is made once
-               here — `<leg><joint>`, the leg counted from the front right (1) round
-               to the front left (2), rear left (3), rear right (4), and the joint
+               here — `<leg><joint>`, the leg counted from the front LEFT (1) round
+               to the front right (2), rear right (3), rear left (4), and the joint
                from the body (1 = roll) down to the ground (3 = knee). So the ids
-               are 11..13, 21..23, 31..33, 41..43 and `fr_roll` = 11, `rr_knee` = 43.
+               are 11..13, 21..23, 31..33, 41..43 and `fl_roll` = 11, `rl_knee` = 43.
+               The count was made belly-up, where left and right swap, and the map
+               said "front right" for 1 until 2026-09-15: forward walked, but +vy
+               crabbed right and +wz turned right, and the heading hold and the roll
+               levelling both ran as positive feedback. The LiDAR scan match and the
+               IMU agreed on which way the body went; the names were the mirror.
                The servos get programmed to match before assembly (`3d/README.md`,
                "Assembly order", step 2). Print `--ids` and set them with the
                Feetech tool over the URT-1.
@@ -83,9 +88,11 @@ def kind(joint: str) -> str:
 
 
 #: Leg number in the id scheme below. Chosen by the builder, not by the model:
-#: it counts round the robot starting at the front right, so it does NOT match
-#: `robot_params.json`'s fl/fr/rl/rr order and must not be derived from it.
-LEG_DIGIT  = {"fr": 1, "fl": 2, "rl": 3, "rr": 4}
+#: it counts round the robot starting at the front left (upright; the builder counted
+#: belly-up and called it the front right), so it does NOT match `robot_params.json`'s
+#: fl/fr/rl/rr order and must not be derived from it. Measured 2026-09-15 by which way
+#: the body crabbed and turned on the floor - see the module docstring.
+LEG_DIGIT  = {"fl": 1, "fr": 2, "rr": 3, "rl": 4}
 #: ... and the joint's own digit, 1 at the body, 3 at the ground.
 JOINT_DIGIT = {"roll": 1, "pitch": 2, "knee": 3}
 
@@ -94,7 +101,7 @@ def default_ids(joint_names) -> dict:
     """`<leg><joint>` — 11..13, 21..23, 31..33, 41..43.
 
     The digits are readable on the robot: the first counts the legs from the
-    front right (1) to the front left (2), the rear left (3) and the rear right
+    front left (1) to the front right (2), the rear right (3) and the rear left
     (4); the second counts a leg's servos from the body (1 = roll) down to the
     ground (3 = knee). So id 32 is the rear-left pitch, and nothing has to be
     looked up to say so.
@@ -342,10 +349,10 @@ def _selftest() -> int:
     chk("12 joints", len(c.joints), 12)
     chk("ids <leg><joint>", sorted(c.ids),
         [10 * l + j for l in (1, 2, 3, 4) for j in (1, 2, 3)])
-    chk("fr_roll is 11", c.id["fr_roll"], 11)
-    chk("fl_roll is 21", c.id["fl_roll"], 21)
-    chk("rl_knee is 33", c.id["rl_knee"], 33)
-    chk("rr_knee is 43", c.id["rr_knee"], 43)
+    chk("fl_roll is 11", c.id["fl_roll"], 11)
+    chk("fr_roll is 21", c.id["fr_roll"], 21)
+    chk("rr_knee is 33", c.id["rr_knee"], 33)
+    chk("rl_knee is 43", c.id["rl_knee"], 43)
     chk("no id collides with the factory default 1", 1 in c.ids, False)
 
     # the soft limits come from robot_params.json, per joint kind
