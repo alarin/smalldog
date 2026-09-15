@@ -87,8 +87,11 @@ class Weights:
     # 0.8 -> 1.5: yaw is one of three commanded axes and was weighted half of the
     # other two, for no reason this tree can point at.
     tracking_ang_vel: float = 1.5
-    # the unsaturated half of tracking; see the docstring
-    bias_lin: float = -0.2
+    # the unsaturated half of tracking; see the docstring. -0.2 -> -1.0
+    # (2026-09-15): on the stride-averaged velocity this is the one term that
+    # pays for every bit of progress between standing and a finished gait,
+    # where exp(-err^2/sigma) is flat; at -0.2 it was 0.04/step.
+    bias_lin: float = -1.0
     # accumulated heading error. Replaces bias_ang, which was measured to point
     # the wrong way. The quantity is a LEAKY integral (walk.py, HEADING_TAU) and
     # runs 0.17 for a policy drifting like eff9916 and 0.26 for one drifting like

@@ -292,9 +292,16 @@ class Commands:
     moved since; a range narrowed against a stale pin is a range narrowed against
     a servo that no longer exists in either direction.
     """
-    vx: tuple = (-0.4, 0.8)
-    vy: tuple = (-0.3, 0.3)
-    yaw: tuple = (-1.0, 1.0)
+    # (-0.4, 0.8) / (-0.3, 0.3) / (-1, 1) -> these (2026-09-15), for the profiled
+    # servo (actuator.Params.goal_acc = 8 rad/s^2): the IK trot at period 1.35 s
+    # already runs the knee at ~7.6 rad/s^2 and makes 0.08 m/s in this env, so
+    # the reachable top is ~0.1-0.15 m/s. Commanding 0.8 paid the same (nothing)
+    # for standing and for walking at 0.1 — no gradient in most episodes — and
+    # two runs on the fixed reward still stood. ceiling.py needs a policy that
+    # walks under the profile before this can be measured rather than argued.
+    vx: tuple = (-0.15, 0.25)
+    vy: tuple = (-0.1, 0.1)
+    yaw: tuple = (-0.5, 0.5)
     stand_fraction: float = 0.15      # of episodes commanded to stand still
 
     def sample(self, rng):
