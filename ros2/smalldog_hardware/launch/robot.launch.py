@@ -79,7 +79,11 @@ def _nodes(context):
                           # levelling off: the roll loop diverges on this robot
                           # (walker_node.py, level_kp); the IMU still feeds the
                           # heading hold and the level frame for smalldog_nav
-                          'level_kp': 0.0}]),
+                          'level_kp': 0.0,
+                          # one 5 s walk on the floor (2026-09-15): 0.40 m commanded,
+                          # 0.20 m by odometry at scale 1, 0.13 m by the map - the same
+                          # ~0.5 the sim reads. One walk; measure it over a taped 2 m.
+                          'odom_scale': 0.5}]),
 
         Node(package='smalldog_teleop', executable='keyboard', name='smalldog_keyboard_teleop',
              output='screen', condition=IfCondition(LaunchConfiguration('teleop')),
