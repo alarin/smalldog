@@ -441,7 +441,8 @@ class Walk(PipelineEnv):
             k_u=info["k_u"], k_e=info["k_e"], R=info["R"],
             b_v=info["b_v"], mu_load=info["mu_load"],
             kp=info["kp"],
-            deadband=info["deadband"], punch=info["punch"])
+            deadband=info["deadband"], punch=info["punch"],
+            goal_acc=info["goal_acc"])
 
     # ---------------------------------------------------------------- reset
     def reset(self, rng: jax.Array) -> State:

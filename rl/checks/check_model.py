@@ -539,8 +539,10 @@ def check_randomisation(R):
         R.say(WARN, f"could not build the training model to check the model-side "
                     f"fields ({', '.join(MODEL_SIDE_FIELDS)}): {e}")
 
+    # goal_acc is firmware, not a manufacturing spread: [8, 8] in the json, in the
+    # draw only so train_ppo --goal-acc can run a curriculum stage (model.EPISODE_DRAW).
     extra = [k for k in ranges if k not in PER_UNIT_FIELDS
-             and k.removesuffix("_abs") not in PER_UNIT_FIELDS]
+             and k.removesuffix("_abs") not in PER_UNIT_FIELDS and k != "goal_acc_abs"]
     for k in extra:
         R.say(WARN, f"{k} is in domain_rand.json but not in PER_UNIT_FIELDS — "
                     f"decide whether it is a per-unit spread and list it (adding "

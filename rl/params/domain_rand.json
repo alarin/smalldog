@@ -29,67 +29,194 @@
     "block is still pre-fit width: k_u's band is absolute uncertainty (fit 0.35",
     "against the rig's 0.40), not unit spread, and b_v is not separable at all."
   ],
-
   "actuator": {
-    "k_u": {"range": [0.65, 1.35], "evidence": "guessed",
-            "why": "torque per volt. eta = k_u*R/k_e = 0.43 from the three vendor numbers, which is low even for a 1:345 spur stack — either the gearbox really is that lossy or a spec is optimistic. Both mean the true value is somewhere inside a band this wide."},
-    "k_e": {"range": [0.80, 1.20], "evidence": "spec",
-            "why": "back-EMF, hence the free speed d*U/k_e. The vendor no-load 4.71 rad/s is 3.86 in position mode, but that is the position loop's profile cap at 2500 counts/s, not k_e: open loop the motor runs to 5.0 rad/s and k_e = 2.39 V*s/rad, 18 % above the 2.03 fit and inside this band. Keep the band; the cap is a goal-rate term the law does not have yet (PLAN.md 3c). Unit spread on the total speed-proportional torque is +-2 % over four units."},
-    "R": {"range": [0.75, 1.30], "evidence": "spec",
-          "why": "4.44 ohm from the 2.7 A locked-rotor spec, at the terminals. Wiring, connector and the bus daisy-chain add series resistance the spec does not include, so the spread is asymmetric upward."},
-    "J_m": {"range": [0.60, 1.60], "evidence": "guessed",
-            "why": "reflected rotor inertia, and check_model.py reports it dominates the leg at ~151x the knee link's own (it read 73x against an earlier armature). The single most consequential guess in the model: it sets how fast the joint can change direction at all. NOTE WHERE IT IS APPLIED: this is the one actuator range that is NOT part of the per-episode draw, because no function on the training path reads actuator.Params.J_m - the inertia the physics uses is MuJoCo's dof_armature. env/randomize.py scales that, per environment, out of this range. It WAS in the per-episode draw, correctly shaped and completely inert, until 2026-09-11."},
-    "tau_c": {"range": [0.55, 1.20], "evidence": "measured",
-              "why": "Coulomb friction. Four units on the bench at 12 V read a static floor of 0.186 / 0.117 / 0.144 / 0.161 N*m and a kinetic one of 0.168 / 0.124 / 0.153 / 0.173, i.e. 0.64..1.04 of the 0.184 nominal; the band is that spread with a margin for the eight not measured. It varies servo to servo with grease and preload more than any other term, and it is what makes a leg stick near a reversal. NOTE WHERE IT IS APPLIED: like J_m above, and since the same day, this is not part of the per-episode draw. The law's own term is (tau_c + mu_load*|tau_t|)*tanh(w/v_eps), which is exactly zero at rest, so it cannot hold a standing or stancing joint at all; on the MuJoCo paths the floor is MuJoCo's dof_frictionloss instead - model.build_spec() installs the fitted tau_c there and every caller of the law passes tau_c_external=True (PLAN.md 2b). env/randomize.py scales dof_frictionloss out of this range, per environment rather than per episode, which is not a worse physical reading: grease and preload do not change between one episode and the next. Moved 2026-09-11."},
-    "mu_load": {"range": [0.75, 1.55], "evidence": "measured",
-                "why": "LOAD-DEPENDENT gearbox friction, the term step 2 added: friction proportional to the torque being carried, on top of tau_c's fixed floor. Four units read 0.251 / 0.380 / 0.328 / 0.302 N*m per N*m, i.e. 0.88..1.33 of the 0.286 nominal, and the unit with the lowest floor had the highest slope - the two are not one grease number; the band is that spread with a margin for the eight not measured. Until 2026-09-11 this was the ONLY actuator field not randomised at all - every environment shared one scalar off params/st3215.json while tau_c beside it got a per-joint draw, which is backwards, because this is the LARGER of the two (0.29 N*m per N*m carried against a 0.18 N*m floor) and it is the one that varies most between units. The nominal is fit_bam over 44 runs at three voltages on unit 1."},
-    "b_v": {"range": [0.40, 2.20], "evidence": "guessed",
-            "why": "viscous friction. Not separable from the back-EMF damping k_w without current measurement at several supply voltages (actuator.py, 'Identifiability'), so it is guessed wide and will stay guessed until the bench runs both."},
-    "kp": {"range": [0.85, 1.15], "evidence": "measured",
-           "why": "the servo's own inner-loop gain after register scaling. Four units at the same P_COEF 32 / D_COEF 32 read a position-loop stiffness of 40.8 / 39.7 / 39.2 / 40.6 N*m/rad, +-2 %; the band is that with a margin. The registers are read back and recorded on every bench run, and the loop is not ours: the spread is the servo's, not a configuration."},
-    "deadband_abs": {"range": [0.0, 0.0061359], "evidence": "spec",
-                     "why": "registers 26/27, in encoder steps of 0.088 deg. 0 to 4 steps. Zero is a servo configured tight; 4 steps is the factory default region and is what makes a bus servo buzz around its target."},
-    "punch_abs": {"range": [0.0, 0.06], "evidence": "guessed",
-                  "why": "register 24, the minimum drive applied once outside the dead zone. Never read off a real servo."}
+    "k_u": {
+      "range": [
+        0.65,
+        1.35
+      ],
+      "evidence": "guessed",
+      "why": "torque per volt. eta = k_u*R/k_e = 0.43 from the three vendor numbers, which is low even for a 1:345 spur stack — either the gearbox really is that lossy or a spec is optimistic. Both mean the true value is somewhere inside a band this wide."
+    },
+    "k_e": {
+      "range": [
+        0.8,
+        1.2
+      ],
+      "evidence": "spec",
+      "why": "back-EMF, hence the free speed d*U/k_e. The vendor no-load 4.71 rad/s is 3.86 in position mode, but that is the position loop's profile cap at 2500 counts/s, not k_e: open loop the motor runs to 5.0 rad/s and k_e = 2.39 V*s/rad, 18 % above the 2.03 fit and inside this band. Keep the band; the cap is a goal-rate term the law does not have yet (PLAN.md 3c). Unit spread on the total speed-proportional torque is +-2 % over four units."
+    },
+    "R": {
+      "range": [
+        0.75,
+        1.3
+      ],
+      "evidence": "spec",
+      "why": "4.44 ohm from the 2.7 A locked-rotor spec, at the terminals. Wiring, connector and the bus daisy-chain add series resistance the spec does not include, so the spread is asymmetric upward."
+    },
+    "J_m": {
+      "range": [
+        0.6,
+        1.6
+      ],
+      "evidence": "guessed",
+      "why": "reflected rotor inertia, and check_model.py reports it dominates the leg at ~151x the knee link's own (it read 73x against an earlier armature). The single most consequential guess in the model: it sets how fast the joint can change direction at all. NOTE WHERE IT IS APPLIED: this is the one actuator range that is NOT part of the per-episode draw, because no function on the training path reads actuator.Params.J_m - the inertia the physics uses is MuJoCo's dof_armature. env/randomize.py scales that, per environment, out of this range. It WAS in the per-episode draw, correctly shaped and completely inert, until 2026-09-11."
+    },
+    "tau_c": {
+      "range": [
+        0.55,
+        1.2
+      ],
+      "evidence": "measured",
+      "why": "Coulomb friction. Four units on the bench at 12 V read a static floor of 0.186 / 0.117 / 0.144 / 0.161 N*m and a kinetic one of 0.168 / 0.124 / 0.153 / 0.173, i.e. 0.64..1.04 of the 0.184 nominal; the band is that spread with a margin for the eight not measured. It varies servo to servo with grease and preload more than any other term, and it is what makes a leg stick near a reversal. NOTE WHERE IT IS APPLIED: like J_m above, and since the same day, this is not part of the per-episode draw. The law's own term is (tau_c + mu_load*|tau_t|)*tanh(w/v_eps), which is exactly zero at rest, so it cannot hold a standing or stancing joint at all; on the MuJoCo paths the floor is MuJoCo's dof_frictionloss instead - model.build_spec() installs the fitted tau_c there and every caller of the law passes tau_c_external=True (PLAN.md 2b). env/randomize.py scales dof_frictionloss out of this range, per environment rather than per episode, which is not a worse physical reading: grease and preload do not change between one episode and the next. Moved 2026-09-11."
+    },
+    "mu_load": {
+      "range": [
+        0.75,
+        1.55
+      ],
+      "evidence": "measured",
+      "why": "LOAD-DEPENDENT gearbox friction, the term step 2 added: friction proportional to the torque being carried, on top of tau_c's fixed floor. Four units read 0.251 / 0.380 / 0.328 / 0.302 N*m per N*m, i.e. 0.88..1.33 of the 0.286 nominal, and the unit with the lowest floor had the highest slope - the two are not one grease number; the band is that spread with a margin for the eight not measured. Until 2026-09-11 this was the ONLY actuator field not randomised at all - every environment shared one scalar off params/st3215.json while tau_c beside it got a per-joint draw, which is backwards, because this is the LARGER of the two (0.29 N*m per N*m carried against a 0.18 N*m floor) and it is the one that varies most between units. The nominal is fit_bam over 44 runs at three voltages on unit 1."
+    },
+    "b_v": {
+      "range": [
+        0.4,
+        2.2
+      ],
+      "evidence": "guessed",
+      "why": "viscous friction. Not separable from the back-EMF damping k_w without current measurement at several supply voltages (actuator.py, 'Identifiability'), so it is guessed wide and will stay guessed until the bench runs both."
+    },
+    "kp": {
+      "range": [
+        0.85,
+        1.15
+      ],
+      "evidence": "measured",
+      "why": "the servo's own inner-loop gain after register scaling. Four units at the same P_COEF 32 / D_COEF 32 read a position-loop stiffness of 40.8 / 39.7 / 39.2 / 40.6 N*m/rad, +-2 %; the band is that with a margin. The registers are read back and recorded on every bench run, and the loop is not ours: the spread is the servo's, not a configuration."
+    },
+    "deadband_abs": {
+      "range": [
+        0.0,
+        0.0061359
+      ],
+      "evidence": "spec",
+      "why": "registers 26/27, in encoder steps of 0.088 deg. 0 to 4 steps. Zero is a servo configured tight; 4 steps is the factory default region and is what makes a bus servo buzz around its target."
+    },
+    "punch_abs": {
+      "range": [
+        0.0,
+        0.06
+      ],
+      "evidence": "guessed",
+      "why": "register 24, the minimum drive applied once outside the dead zone. Never read off a real servo."
+    },
+    "goal_acc_abs": {
+      "range": [
+        8.0,
+        8.0
+      ],
+      "evidence": "measured",
+      "why": "the firmware's goal-profile acceleration cap, rad/s^2, from the bench step and chirp runs (robot/bench/chirp_gain.py, 2026-09-14): one number for every unit, voltage and load, so no spread. train_ppo --goal-acc LO HI overrides it for a curriculum stage; the policy that ships must have trained at [8, 8] last."
+    }
   },
-
   "supply": {
-    "u_bat_abs": {"range": [9.9, 12.6], "evidence": "spec",
-                  "why": "a 3S LiPo from 3.3 to 4.2 V per cell. This is the whole reason actuator.py is a voltage law: stall torque and no-load speed fall TOGETHER as the pack drains, and a policy that only ever saw 12 V has never met the robot it will run on at the end of a session."},
-    "sag_ohm_abs": {"range": [0.0, 0.06], "evidence": "guessed",
-                    "why": "series resistance of pack, harness and the bus daisy-chain, in ohms. The load case is all twelve pulling together, and the model applies it to the SUMMED current, so the number is smaller than it looks: twelve servos at 3.6 A each into 0.06 ohm is a 2.6 V sag, which is already at the top of what a healthy 3S pack does. The first range here was 0.18, which is 7.8 V and not a battery. Nobody has put a scope on it."}
+    "u_bat_abs": {
+      "range": [
+        9.9,
+        12.6
+      ],
+      "evidence": "spec",
+      "why": "a 3S LiPo from 3.3 to 4.2 V per cell. This is the whole reason actuator.py is a voltage law: stall torque and no-load speed fall TOGETHER as the pack drains, and a policy that only ever saw 12 V has never met the robot it will run on at the end of a session."
+    },
+    "sag_ohm_abs": {
+      "range": [
+        0.0,
+        0.06
+      ],
+      "evidence": "guessed",
+      "why": "series resistance of pack, harness and the bus daisy-chain, in ohms. The load case is all twelve pulling together, and the model applies it to the SUMMED current, so the number is smaller than it looks: twelve servos at 3.6 A each into 0.06 ohm is a 2.6 V sag, which is already at the top of what a healthy 3S pack does. The first range here was 0.18, which is 7.8 V and not a battery. Nobody has put a scope on it."
+    }
   },
-
   "bus": {
-    "delay_s_abs": {"range": [0.00325, 0.00890], "evidence": "measured",
-                    "why": "command latency from the policy writing a target to the servo acting on it. THE RANGE HERE IS A COPY FOR READING: model.domain_ranges() overwrites it from params/bus_timing.json, so the measurement is the only authority and this file cannot go stale against it. The composite is sync_read + sync_write, p50 and p95: the feedback the target was computed from is already one SyncRead old (p50 3.24 ms) and the target is one SyncWrite away from the servo acting on it (p50 0.01, p95 5.15), which is 3.25..8.90 ms of a 20 ms tick. Measured 2026-09-07 over twelve servos, mac + CDC adapter; re-measure on the Orange Pi, where robot/README.md says the number to trust lives. It is a FRACTION of a tick and the action buffer's quantum is a whole one, so model.delay_ticks turns the fraction into the probability of the extra tick. The previous entry here was a guessed 0..20 ms justified by 'bus_timing.json does not exist yet' - it had existed for four days - and truncating that band to whole ticks gave a delay of zero on every draw."}
+    "delay_s_abs": {
+      "range": [
+        0.00325,
+        0.0089
+      ],
+      "evidence": "measured",
+      "why": "command latency from the policy writing a target to the servo acting on it. THE RANGE HERE IS A COPY FOR READING: model.domain_ranges() overwrites it from params/bus_timing.json, so the measurement is the only authority and this file cannot go stale against it. The composite is sync_read + sync_write, p50 and p95: the feedback the target was computed from is already one SyncRead old (p50 3.24 ms) and the target is one SyncWrite away from the servo acting on it (p50 0.01, p95 5.15), which is 3.25..8.90 ms of a 20 ms tick. Measured 2026-09-07 over twelve servos, mac + CDC adapter; re-measure on the Orange Pi, where robot/README.md says the number to trust lives. It is a FRACTION of a tick and the action buffer's quantum is a whole one, so model.delay_ticks turns the fraction into the probability of the extra tick. The previous entry here was a guessed 0..20 ms justified by 'bus_timing.json does not exist yet' - it had existed for four days - and truncating that band to whole ticks gave a delay of zero on every draw."
+    }
   },
-
   "body": {
-    "mass_scale": {"range": [0.95, 1.05], "evidence": "measured",
-                   "why": "link masses are real solids in 3d/mini_dog.py, so this is print-density and hardware spread, not ignorance. Tight on purpose — widening a measured number to be safe throws away the measurement."},
-    "com_offset_m_abs": {"range": [-0.010, 0.010], "evidence": "guessed",
-                         "why": "where the battery, the Pi and the harness actually end up. The CAD knows the structure's centre of mass; it does not know how the wiring was dressed."},
-    "payload_kg_abs": {"range": [0.0, 0.30], "evidence": "guessed",
-                       "why": "a mass added at the payload bay, up to 12 % of the robot. What the bay is for."}
+    "mass_scale": {
+      "range": [
+        0.95,
+        1.05
+      ],
+      "evidence": "measured",
+      "why": "link masses are real solids in 3d/mini_dog.py, so this is print-density and hardware spread, not ignorance. Tight on purpose — widening a measured number to be safe throws away the measurement."
+    },
+    "com_offset_m_abs": {
+      "range": [
+        -0.01,
+        0.01
+      ],
+      "evidence": "guessed",
+      "why": "where the battery, the Pi and the harness actually end up. The CAD knows the structure's centre of mass; it does not know how the wiring was dressed."
+    },
+    "payload_kg_abs": {
+      "range": [
+        0.0,
+        0.3
+      ],
+      "evidence": "guessed",
+      "why": "a mass added at the payload bay, up to 12 % of the robot. What the bay is for."
+    }
   },
-
   "contact": {
-    "friction": {"range": [0.55, 1.45], "evidence": "guessed",
-                 "why": "tangential friction of a printed foot on whatever it is standing on. check_model.py names it a guess and says a tilt test measures it in an afternoon; until then the range spans lino to carpet."}
+    "friction": {
+      "range": [
+        0.55,
+        1.45
+      ],
+      "evidence": "guessed",
+      "why": "tangential friction of a printed foot on whatever it is standing on. check_model.py names it a guess and says a tilt test measures it in an afternoon; until then the range spans lino to carpet."
+    }
   },
-
   "terrain": {
-    "box_height_m_abs": {"range": [0.0, 0.022], "evidence": "guessed",
-                         "why": "procedural boxes scattered under the robot, in metres. The top of the range is a quarter of the shin, which is roughly where a trot stops coping and a policy has to."},
-    "box_density": {"range": [0.0, 0.55], "evidence": "guessed",
-                    "why": "fraction of the tiles under the robot that are raised at all. Zero is flat ground, and every environment gets it some of the time on purpose."}
+    "box_height_m_abs": {
+      "range": [
+        0.0,
+        0.022
+      ],
+      "evidence": "guessed",
+      "why": "procedural boxes scattered under the robot, in metres. The top of the range is a quarter of the shin, which is roughly where a trot stops coping and a policy has to."
+    },
+    "box_density": {
+      "range": [
+        0.0,
+        0.55
+      ],
+      "evidence": "guessed",
+      "why": "fraction of the tiles under the robot that are raised at all. Zero is flat ground, and every environment gets it some of the time on purpose."
+    }
   },
-
   "push": {
-    "interval_s_abs": {"range": [3.0, 9.0], "evidence": "guessed",
-                       "why": "seconds between shoves. Not a model of anything — a way to keep the policy from learning a gait that only survives from a standing start."},
-    "vel_m_s_abs": {"range": [0.0, 0.7], "evidence": "guessed",
-                    "why": "instantaneous velocity added to the base, m/s, in a random horizontal direction."}
+    "interval_s_abs": {
+      "range": [
+        3.0,
+        9.0
+      ],
+      "evidence": "guessed",
+      "why": "seconds between shoves. Not a model of anything — a way to keep the policy from learning a gait that only survives from a standing start."
+    },
+    "vel_m_s_abs": {
+      "range": [
+        0.0,
+        0.7
+      ],
+      "evidence": "guessed",
+      "why": "instantaneous velocity added to the base, m/s, in a random horizontal direction."
+    }
   }
 }

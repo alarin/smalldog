@@ -99,6 +99,10 @@ def parse():
                          "Repeatable; everything else stays at its default. An "
                          "unknown field is an error. Recorded in run.json like "
                          "every arg.")
+    ap.add_argument("--goal-acc", type=float, nargs=2, default=None, metavar=("LO", "HI"),
+                    help="curriculum: draw the servo's goal-profile acceleration per "
+                         "episode from [LO, HI] rad/s^2 instead of the measured 8. "
+                         "A stage, not a model: the last stage must run at 8 8.")
     ap.add_argument("--name", default=None)
     ap.add_argument("--smoke", action="store_true",
                     help="a two-minute run that proves the loop closes and "
@@ -185,6 +189,10 @@ def main():
     randomization = None
     if not a.no_randomize:
         ranges = None
+        if a.goal_acc is not None:
+            ranges["actuator"]["goal_acc_abs"]["range"] = [float(a.goal_acc[0]), float(a.goal_acc[1])]
+            print(f"servo       goal_acc draw {a.goal_acc[0]:g} .. {a.goal_acc[1]:g} rad/s^2 "
+                  f"(CURRICULUM stage; the measured value is 8)")
         if a.box_height is not None:
             import model as model_mod
             ranges = model_mod.domain_ranges()

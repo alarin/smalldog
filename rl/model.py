@@ -478,6 +478,12 @@ EPISODE_DRAW = (
     ("u_bat",    "supply",   "u_bat_abs",    False),
     ("sag",      "supply",   "sag_ohm_abs",  False),
     ("delay_s",  "bus",      "delay_s_abs",  False),
+    # The firmware's goal-profile acceleration. Not a manufacturing spread: the
+    # json range is the measured [8, 8]. It is in the draw so that a CURRICULUM
+    # can widen it (train_ppo --goal-acc LO HI): a policy that already walks
+    # against a fast profile can be walked down to the real one, where from
+    # rest PPO's per-step noise is filtered to nothing and every run stood.
+    ("goal_acc", "actuator", "goal_acc_abs", False),
 )
 
 #: What `dof_armature` is scaled by, per environment. The same range the old
