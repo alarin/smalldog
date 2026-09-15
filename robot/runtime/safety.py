@@ -118,6 +118,15 @@ class Limits:
     #: lower joint rate, larger excursion. Measured 2026-09-08.
     q_err_rad: float = 0.70
     q_err_hold_s: float = 0.30
+    #: Body tilt, from the IMU, when the caller has one (`Guard.attitude`). A robot on
+    #: its face passes every limit above — 2026-09-15, exploring under Nav2, it pitched
+    #: over its front feet to 49 deg nose-down with all twelve joints at the standing
+    #: pose, 13.9 deg of tracking error and 0.4 A, and stood there driving. The trot's
+    #: own pitch is under 10 deg on the flat, the RL gait's under 5; the levelling
+    #: clamp is 20 mm (~7 deg). 40 deg is past anything the gait does upright and
+    #: short of the body resting on the floor.
+    tilt_rad: float = 0.70          # 40 deg of |roll| or |pitch|
+    tilt_hold_s: float = 0.30
     bus_fail: int = 5               # consecutive ticks with no usable feedback
 
 
@@ -142,6 +151,7 @@ class Guard:
         self._temps = {n: collections.deque(maxlen=self.lim.temp_median_n)
                        for n in self.joints}
         self._err = {n: 0.0 for n in self.joints}
+        self._tilt = 0.0
         self._low_v = 0.0
         self._miss = 0
         self._warned = set()
@@ -150,7 +160,7 @@ class Guard:
         #: noise stays visible instead of being quietly smoothed out of the report.
         self.temp_spikes = 0
         self.peak = dict(temp=0.0, temp_raw=0.0, current=0.0, q_err=0.0,
-                         volt_min=math.inf, volt_max=0.0)
+                         volt_min=math.inf, volt_max=0.0, tilt=0.0)
 
     # ------------------------------------------------------------------ warn
     def _warn(self, key, msg):
@@ -263,6 +273,19 @@ class Guard:
         if trip is not None:
             raise trip
 
+    # -------------------------------------------------------------- attitude
+    def attitude(self, dt, roll, pitch):
+        """Body tilt from the IMU, rad; call once a tick from whatever reads the chip
+        (the servo node's on_tick, policy.py's, walk.py's TickLog). Held like the rest:
+        a footfall rocks the body for a tick, a fall stays. Raises `Tripped`."""
+        tilt = max(abs(roll), abs(pitch))
+        self.peak["tilt"] = max(self.peak["tilt"], tilt)
+        self._tilt = self._tilt + dt if tilt >= self.lim.tilt_rad else 0.0
+        if self._tilt >= self.lim.tilt_hold_s:
+            raise Tripped(f"tilted for {self._tilt:.2f} s — the robot is over, roll "
+                          f"{math.degrees(roll):+.0f} pitch {math.degrees(pitch):+.0f} deg",
+                          None, tilt, self.lim.tilt_rad)
+
     # ---------------------------------------------------------------- report
     def temp(self, joint) -> float | None:
         """The filtered temperature of one joint — the figure the trip is judged on —
@@ -281,7 +304,8 @@ class Guard:
         p = self.summary()
         s = (f"peaks: {p['temp']:.0f} C, {p['current']:.2f} A, "
              f"{p['q_err']*57.3:.1f} deg tracking error, "
-             f"{p['volt_min']:.1f}..{p['volt_max']:.1f} V")
+             f"{p['volt_min']:.1f}..{p['volt_max']:.1f} V"
+             + (f", {p['tilt']*57.3:.0f} deg tilt" if p['tilt'] > 0 else ""))
         if self.temp_spikes:
             s += (f"\n  {self.temp_spikes} temperature spikes discarded "
                   f"(raw max {p['temp_raw']:.0f} C) — see Limits.temp_hold_s")
@@ -323,6 +347,20 @@ def _selftest() -> int:
     # isolated bytes as high as 98 and tripped --stand at 65.00.
     g = Guard(joints, log=quiet)
     chk("a single hot sample does not trip", feed(g, 1, temp=98.0) is None)
+
+    # Tilt: a footfall's rock is a tick, a fall stays (the 49 deg nose-down of 2026-09-15)
+    g = Guard(joints, log=quiet)
+    tilt = lambda n, r, p: [g.attitude(0.02, r, p) for _ in range(n)]
+    tilt(500, 0.15, -0.10)
+    chk("walking tilt does not trip", g.peak["tilt"] < g.lim.tilt_rad)
+    tilt(10, 0.0, 0.8)
+    tilt(20, 0.0, 0.1)
+    chk("one rock over the line does not trip", True)
+    try:
+        tilt(20, 0.0, 0.86)
+        chk("a held 49 deg pitch trips", False)
+    except Tripped as e:
+        chk("a held 49 deg pitch trips", "over" in str(e))
 
     # ... but before torque, on a robot that is not driving, one reading is enough
     g = Guard(joints, log=quiet)

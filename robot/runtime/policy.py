@@ -33,6 +33,13 @@ The action becomes a target the same way as in training:
 `Runtime.send()` clamps once more against calib's own soft limits and holds the
 last goal on a NaN, so a broken graph cannot become a lunge.
 
+The heading hold (`HeadingHold`, on by default with the IMU)
+-------------------------------------------------------------
+The policy walks an arc at wz = 0 — it has no heading to hold, only a rate. The runtime
+latches the heading at the start and steers `cmd[2]` to keep it, exactly as the IK
+trot's `gait.py` does; `--wz` other than 0 releases it. `--no-hold` is the policy as
+trained. The log records the command the policy was GIVEN, hold included.
+
 --no-imu is a bench mode, not a walking mode
 --------------------------------------------
 It feeds the policy a level, still IMU — gravity (0, 0, -1), zero rates, +g on
@@ -73,17 +80,27 @@ class LiveIMU:
         from imu.bmi088 import Attitude
         self.chip = chip
         self.att = Attitude(bias=bias)
+        self.gravity = (0.0, 0.0, -1.0)     # the last read, for the guard's tilt check
 
     def update(self, dt):
         accel, gyro = self.chip.read()
-        return self.att.update(accel, gyro, dt)
+        out = self.att.update(accel, gyro, dt)
+        self.gravity = out[0]
+        return out
+
+    def roll_pitch(self):
+        """(roll, pitch) rad from the last gravity read: x forward, y left, z up."""
+        gx, gy, gz = self.gravity        # as servo_node.attitude_from_gravity
+        return math.atan2(-gy, -gz), math.asin(max(-1.0, min(1.0, gx)))
 
 
 class PolicySource:
     """source(dt, feedback) -> 12 targets in calib.joints order, from the ONNX."""
 
-    def __init__(self, policy_dir, calib: Calibration, imu, command=(0.0, 0.0, 0.0)):
+    def __init__(self, policy_dir, calib: Calibration, imu, command=(0.0, 0.0, 0.0),
+                 hold: "HeadingHold | None" = None):
         import onnxruntime as ort
+        self.hold = hold
         with open(os.path.join(policy_dir, "policy.json")) as f:
             self.meta = m = json.load(f)
         if list(m["joint_names"]) != list(calib.joints):
@@ -117,6 +134,9 @@ class PolicySource:
                      np.float32)
         qd = np.array([fb[n]["w"] if fb[n] else 0.0 for n in self.joints], np.float32)
         self.blind_ticks += sum(1 for n in self.joints if fb[n] is None)
+        cmd = self.command
+        if self.hold is not None:
+            cmd = np.array([cmd[0], cmd[1], self.hold(dt, w, float(cmd[2]))], np.float32)
         f = np.concatenate([
             np.asarray(g, np.float32),
             np.asarray(w, np.float32) * self.k_gyro,
@@ -124,7 +144,7 @@ class PolicySource:
             q - self.stance,
             qd * self.k_qvel,
             self.last_action,
-            self.command,
+            cmd,
         ])
         assert f.shape[0] == self.frame_n, (f.shape, self.frame_n)
         return f
@@ -163,6 +183,50 @@ class PolicySource:
                 f"{self.blind_ticks} joint reads missing, {self.nonfinite} non-finite ticks; "
                 f"action |a| p50 {np.median(np.abs(np.stack([l[1] for l in self.log]))) if self.log else float('nan'):.3f} "
                 f"max {max((float(np.abs(l[1]).max()) for l in self.log), default=float('nan')):.3f}")
+
+
+class HeadingHold:
+    """Steer the policy's yaw-rate command so the body keeps the heading it started on.
+
+    The policy has no heading in its observation — gyro, gravity, joints, its own last
+    action and the command — so with wz = 0 it walks a slow arc: in vanilla MuJoCo the
+    shipped 20260915-bc-ft turns −10° in 5 s at cmd 0.1 and −21° at 0.2 (measured
+    2026-09-15, `rl/eval.py`'s actuator law). It does answer wz (±0.3 → ±73° in 5 s), so
+    the same trick `smalldog_walker/gait.py` plays on the IK trot works here: latch the
+    heading when the operator asks for no turn, and command the turn that closes the
+    error. kp 3 with the 0.5 rad/s clamp holds the sim to ±1° at 8 s (peak 7° in the
+    first stride); kp 1.5 left −4°, an integral term bought nothing.
+
+    Heading is the integrated gyro after `measure_bias` — no magnetometer, so it drifts
+    at the residual bias (~0.01 deg/s standing) and is a line-holder, not a compass.
+    """
+
+    def __init__(self, kp=3.0, kd=0.05, wz_max=0.5, cmd_eps=0.02):
+        self.kp, self.kd, self.wz_max, self.cmd_eps = kp, kd, wz_max, cmd_eps
+        self.yaw = 0.0
+        self.ref = None
+        self.applied = []
+
+    def __call__(self, dt, gyro, wz_cmd):
+        """(wz to hand the policy) given this tick's gyro (rad/s) and the operator's wz."""
+        self.yaw += gyro[2] * dt
+        if abs(wz_cmd) > self.cmd_eps:
+            self.ref = None                   # a commanded turn: let go, re-latch after
+            return wz_cmd
+        if self.ref is None:
+            self.ref = self.yaw
+        e = (self.ref - self.yaw + math.pi) % (2 * math.pi) - math.pi
+        wz = max(-self.wz_max, min(self.wz_max, self.kp * e - self.kd * gyro[2]))
+        self.applied.append(wz)
+        return wz
+
+    def report(self):
+        if not self.applied:
+            return "heading hold: never engaged"
+        a = np.array(self.applied)
+        return (f"heading hold: yaw now {math.degrees(self.yaw):+.1f} deg from start, "
+                f"wz applied mean {a.mean():+.3f} max {np.abs(a).max():.2f} rad/s, "
+                f"{100 * np.mean(np.abs(a) >= self.wz_max - 1e-6):.0f} % of ticks at the clamp")
 
 
 def selftest(policy_dir, seconds=5.0):
@@ -207,6 +271,15 @@ def main():
     ap.add_argument("--volt-min", type=float, default=9.9)
     ap.add_argument("--track-rad", type=float, default=0.6)
     ap.add_argument("--log", metavar="FILE.npz", help="record every tick's frame, action, target")
+    ap.add_argument("--stand-before", type=float, default=0.0, metavar="S",
+                    help="hold the stance under the policy at command 0 for S s before the walk")
+    ap.add_argument("--stand-after", type=float, default=0.0, metavar="S",
+                    help="after the walk, hold the stance under the policy at command 0 for S s "
+                         "(a LiDAR slice wants the robot standing, not sagging with torque off)")
+    ap.add_argument("--no-hold", action="store_true",
+                    help="no heading hold: hand the policy --wz as given (it arcs; see HeadingHold)")
+    ap.add_argument("--hold-kp", type=float, default=3.0, help="rad/s of turn per rad of heading error")
+    ap.add_argument("--hold-max", type=float, default=0.5, help="rad/s, clamp on the hold's turn")
     a = ap.parse_args()
 
     if a.selftest:
@@ -244,15 +317,28 @@ def main():
             return 1
 
     cmd = (0.0, 0.0, 0.0) if a.stand else (a.vx, a.vy, a.wz)
-    src = PolicySource(a.policy_dir, calib, imu, command=cmd)
+    hold = None if (a.no_hold or a.no_imu) else HeadingHold(kp=a.hold_kp, wz_max=a.hold_max)
+    src = PolicySource(a.policy_dir, calib, imu, command=cmd, hold=hold)
+    print("heading hold: " + ("off" if hold is None else
+                              f"kp {hold.kp:g}, clamp {hold.wz_max:g} rad/s, lets go when |wz| > {hold.cmd_eps:g}"))
     print(f"policy {src.meta['run']} @ {src.meta['commit']}   command vx {cmd[0]:+.2f} "
           f"vy {cmd[1]:+.2f} wz {cmd[2]:+.2f}   {a.seconds:g} s")
     print("stance, deg: " + "  ".join(f"{n} {math.degrees(v):+.0f}" for n, v in zip(calib.joints, src.stance)))
+    # the guard's tilt trip: the source reads the chip every tick, this reads the result
+    tilt = (lambda k, dt, fb: rt.guard.attitude(dt, *imu.roll_pitch())) if hasattr(imu, "roll_pitch") else None
     code = 0
     try:
         with rt:
             rt.engage([float(v) for v in src.stance], ramp_s=a.ramp)
-            rt.run(src, seconds=a.seconds)
+            if a.stand_before > 0:
+                src.set_command(0.0, 0.0, 0.0)
+                rt.run(src, seconds=a.stand_before, on_tick=tilt)
+                src.set_command(*cmd)
+                print(f"walking: vx {cmd[0]:+.2f} vy {cmd[1]:+.2f} wz {cmd[2]:+.2f}", flush=True)
+            rt.run(src, seconds=a.seconds, on_tick=tilt)
+            if a.stand_after > 0:
+                src.set_command(0.0, 0.0, 0.0)
+                rt.run(src, seconds=a.stand_after, on_tick=tilt)
             rt.relax([float(v) for v in src.stance], ramp_s=1.0)
     except KeyboardInterrupt:
         print("\ninterrupted")
@@ -261,6 +347,8 @@ def main():
         code = 1
     finally:
         print("policy", src.report())
+        if hold is not None:
+            print(hold.report())
         if a.log:
             src.save_log(a.log)
     return code

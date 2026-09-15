@@ -251,6 +251,7 @@ class ServoNode(Node):
         if self.imu is not None:
             g, w, acc = self.imu.update(dt)
             roll, pitch = attitude_from_gravity(g)
+            self.rt.guard.attitude(dt, roll, pitch)     # raises Tripped: the robot is over
             self._yaw += w[2] * dt
             self._att = (roll, pitch, self._yaw)
             m = Imu()
