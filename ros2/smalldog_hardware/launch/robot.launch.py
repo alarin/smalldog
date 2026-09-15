@@ -6,6 +6,9 @@
     ros2 launch smalldog_hardware robot.launch.py dry_run:=true    # loopback bus, no hardware
     ros2 launch smalldog_hardware robot.launch.py imu:=true lidar:=true   # + the L2 on /lidar/points,
                                                                    # for smalldog_nav (stream_pcd running)
+    ros2 launch smalldog_hardware robot.launch.py imu:=true camera:=true foxglove:=true
+                                                                   # + the IMX415 on /camera/image/compressed
+                                                                   # and a Foxglove bridge on ws://<pi>:8765
     ros2 run smalldog_teleop keyboard --ros-args -p speed:=0.08 -p turn:=0.65   # 2nd terminal
 
 Or without a keyboard:
@@ -27,11 +30,19 @@ are measured on the floor (2026-09-15):
 `speed` here sets the teleop's speed and the gait's `stride_max` (so `period_for` admits
 the period); it does not cap `/cmd_vel` from elsewhere — publish the same number.
 """
+import os
+
+from ament_index_python.packages import get_package_share_directory
+import os
+
+from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, OpaqueFunction
 from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
+from launch_ros.parameter_descriptions import ParameterValue
 
 PERIOD, TURN = 1.35, 0.65
 
@@ -39,7 +50,22 @@ PERIOD, TURN = 1.35, 0.65
 def _nodes(context):
     speed = float(LaunchConfiguration('speed').perform(context))
     yaw_max = float(LaunchConfiguration('yaw_max').perform(context))
+    with open(os.path.join(get_package_share_directory('smalldog_description'),
+                           'urdf', 'smalldog.urdf')) as f:
+        urdf = f.read()
+    urdf = os.path.join(get_package_share_directory('smalldog_description'), 'urdf',
+                        'smalldog.urdf')
+    with open(urdf) as f:
+        robot_description = f.read()
     return [
+        # TF for the body: base_link -> the legs (from the servo node's /joint_states) and
+        # the fixed sensor frames. smalldog_nav needs lidar_link; without this node it
+        # does not exist on the robot and the scan cannot be built.
+        Node(package='robot_state_publisher', executable='robot_state_publisher',
+             output='both',
+             parameters=[{'robot_description': ParameterValue(robot_description,
+                                                              value_type=str)}]),
+
         Node(package='smalldog_hardware', executable='servos', name='smalldog_servos',
              output='screen',
              parameters=[{'port': LaunchConfiguration('port'),
@@ -72,6 +98,28 @@ def _nodes(context):
         Node(package='smalldog_hardware', executable='lidar', name='smalldog_lidar',
              output='screen', condition=IfCondition(LaunchConfiguration('lidar')),
              parameters=[{'source': LaunchConfiguration('lidar_source')}]),
+
+        # the IMX415, the UVC module's own MJPEG frames passed through (camera_node.py)
+        Node(package='smalldog_hardware', executable='camera', name='smalldog_camera',
+             output='screen', condition=IfCondition(LaunchConfiguration('camera')),
+             parameters=[{'input': LaunchConfiguration('camera_input'),
+                          'device': LaunchConfiguration('camera_device'),
+                          'width': ParameterValue(LaunchConfiguration('camera_width'), value_type=int),
+                          'height': ParameterValue(LaunchConfiguration('camera_height'), value_type=int)}]),
+
+        # base_link -> every fixed frame (lidar_link, camera_optical_frame, imu) and the
+        # legs from /joint_states. smalldog_nav needs the lidar frame; Foxglove draws the
+        # robot from /robot_description. Always on: it is one small process.
+        Node(package='robot_state_publisher', executable='robot_state_publisher',
+             output='both', parameters=[{'robot_description': urdf}]),
+
+        # Foxglove over the LAN: everything above, plus /map, /scan and the costmaps when
+        # nav.launch.py is up. 0.0.0.0, unlike the sim's bridge — the Pi is the robot,
+        # the mac is where the screen is. README, "Watching the robot".
+        Node(package='foxglove_bridge', executable='foxglove_bridge', name='foxglove_bridge',
+             output='screen', condition=IfCondition(LaunchConfiguration('foxglove')),
+             parameters=[{'address': '0.0.0.0', 'port': 8765,
+                          'send_buffer_limit': 100_000_000}]),
     ]
 
 
@@ -91,5 +139,17 @@ def generate_launch_description():
                               description='publish the L2 on /lidar/points (needs stream_pcd)'),
         DeclareLaunchArgument('lidar_source', default_value='127.0.0.1:9910',
                               description='where stream_pcd serves'),
+        DeclareLaunchArgument('camera', default_value='false',
+                              description='publish the IMX415 on /camera/image/compressed'),
+        DeclareLaunchArgument('camera_device', default_value='/dev/video0'),
+        DeclareLaunchArgument('camera_input', default_value='v4l2',
+                              description='ffmpeg input format; lavfi + '
+                                          'camera_device:=testsrc=size=1280x720:rate=20 '
+                                          'is a test pattern on a machine with no camera'),
+        DeclareLaunchArgument('camera_width', default_value='1280'),
+        DeclareLaunchArgument('camera_height', default_value='720'),
+        DeclareLaunchArgument('foxglove', default_value='false',
+                              description='foxglove_bridge on ws://<this host>:8765; open '
+                                          'smalldog_hardware/foxglove/robot.json in Foxglove'),
         OpaqueFunction(function=_nodes),
     ])
