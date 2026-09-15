@@ -75,6 +75,10 @@ def main():
 
     P = model_mod.robot_params()
     env = Walk()
+    # env.dt is a jax scalar (brax derives it from sys.opt.timestep); handed to
+    # the gait as-is every one of its arithmetic ops became a device dispatch —
+    # 140 ms per joint_targets() against 0.01 ms with a Python float.
+    dt = float(env.dt)
     stance = np.array(env._stance_j)
     obs_size, act_size = env.observation_size, 12
     reset = jax.jit(jax.vmap(env.reset))
@@ -103,10 +107,10 @@ def main():
             # TrotGait starts from a straight leg and ramps into its cycle over
             # ~20 steps; that ramp is not a gait and stays out of the data.
             for _ in range(40):
-                g.joint_targets(env.dt, *cmd[i])
+                g.joint_targets(dt, *[float(c) for c in cmd[i]])
         alive = np.ones(a.envs, bool)
         for t in range(a.steps):
-            q = np.stack([g.joint_targets(env.dt, *cmd[i]) for i, g in enumerate(gaits)])
+            q = np.stack([g.joint_targets(dt, *[float(c) for c in cmd[i]]) for i, g in enumerate(gaits)])
             clean = ((q - stance) / ACTION_SCALE).astype(np.float32)
             OBS.append(np.asarray(st.obs)[alive]); ACT.append(clean[alive])
             noisy = clean + rng.normal(0.0, a.exec_noise, clean.shape).astype(np.float32)
@@ -114,7 +118,7 @@ def main():
             alive &= np.asarray(st.done) < 0.5
             if t % 100 == 99:
                 print(f"  rollout {r + 1} step {t + 1}/{a.steps}, {alive.sum()} upright, {time.time() - t0:.0f} s", flush=True)
-        print(f"rollout {r + 1}/{a.rollouts}: {alive.sum()}/{a.envs} upright at {a.steps * env.dt:.0f} s, "
+        print(f"rollout {r + 1}/{a.rollouts}: {alive.sum()}/{a.envs} upright at {a.steps * dt:.0f} s, "
               f"{sum(len(o) for o in OBS)} samples, {time.time() - t0:.0f} s")
     X = np.concatenate(OBS).astype(np.float32); Y = np.concatenate(ACT).astype(np.float32)
     print(f"data      {X.shape[0]} (obs, action) pairs; |action| p50 {np.median(np.abs(Y)):.3f}, "
