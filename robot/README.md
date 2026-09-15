@@ -23,6 +23,7 @@ because `robot/bench` had to run before there was a robot.
 | `runtime/safety.py` | the limits, and the one place that decides to cut torque |
 | `runtime/loop.py` | the 50 Hz tick, controller-agnostic |
 | `runtime/walk.py` | the CLI that runs the trot on the robot; `--go S` walks straight for S seconds, `--log FILE.npz` records every tick, `--imu` adds the BMI088 to it |
+| `slam/slam.py` | LiDAR odometry and a voxel map from the L2. **Not the robot's mapping stack** — `ros2/smalldog_nav` is. Read "SLAM" below before relying on a pose it prints |
 
 Nothing here needs hardware to be exercised:
 
@@ -486,3 +487,111 @@ and was replaced; turn the hub by hand through the centre before every run.
 `rl/params/domain_rand.json` carries it: `tau_c` ×0.55–1.20,
 `mu_load` ×0.75–1.55, `kp` ×0.85–1.15 (the observed spread with a margin for the eight
 unmeasured), all `measured` now.
+
+## SLAM
+
+`slam/slam.py` takes `stream_pcd`'s feed off the Unitree L2, registers every frame with
+KISS-ICP and accumulates a 5 cm voxel map, serving it in the same ULF3 format so
+`3d/tools/pcview.py --stream` draws the map instead of the sensor.
+
+**It is not what maps the room.** `ros2/smalldog_nav` does that — a 2-D slice of the same
+cloud into slam_toolbox, with the gait's own dead reckoning as odometry, Nav2 on top and a
+frontier explorer that covers a room by itself. This file is the other answer: full 3-D,
+no odometry input at all. It is kept, and measured, so that staying with the 2-D route is
+a decision rather than an accident.
+
+### What it does, measured
+
+`../ros2/tools/walk_map.py` trots the real gait through `scene_room.xml` — the same room
+`tools/explore.sh` drives — casting the measured L2 pattern into this odometry and scoring
+both trajectory and map against MuJoCo's truth. **The navigation cheats on ground truth on
+purpose**: this measures perception, not steering. One frame per registration, motion
+distortion modelled:
+
+| path | run | walked | net turn | end | max | yaw max | map rms | map rms, truth pose |
+|---|---|---|---|---|---|---|---|---|
+| stand still | 8 s | — | — | 5.9 cm | 9.3 cm | 1.8° | 29 mm | 18 mm |
+| straight | 30 s | 2.04 m | 1° | 5.7 cm | 7.2 cm | 2.0° | 39 mm | 47 mm |
+| spin on the spot | 8 s | 0.32 m | 156° | 14.4 cm | 15.6 cm | 6.2° | 58 mm | 35 mm |
+| both rooms + doorway | 185 s | 21.50 m | 539° | **2.8 cm** | 17.7 cm | 9.0° | 61 mm | 55 mm |
+
+**In this room it works.** 2.8 cm after a 21.5 m tour through a doorway, and a map at
+61 mm rms against the 55 mm the same points score when placed by perfect truth — that is
+the sensor's own noise, not the odometry's. The trot is not a problem for it: the body's
+2.2 Hz bob costs almost nothing.
+
+`map rms, truth pose` is the same points placed by MuJoCo's truth instead of by the
+odometry. It is the map a perfect pose would give, so the gap between the columns is the
+odometry's bill and the column itself is the sensor's.
+
+### And then it does not, and the difference is the room
+
+The same code, the same settings, three scenes, robot standing perfectly still:
+
+| scene | max drift, stationary |
+|---|---|
+| `scene_room.xml` in sim — two chambers, 0.5 m walls, cluttered | 0.09 m |
+| a 6 × 4 m sim room with 2.4 m walls, sparsely furnished | 0.25 m |
+| **the real capture — the L2 on the robot, in a real room** | **0.48 m** |
+
+The last row is `3d/ref/lidar/l2_onboard.pcd`: 120 real frames, 10 s, the sensor bolted to
+the standing robot, replayed through `Odometry` exactly as the node runs it. It is not the
+decimation — the capture is 1:11 by stride, and decimating the sim the same way moves it
+0.094 → 0.106 m. It is not tuning either: registration voxel swept 0.05–0.40 m, ICP
+threshold 0.05–0.60 m and `min_range` to 0.5 m all still leave 0.20–0.61 m, with no
+ordering to them.
+
+**Why, and why it scales with the room.** The beam spins in a plane through the axis at
+`BEAM_HZ` = 215.7 rev/s while that plane precesses at `PREC_HZ` = 4.354, so one 83 ms
+frame is **18 meridian sweeps** (counted directly in the capture: 18 axis passes, against
+the 18.0 the two rates predict), each smeared 7.3° in azimuth. A frame is a fan of lines
+across the room, not a sample of its surfaces, and the next frame's lines land elsewhere
+because the two rates are deliberately incommensurate. Point-to-point ICP fitting one fan
+of lines to a map of other fans has an aperture problem and slides — and the bigger and
+emptier the room, the further apart those lines land on any one surface, which is the
+ordering in the table. Two controls pin the cause down: feeding the same cloud twice
+drifts exactly 0, and sampling the *same* cone uniformly instead of along meridians drops
+the drift from 0.24 m to 0.009 m.
+
+This is why a sensor of this class ships with Point-LIO rather than plain ICP: the IMU is
+what carries the pose between frames that individually cannot fix one.
+
+**Stacking frames is the same story from the other side.** On the real capture, where a
+single frame is not enough, registering several at once fixes it outright:
+
+| frames per registration | pose rate | max drift, real capture |
+|---|---|---|
+| **1 (as committed)** | 12 Hz | **0.48 m** |
+| 2 | 6 Hz | 0.14 m |
+| 4 | 3 Hz | 0.033 m |
+| 12 | 1 Hz | 0.016 m |
+
+In `scene_room.xml`, where a single frame already suffices, the same `--stack 4` makes the
+tour *worse* — 41 cm against 2.8 cm — because all it adds there is 23° of rotation per
+window smeared into a cloud ICP treats as rigid. Both halves are the same missing
+quantity: rotation during the window.
+
+### The operative conclusion
+
+**The sim room flatters this frontend, and the only real data we have does not.** A
+measurement taken only in `scene_room.xml` would have said 2.8 cm over 21.5 m and been
+wrong about the robot. That caution is not specific to this file — `smalldog_nav`'s own
+run is sim-only too, by its README's own admission.
+
+What follows, in order:
+
+1. **`3d/tools/stream_pcd.cpp` drops the gyro.** It reads `LidarImuData` and forwards
+   `linear_acceleration` only. The L2's angular rate is being read off the sensor and
+   thrown away on the wire, and per-point `time` with it. Both are wanted by anything that
+   deskews or propagates between frames, on either route. One field on an existing struct —
+   do this first, whatever is decided about the rest.
+2. **Capture the real L2 while the robot walks.** Everything above that involves walking is
+   simulated; the one real recording is of a robot standing still. `--record` on the node
+   already writes the frames, and `--replay` scores them offline. That is the cheapest
+   real measurement left and it gates any claim about either frontend.
+3. Only then the frontend choice — Point-LIO on the Pi against continuing to carry this —
+   and it is not urgent while `smalldog_nav` is the thing that maps.
+
+**Not measured, and do not assume:** any of this on the Pi. The timings
+(p50 8–21 ms a frame against the 83 ms between them) are a container's CPU, not an
+RK3588's, and the Pi is not installed — `PLAN.md` steps 9–10.

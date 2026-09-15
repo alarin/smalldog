@@ -11,6 +11,7 @@ wait on hardware. Steps 1–3 are done and their results live in the trees, not 
 | `3d/` | done and verified; the ladder in `3d/CLAUDE.md` is green on the current tree |
 | `ros2/` | generated from the CAD, trots in sim, terrain and course regressions baselined |
 | `rl/` | code complete, checks green, **never trained in earnest** |
+| `slam` | `ros2/smalldog_nav` maps and explores a room in sim; `robot/slam`'s 3-D frontend is measured and scene-dependent. **Neither has met the real sensor** (`robot/README.md`, "SLAM") |
 | `robot/` | walks tethered on the bench at 2.55 kg (1 kg plate as ballast); every servo number below is measured on one unit |
 
 ## Done — where the result lives
@@ -127,7 +128,21 @@ levelling/heading hold and the deployability of anything `rl/` produces.
    first: the transaction cost is a property of the machine.
 10. **LiDAR and camera** — sensors for autonomy, not walking, and both need the Pi. The
     model side is done: measured point rate, cone read out of the compiled model by both
-    consumers.
+    consumers. **The mapping half is done in sim**: `ros2/smalldog_nav` covers a room by
+    itself (2-D scan into slam_toolbox, gait odometry, Nav2, a frontier explorer).
+
+    **What is not done is any of it on the real sensor.** `ros2/tools/walk_map.py` measures
+    the other frontend — `robot/slam/`'s 3-D ICP — against MuJoCo truth, and the headline
+    is a caution about the sim rather than about that frontend: standing perfectly still it
+    drifts 0.09 m in `scene_room.xml`, 0.25 m in a larger room, and **0.48 m on the one
+    real capture we have**. The sim room flatters it, and `smalldog_nav` has never met the
+    real L2 either. Full table in `robot/README.md`, "SLAM".
+
+    So the next two are cheap and neither needs the Pi: `3d/tools/stream_pcd.cpp` forwards
+    the L2's accelerometer but **drops its gyro** and per-point `time`, which anything that
+    deskews or propagates between frames wants; and **record the L2 while the robot walks**
+    (`slam.py --record`, `--replay` to score it offline) so that there is real walking data
+    to hold either frontend against.
 
 ---
 

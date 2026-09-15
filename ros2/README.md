@@ -368,6 +368,33 @@ The room, `mujoco/scene_room.xml` (`room:=true` on the sim launch; `ROOM` in
 `generate_model.py`): 4 × 3 m with the robot at the centre facing +x, a 0.8 m doorway into
 a 2 × 3 m second room, a pillar, a couch and two crates, walls 0.5 m tall.
 
+### The other frontend, and why nothing is built on it
+
+`robot/slam/slam.py` is a second, unrelated answer to the same problem: KISS-ICP on the
+full 3-D cloud instead of slam_toolbox on a 2-D slice, with no odometry input at all.
+`tools/walk_map.py` measures it, in this same room:
+
+```bash
+python tools/walk_map.py --selftest      # the harness, 4 s
+python tools/walk_map.py --path patrol   # both rooms and the doorway, scored against truth
+python tools/walk_map.py --path still    # the control arm
+```
+
+It trots the gait through `scene_room.xml`, casts the measured L2 pattern **with motion
+distortion modelled** (`lidar.Scanner` casts a whole frame from its end pose; this casts
+it in `--slice-ms` pieces as the robot moves, which is what a sweeping sensor really hands
+you), feeds that odometry, and scores both the trajectory and the map against MuJoCo's own
+truth. `--rigid` is the no-smear control, `--stack N` registers N frames at once. It keeps
+no description of the room: the surfaces come out of the compiled model, so it scores
+against the scene that was actually simulated and cannot drift from it.
+
+**The 3-D frontend does not hold a pose** — 0.48 m of drift with the robot standing
+perfectly still, replaying the real onboard capture, because one 83 ms L2 frame is 18
+meridian sweeps rather than a sample of the surfaces. That is the measurement behind
+`smalldog_nav` taking the 2-D-scan-plus-gait-odometry route, and the reason to keep taking
+it. The numbers, the cause and what would change it are in
+[`../robot/README.md`](../robot/README.md), "SLAM".
+
 ## Regenerating the model from CAD
 
 ```bash
@@ -555,8 +582,12 @@ floor, which is what the hold is correcting, at a speed cost.
   own load reading can drive it (`smalldog_walker/contact.py`; measured in
   `robot/README.md`).
 - Odometry is dead reckoning off the gait (`odom_scale` unmeasured on the robot); the
-  GPS is framed but not read. The sensor model is not motion-compensated (every point of a
-  frame is cast from the end-of-frame pose — 20 mm at 0.2 m/s).
+  GPS is framed but not read. `lidar.Scanner` is not motion-compensated (every point of a
+  frame is cast from the end-of-frame pose — 20 mm at 0.2 m/s); `tools/walk_map.py`
+  compensates by casting in slices, and measures what the difference is worth.
+- `3d/tools/stream_pcd.cpp` reads the L2's IMU and forwards only `linear_acceleration`:
+  the sensor's **gyro is read and dropped on the wire**, and so is per-point `time`. Both
+  are wanted by anything that deskews or propagates between frames.
 - SLAM and navigation have run in the sim only; nothing under `smalldog_nav` has met the
   real L2 or the real floor.
 - Keys reach the teleop only while the MuJoCo window has focus, on press only (GLFW

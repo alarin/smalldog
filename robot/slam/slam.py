@@ -30,7 +30,10 @@ The pieces, and why they are shaped this way
   keeps up, and it did (~15 ms per frame against 83 between them).
 - **The world frame is levelled off the L2's own accelerometer**, from the first second
   of frames with the robot standing still: up is +Z, and +X is where the sensor was looking,
-  projected onto the floor — on this robot the L2 is bolted at 45° up, so +X is forward.
+  projected onto the floor — on this robot the L2's axis points FORWARD and level
+  (`LIDAR_TILT` = 90 in `3d/mini_dog.py`; the onboard capture reads it 2° below level), so
+  +X is forward and the levelling rotation is a ~90° one. It is not bolted at 45°; that
+  claim was here, and in `ros2/README.md`, and was wrong in both.
   The pose is the SENSOR's, not the body's: the extrinsic is in `3d/mini_dog.py`
   (`lidar_pose()`) and is not in `robot_params.json` yet.
 - **No deskew.** The wire carries no per-point time; at 0.1 m/s and 12 Hz that is 8 mm
@@ -490,7 +493,8 @@ def _rot(axis, deg):
 
 
 def selftest():
-    """A 6 x 4 x 2.5 m room, the sensor 0.2 m up and tilted 45° like on the robot, walking
+    """A 6 x 4 x 2.5 m room, the sensor 0.2 m up and tilted 45° — NOT the robot's mount,
+    which is axis-forward (see the header); this is a generic sensor walk, walking
     2.5 m forward at 0.1 m/s, turning 90° left at 0.5 rad/s, then 1.5 m more — 12 Hz, the
     frames handed to the node exactly as `stream_pcd` would hand them (sensor frame plus
     a gravity vector), and the trajectory it recovers held against the truth."""
