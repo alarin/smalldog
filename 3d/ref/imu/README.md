@@ -25,6 +25,13 @@ is two devices, accelerometer and gyroscope, on one bus) directly to the pads, a
 them to the Pi's own I2C pads on its underside — they are 40 mm away, on the same side of
 the board. The component face looks **up**, at the Pi.
 
+## Where it sits
+
+`imu_in_case_top.png` — the Orange Pi's case seen from above through the board: the IMU
+taped face up on the bottom plate, its edges 9.25 / 29.75 mm from the case's micro-SD
+face and 14.95 / 25.55 mm from the side face opposite the 40-pin header. Drawn from the
+model (`IMU_X, IMU_Y` = 0, +15); the M.2 band on it is the vendor drawing's, not measured.
+
 ## Orientation
 
 The model places the sensor's package at `imu_xyz()` and gives the `imu` site no rotation:

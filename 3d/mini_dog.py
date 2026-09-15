@@ -645,13 +645,15 @@ NODE_Z0   = -6.0                      # its foot on the lower seats' top edge
 # Orange Pi 5 Pro, IN ITS CASE.  The board is the vendor drawing (ref/opi/: 89.1 x 56 x
 # 1.6, holes 58 x 49, their column 7.6 mm in from the micro-SD end) and it lives inside a
 # bought 105 x 70.5 x 40 case with a flat floor, its cooler inside; the robot sees the
-# case.  It is bolted on from BELOW: four M2.5 x 17 up through the deck, the deck's
+# case.  It is bolted on from BELOW: four M2.5 x 11 up through the deck, the deck's
 # standoffs and the case's bottom plate into the case's own brass spacers - the same
 # holes the board is screwed to from above, so the Pi stays assembled as bought and the
 # deck's hole pattern is the board's, offset by wherever the board sits inside the case -
-# OPI_CASE_PCB, and that is the one number still to measure.  The heads sit in
-# counterbores in the deck's underside, flush, because the battery module's lid is 0.6 mm
-# below it; the deck goes onto the tray with the case already on it.  What the bare board measured (8 under, 16 over) is in
+# OPI_CASE_PCB, and that is the one number still to measure.  The bolts are hex-socket
+# FLAT heads, and 11 mm is 2.3 short of the stack, so each head sits up inside its boss:
+# a @5.2 access bore from the deck's underside to the head's flat face and a 90 deg seat
+# above it - nothing stands proud under the deck, where the battery module's lid is
+# 0.6 mm away.  The deck goes onto the tray with the case already on it.  What the bare board measured (8 under, 16 over) is in
 # ref/opi/README.md and no longer in the model: the case's outline is the keep-out.
 OPI_BOX      = (105.0, 70.5, 40.0)    # the case, over the standoffs: the keep-out
                                       # gps_mount arches over, the box every exporter
@@ -679,13 +681,13 @@ OPI_STAND_R, OPI_STAND_H = 4.8, 6.5   # standoff: a plain spacer boss round the 
                                       # h is the least that lifts the case floor over the
                                       # LiDAR bracket's base disc (top at 35, so 6 + 0.5)
                                       # - every mm here is a mm of GPS mast
-OPI_BOLT_L   = 17.0                   # M2.5 x 17 from under the deck: 4 deck + 6.5
-                                      # standoff + 2.8 plate = 13.3, and the rest threads
-                                      # into the case's brass spacer (opi_bolt_engage())
-OPI_HEAD_R, OPI_HEAD_K = 2.6, 2.5     # ISO 4762 M2.5 head: @4.5, k 2.5, in a @5.2
-                                      # counterbore from the deck's underside, 2.7 deep
-                                      # - 1.3 mm of deck left under the boss, which is
-                                      # a 6.5 mm boss on top of it
+OPI_BOLT_L   = 11.0                   # M2.5 x 11 from under the deck - the bolts in hand
+OPI_ENGAGE   = 2.5                    # ... of which this much (1 D) threads into the
+                                      # case's brass spacer; the Pi's own screw shares
+                                      # that spacer from the top, so not more
+OPI_HEAD_R   = 2.6                    # ISO 10642 M2.5 flat head: @5.0 max, 90 deg, in
+                                      # a @5.2 access bore; the seat's cone runs from
+                                      # this down to M25_CLR, 1.15 tall
 OPI_CASE_FLOOR = 2.8                  # the case's bottom plate               measured
 OPI_CASE_GAP   = 8.0                  # plate top face to the PCB's underside - the
                                       # case's own spacers, sized for the M.2 module
@@ -694,6 +696,15 @@ OPI_CASE_POST_R = 3.0                 # ... those spacers' radius            **v
 OPI_M2_Y     = (-16.0, 8.0)           # the 2280 module's band under the PCB, y: 12..36
                                       # from the 40-pin header's edge on the drawing, and
                                       # that edge is -y (micro-SD end forward, top up)
+OPI_SEAT_D   = DECK_T + OPI_STAND_H + OPI_CASE_FLOOR - (OPI_BOLT_L - OPI_ENGAGE)
+                                      # the head's flat face, up from the deck's
+                                      # underside - derived so the bolt's tip engages
+                                      # OPI_ENGAGE in the spacer: 4.8 on the 11, i.e.
+                                      # through the deck and 0.8 into the boss, the seat
+                                      # cone to 5.95, and 4.55 mm of boss above it.  A
+                                      # longer bolt shallows it; opi_bolt_check() holds
+                                      # it inside the deck+boss with 3 mm of boss over.
+OPI_SEAT_H   = OPI_HEAD_R - M25_CLR   # ... the 90 deg seat's height
 
 # The IMU, as a payload: a BMI088 breakout, and WHERE it is bolted is a model constant.
 # Both sim exporters emit an `imu` site at it, and rl/checks/imu_placement.py measures what
@@ -974,7 +985,29 @@ GPS_KNEE_Y   = max(38.0, OPI_BOX[1]/2 + GPS_ROD + 1.0)
                                       # the case too - 39.75 on the 70.5 case
 GPS_KNEE     = (GPS_KNEE_Y, BODY_Z1+DECK_T+OPI_STAND_H+OPI_BOX[2] + GPS_ROD*math.sqrt(2) + 1.0
                             - (GPS_KNEE_Y - OPI_BOX[1]/2))   # ... and z: derived, see above
-GPS_LAND     = 24.0                   # |y| where they meet the platform
+# The 12 -> 5 V buck (XL4015, ref/power/README.md) rides on the Orange Pi's case top on
+# foam tape, under the GPS platform.  It is the only 17 mm of air the robot has: the rear
+# strip is 14.05 deep, the side strips 8.4, and under the case's rear overhang the rear
+# roll fork sweeps r <= 34.  Long axis on x, on the centreline: the mast arms are at
+# |y| >= GPS_KNEE_Y and the plate's underside is what bounds it in z.  buck_clear()
+# measures both, plus the overlap against the real gps_mount.  It is a MODULE like the
+# battery: 5 V set under load on the bench, CC pot to the top, both pots varnished, the
+# terminals wired, and only then taped down - nothing on it is adjusted in place.
+BUCK_BOX     = (51.3, 26.0, 15.6)     # PCB plan x height to the top of the coil, measured
+BUCK_TAPE    = 1.5                    # foam tape: the underside carries 1.5 mm of solder
+                                      # and parts, so film tape would stand it on blobs
+BUCK_X, BUCK_Y = GPS_X, 0.0           # under the plate, the rear end of the case top: the
+                                      # front half stays open for the case's own airflow
+                                      # **verify** where this case vents
+BUCK_Z0      = BODY_Z1 + DECK_T + OPI_STAND_H + OPI_BOX[2]   # the case top, 75.5
+BUCK_AIR     = 1.0                    # to the plate's underside - the platform's
+                                      # height follows this, below
+# |y| where the arms meet the platform.  24 is the ceiling (see above); it comes in
+# when the buck under the plate needs the underside higher: from the knee each mm of
+# reach given up is a mm of height, so the plate's underside sits at knee + (knee_y -
+# land) and the buck's top plus BUCK_AIR is the floor for that.  23.1 on the 15.6 buck.
+GPS_LAND     = min(24.0, GPS_KNEE_Y - (BUCK_Z0 + BUCK_TAPE + BUCK_BOX[2] + BUCK_AIR
+                                       - GPS_KNEE[1]))
 GPS_PLATE    = (40.0, 52.0, 3.0)      # platform x, y, t
 GPS_SEAT_Z   = GPS_KNEE[1] + (GPS_KNEE[0]-GPS_LAND) + GPS_PLATE[2]   # derived - see above
 GPS_BOARD    = (36.0, 26.0, 1.6)      # GY-NEO6MV2 PCB                        **verify**
@@ -1144,9 +1177,11 @@ BMS_KG            = 0.055         # **verify** - split out of ELECTRONICS_KG whe
                                   # opi_com() and never was; it used to be averaged into
                                   # the Pi's box 46 mm away and 40 mm up.  Hangs at
                                   # bms_com().
-ELECTRONICS_KG    = 0.200 + 0.050 # the Orange Pi in its case, MEASURED: 82 g board +
+ELECTRONICS_KG    = 0.200 + 0.032 # the Orange Pi in its case, MEASURED: 82 g board +
                                   # 18 g cooler + 100 g case with its screws = 200 g;
-                                  # plus 50 g for the harness, bus adapter and buck -
+                                  # plus 32 g for the harness and bus adapter - the
+                                  # buck's 18 g left this 50 g allowance for BUCK_KG when
+                                  # it got a place of its own; the total did not move.
                                   # **verify**, weigh the loom once it exists.  (Was a
                                   # 195 g guess for the bare board and wiring.)
 LIDAR_KG          = 0.230         # Unitree L2 on its bracket - confirmed, L2 manual
@@ -1164,6 +1199,10 @@ GPS_KG            = 0.025         # GY-NEO6MV2 + its 25x25 active patch + the le
                                   # 22 g is the vendor figure for the pair - **verify**,
                                   # like every other number on this module: it is a bazaar
                                   # part, not a documented one.
+BUCK_KG           = 0.018         # XL4015 buck on the Pi's case top - vendor figure,
+                                  # ref/power/README.md, **verify** on the scale.  Hangs
+                                  # at buck_com(); it used to sit inside ELECTRONICS_KG
+                                  # 28 mm lower and 19 mm further forward.
 TPU_PARTS         = ("foot",)     # printed in TPU_RHO, everything else in PRINT_RHO
 SERVO_STALL_NM    = 3.2           # MEASURED on torque_rig, NOT the vendor's 2.94 and not
                                   # the 4.50 this once said.  A scale at a 170 mm arm:
@@ -1348,6 +1387,9 @@ def bxc(x0,x1,y0,y1,z0,z1):
 def cyl(r,h,base=(0,0,0),axis=(0,0,1)):
     if h < 0: base = tuple(b + h*a for b,a in zip(base, axis)); h = -h
     return W(cq.Solid.makeCylinder(r,h,cq.Vector(*base),cq.Vector(*axis)))
+def cone(r0,r1,h,base=(0,0,0),axis=(0,0,1)):
+    """frustum, r0 at `base` to r1 at base + h*axis - a countersunk head's seat"""
+    return W(cq.Solid.makeCone(r0,r1,h,cq.Vector(*base),cq.Vector(*axis)))
 def rrect(x,y,r,c=(0,0,0)):
     """rounded-rectangle wire in XY, centred on c"""
     r = max(0.4, min(r, x/2-0.4, y/2-0.4)); hx, hy = x/2-r, y/2-r
@@ -2126,16 +2168,17 @@ def chassis_top():
         for y in (-ay, ay):
             s = s.cut(cyl(M3_CLR, 20, (x, y, z0-1))).cut(cyl(3.2, 2.2, (x, y, z1-2.2)))
     # Orange Pi case standoffs: plain spacer bosses, an M2.5 clearance hole straight
-    # through deck and boss, and the bolt head in a counterbore from the deck's UNDERSIDE
-    # - the bolt threads into the case's own brass spacer above (OPI_BOLT_L), so there is
-    # no nut here at all.  The pattern is the board's, where the board sits in its case
+    # through deck and boss, and the flat head's seat sunk OPI_SEAT_D up from the deck's
+    # UNDERSIDE, reached through a @5.2 bore - the bolt threads into the case's own brass
+    # spacer above (OPI_BOLT_L), so there is no nut here at all.  The pattern is the board's, where the board sits in its case
     # (OPI_HOLE_DX): the rear pair lands at -56.5, 1.7 mm of deck behind its foot.
     for sx in (-1, 1):
         for sy in (-1, 1):
             p = (OPI_X+OPI_HOLE_DX+sx*OPI_HOLES[0]/2, sy*OPI_HOLES[1]/2, z1)
             s = s.union(cyl(OPI_STAND_R, OPI_STAND_H, p))
             s = s.cut(cyl(M25_CLR, DECK_T+OPI_STAND_H+2, (p[0], p[1], z0-1)))
-            s = s.cut(cyl(OPI_HEAD_R, OPI_HEAD_K+0.2+1, (p[0], p[1], z0-1)))
+            s = s.cut(cyl(OPI_HEAD_R, OPI_SEAT_D+1, (p[0], p[1], z0-1)))
+            s = s.cut(cone(OPI_HEAD_R, M25_CLR, OPI_SEAT_H, (p[0], p[1], z0+OPI_SEAT_D)))
     for i in range(LIDAR_N):
         a = math.radians(360.0*i/LIDAR_N+45.0)
         s = s.cut(cyl(M3_CLR, 20, (LIDAR_X+LIDAR_BC/2*math.cos(a), LIDAR_BC/2*math.sin(a), z0-1)))
@@ -2997,11 +3040,49 @@ def gps_clear():
     box = bxc(cx-L/2, cx+L/2, -W/2, W/2, cz-H/2, cz+H/2)
     return overlap(PARTS["gps_mount"][0].val(), box.val())
 
-def opi_bolt_engage():
-    """mm of the case bolt's thread inside the case's brass spacer: its length less the
-    deck (from the counterbore floor), the standoff and the plate.  The head sits
-    OPI_HEAD_K+0.2 up inside the deck, so the counterbore floor is the datum."""
-    return OPI_BOLT_L - (DECK_T - (OPI_HEAD_K+0.2) + OPI_STAND_H + OPI_CASE_FLOOR)
+def buck_com():
+    """Centroid of the buck's envelope on the case top, tape included."""
+    return (BUCK_X, BUCK_Y, BUCK_Z0 + (BUCK_TAPE + BUCK_BOX[2])/2.0)
+
+def buck_box():
+    """The buck as (centre, size): board, coil and the tape under it.  Both sim exporters
+    hang BUCK_KG on this box; buck_clear() probes it."""
+    return (buck_com(), (BUCK_BOX[0], BUCK_BOX[1], BUCK_BOX[2] + BUCK_TAPE))
+
+def buck_clear():
+    """The buck between the Pi's case top and the GPS platform.  Returns
+    (overlap_mm3, z_gap, y_gap): mm3 of gps_mount inside the buck's box, the air from the
+    coil's top to the plate's underside, and the air from the board's side to the nearest
+    gps_mount material at the board's own height - the mast arms on their 45 deg run.
+    The buck is a payload, not a part: interference() cannot see it, and the plate is
+    the wall that is thin."""
+    (cx, cy, cz), (L, W_, H) = buck_box()
+    box = bxc(cx-L/2, cx+L/2, cy-W_/2, cy+W_/2, cz-H/2, cz+H/2)
+    gm = PARTS["gps_mount"][0].val()
+    v = overlap(gm, box.val())
+    zgap = (GPS_SEAT_Z - GPS_PLATE[2]) - (cz + H/2)
+    ygap = 40.0
+    for sy in (-1, 1):
+        y0 = cy + sy*W_/2
+        slab = bxc(cx-L/2, cx+L/2, y0, y0 + sy*40.0, cz-H/2, cz+H/2)
+        try:
+            hit = gm.intersect(slab.val())
+            if hit.Volume() > INTERF_TOL:
+                bb = hit.BoundingBox()
+                ygap = min(ygap, (bb.ymin - y0) if sy > 0 else (y0 - bb.ymax))
+        except Exception:
+            ygap = float("-inf")
+    return v, zgap, ygap
+
+def opi_bolt_check():
+    """The case bolt's stack: (engage_mm, seat_mm, boss_mm).  engage is the thread inside
+    the case's brass spacer (OPI_ENGAGE by construction - the seat depth is derived to
+    make it so); seat is the flat face's depth from the deck's underside (>= 0 or the
+    head stands proud, into the battery lid); boss is what is left of deck + boss above
+    the seat cone to carry it."""
+    stack = DECK_T + OPI_STAND_H + OPI_CASE_FLOOR
+    return (OPI_BOLT_L - (stack - OPI_SEAT_D), OPI_SEAT_D,
+            DECK_T + OPI_STAND_H - OPI_SEAT_D - OPI_SEAT_H)
 
 def opi_clear():
     """The Orange Pi's case against the LiDAR bracket in front of it.  Returns
@@ -3386,15 +3467,25 @@ def main():
     else:
         print(f"  gps clear:   mast over the {OPI_BOX[0]:.0f}x{OPI_BOX[1]:.1f}x{OPI_BOX[2]:.1f}"
               f" Orange Pi envelope, knee {GPS_KNEE[1]:.1f}, seat {GPS_SEAT_Z:.1f}")
+    bv, bz, by = buck_clear()
+    if bv > INTERF_TOL or bv < 0 or bz < 1.0 or by < 1.0:
+        print(f"  !! BUCK  {bv:.1f} mm3 of gps_mount inside the buck's box, {bz:.2f} mm to the"
+              f" plate, {by:.2f} mm to the mast arms")
+    else:
+        print(f"  buck clear:  {BUCK_BOX[0]:.0f}x{BUCK_BOX[1]:.0f}x{BUCK_BOX[2]:.1f} on the case"
+              f" top at x {BUCK_X:.0f}, {bz:+.2f} mm under the GPS plate, {by:+.2f} mm to"
+              f" the mast arms")
     ov, cg = opi_clear()
     xr = OPI_X+OPI_HOLE_DX-OPI_HOLES[0]/2 - OPI_STAND_R
-    eng = opi_bolt_engage()
-    if eng < 2.5:
-        print(f"  !! ORANGE PI  the M2.5 x {OPI_BOLT_L:.0f} reaches only {eng:.1f} mm into the"
-              f" case's spacer (want >= 1 D)")
+    eng, seat, boss = opi_bolt_check()
+    if eng < 2.5 or seat < 0.0 or boss < 3.0:
+        print(f"  !! ORANGE PI  M2.5 x {OPI_BOLT_L:.0f} flat: {eng:.1f} mm into the case's"
+              f" spacer, head face {seat:.1f} up from the deck's underside, {boss:.1f} mm of"
+              f" boss above the seat")
     else:
-        print(f"  opi bolts:   4 x M2.5 x {OPI_BOLT_L:.0f} from under the deck, heads flush in"
-              f" {OPI_HEAD_K+0.2:.1f} mm counterbores, {eng:.1f} mm into the case's spacers")
+        print(f"  opi bolts:   4 x M2.5 x {OPI_BOLT_L:.0f} flat from under the deck, head"
+              f" faces {seat:.1f} mm up the @{2*OPI_HEAD_R:.1f} bores, {eng:.1f} mm into the"
+              f" case's spacers, {boss:.1f} mm of boss above the seats")
     if ov > INTERF_TOL or ov < 0 or cg < 1.0 or xr < -BODY_L/2:
         print(f"  !! ORANGE PI  {ov:.1f} mm3 of lidar_mount inside the case, {cg:.2f} mm in"
               f" front of it, rear standoff foot at x {xr:.1f} on a deck ending at {-BODY_L/2:.0f}")
@@ -3431,13 +3522,13 @@ def main():
     a.save(os.path.join(OUT, "mini_dog_assembly.step"))
     tm = sum(r["est_mass_g"]*r["qty"] for r in rows)
     carried = (N_SERVO*SERVO_KG + BATTERY_KG + BMS_KG + ELECTRONICS_KG + LIDAR_KG
-               + GPS_KG + CAMERA_KG + IMU_KG)*1000.0
+               + GPS_KG + CAMERA_KG + IMU_KG + BUCK_KG)*1000.0
     print(f"\n  printed mass  ~{tm:.0f} g   + {N_SERVO} servos {N_SERVO*SERVO_KG*1000:.0f} g"
           f" + 3S2P cells ~{BATTERY_KG*1000:.0f} g + BMS ~{BMS_KG*1000:.0f} g"
           f" + Orange Pi in its case/wiring ~{ELECTRONICS_KG*1000:.0f} g"
           f" + LiDAR ~{LIDAR_KG*1000:.0f} g + GPS ~{GPS_KG*1000:.0f} g"
           f" + camera ~{CAMERA_KG*1000:.0f} g + IMU ~{IMU_KG*1000:.0f} g"
-          f"  ->  ~{(tm+carried)/1000:.2f} kg")
+          f" + buck ~{BUCK_KG*1000:.0f} g  ->  ~{(tm+carried)/1000:.2f} kg")
     print(f"  ROM scan (coarse, {ROM_STEP} deg steps, real solids):")
     rom = rom_scan_all()
     for k, v in rom.items():

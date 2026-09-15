@@ -159,8 +159,15 @@ STL only.
   `README.md`, "Cables".
 - **The power node is two WAGO 221-415 in the rear strip** (`NODE_*`, `node_clear()`),
   and the strip holds exactly that: 17.6 mm deep, 14.8 behind the seats, against a
-  lever nut's 18.6 along the wire. The buck, the bus adapter and the fuse holder still
-  have no keep-out (`POWER.md`, "What it costs the CAD").
+  lever nut's 18.6 along the wire. The bus adapter and the fuse holder still have no
+  keep-out (`POWER.md`, "What it costs the CAD").
+- **The buck rides on the Pi's case top, under the GPS platform** (`BUCK_*`,
+  `buck_clear()`): the only 17 mm of air on the robot — rear strip 14.05, side strips
+  8.4, under the case's rear overhang the rear fork sweeps. Its 18 g came out of
+  `ELECTRONICS_KG`'s allowance, so the total did not move. `GPS_LAND` derives from it:
+  the platform's underside is the buck's top plus `BUCK_AIR`, and the arms trade reach
+  for height at 45°. Set on the bench and varnished before it goes on — nothing on it is
+  adjusted in place (`ref/power/README.md`).
 
 **Checks, and why each exists.** The recurring lesson: `isValid()`, `interference()` (static
 body parts only) and `rom_scan` (moving parts only) are each blind to a class of defect.
@@ -243,21 +250,23 @@ columns with `fea.robot_mass()`. Read `--orient` for `thigh_A` and `cradle_front
 `export_sim.py --check`: `4 feet down, upright +1.00`, base z 187 mm, camera axis
 (+0.99 0 +0.10), ROM ±90 / ±90 / ±110 (±90 is the scan window, not a stop). Probes:
 `imu clear +1.20` (to the case's corner spacer, inside the case), `opi clear +1.15` (case front to the LiDAR
-leg bosses; rear standoff feet 1.7 mm inside the deck's end), `opi bolts` 6.4 mm into
-the case's spacers, `gps clear` knee 76.9 /
-seat 95.7, `batt clear +0.60`, `clamp clear +1.43`, `head clear +0.65`,
+leg bosses; rear standoff feet 1.7 mm inside the deck's end), `opi bolts` (M2.5 × 11 flat, head faces 4.8 up the bores,
+2.5 mm into the case's spacers, 4.5 mm of boss above the seats), `gps clear` knee 76.9 /
+seat 96.6, `buck clear +1.00` (under the GPS plate; +7.55 to the mast arms), `batt clear +0.60`, `clamp clear +1.43`, `head clear +0.65`,
 `cradle bolts +5.15`, `fork access: all six arms`, `panel clear` (bus and low windows
 at both ends, XT30 clear of body and servos), `node clear` (two 221-415 at
 x −57.4..−49.1, |y| 12..30.6, z −6..23.9), `lidar fov 22.0 / 26.4 / 57.0 / 14.4`
 (chassis_top / lidar_mount / gps_mount / camera_mount), `camera view: out of frame` for
 all four including the L2, `lidar ... +4 mm past the leading foot`.
 
-Step 6, same seeds: **flat trot 526.0 mm** on the cased Orange Pi (box −85.5..19.5 ×
+Step 6, same seeds: **flat trot 537.3 mm** (the flat-head seats: −0.2 g off the deck) with the buck's 18 g on the case top
+(`buck_com()`, out of `ELECTRONICS_KG` — same total, the robot's CoM 0.2 mm up and 0.1
+aft; the default terrain seed reads 454 upright, the default course seed 3/7 at 2195 mm
+upright). The cased Orange Pi one pass earlier (box −85.5..19.5 ×
 70.5 × 40 over 6.5 mm standoffs, mast seat 65 → 95.7, `ELECTRONICS_KG` 195 → 250 g
-measured, the IMU inside the case; the default terrain seed reads 445 upright, the
-default course seed 4/7 at 2348 mm — it read **0/7, down at 645 mm** one pass earlier
-with the IMU's 3 g on the deck instead: the mass cliff, as the +Δm control below
-predicts). The
+measured, the IMU inside the case) read **526.0**, terrain 445 upright, course 4/7 at
+2348 — and **0/7, down at 645 mm** one pass before that with the IMU's 3 g on the deck
+instead: the mass cliff, as the +Δm control below predicts. The
 terrain and course arms below are the previous tree's: the base link's CoM moved 11 mm
 aft and 15 mm up and 55 g heavier, which is a re-baseline, and the `--orient` column is
 unchanged (stall-driven). Previous tree: **534.7 mm** (the four cable windows, the rib and the tie

@@ -274,6 +274,8 @@ def link_masses(parts):
             + box_mp(md.CAMERA_KG, (md.CAM_LENS_H, md.CAM_BOARD[0], md.CAM_BOARD[1]),
                      md.camera_com())
             + box_mp(md.IMU_KG, md.imu_box()[1], md.imu_box()[0])
+            # the buck on the Pi's case top, under the GPS platform
+            + box_mp(md.BUCK_KG, md.buck_box()[1], md.buck_box()[0])
             # The L2, at the pose mini_dog.py holds for it.  Envelope and mass are the
             # sensor's own drawing; the box stays axis-aligned while the real one leans
             # LIDAR_TILT forward, which is exact in mass and centroid and ~7 % out on one

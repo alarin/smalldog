@@ -39,6 +39,7 @@ LIDAR_KG       = md.LIDAR_KG
 GPS_KG         = md.GPS_KG
 CAMERA_KG      = md.CAMERA_KG
 IMU_KG         = md.IMU_KG
+BUCK_KG        = md.BUCK_KG       # out of ELECTRONICS_KG's allowance; total unchanged
 
 # Printed parts that are NOT on the robot.  servo_gauge is the ST3215 fit coupon - it is
 # in PARTS because it has to be exported and printed, and it has never been carried.
@@ -59,7 +60,7 @@ def robot_mass():
                   for n, (wp, qty, _) in md.PARTS.items()
                   if n not in NOT_CARRIED) / 1000.0
     return (printed + N_SERVO * SERVO_KG + BATTERY_KG + BMS_KG + ELECTRONICS_KG
-            + LIDAR_KG + GPS_KG + CAMERA_KG + IMU_KG)
+            + LIDAR_KG + GPS_KG + CAMERA_KG + IMU_KG + BUCK_KG)
 
 # E [MPa], nu, sigma in-plane [MPa], sigma inter-layer [MPa].  Print-realistic values for
 # ~5 walls / 40 % infill, i.e. already below the datasheet numbers for moulded material.

@@ -134,7 +134,10 @@ order of magnitude and the wrong absolute.
 | whole robot standing, 1.55 kg | **0.4 A at 12 V** | `robot/README.md:405`, at the bench supply |
 | ... of which the twelve motors | ~0.07 A | same |
 | ... so quiescent, per servo | **~27 mA** | same — `PRESENT_CURRENT` does not see the servo's own electronics |
-| trot at 2.55 kg | **0.86 A peaks** | `robot/README.md:469` — off register 69, which is *supply* current; **verify** whether the logged peak is one servo or the sum |
+| trot at 2.55 kg | **0.86 A peaks** | `robot/README.md:469` — off register 69, which is *supply* current; that peak was one servo, see the next rows |
+| **untethered profile trot, on the pack** (Pi, IMU, no plate; 0.11 m/s, period 1.35 s) | **sum of twelve: p50 0.25, p95 0.63, peak 1.1 A**; one servo peaks at 0.66 A (`fl_pitch`) | `bench/pack_sag.py` on `bench/data/trot_pack_full_{a,b}.npz`, two runs, 2026-09-14 |
+| ... standing, same run | **0.09 A** on the bus, 12.1 V | same — the bench supply's 0.4 A was the adapter and the servo electronics, which register 69 does not see |
+| ... sag at the servo | **0.35–0.40 V** (12.10 → 11.70 V) | same; `R_eff` **310–330 mΩ** from bus-min V against summed A (r² 0.7, the draw only spans 1 A) — pack plus the P+ run plus the servo's own input, measured where the servo sees it |
 | one servo stalled | **2.7 A** | `robot/README.md:716` |
 | `PROTECTION_CURRENT` as configured | 310 counts ≈ **2.0 A** | register dump in the parameters doc; the 6.5 mA LSB is documented for register 69, **verify** that it is the same for this one |
 
@@ -143,16 +146,28 @@ protection limit is ~24 A, and a four-leg push-off is a large step change into t
 internal resistance. **That dip is what the converter has to ride through**, and it lands
 in the middle of the 50 Hz loop.
 
-**Not measured, and it is the number this file most wants:** the whole-robot supply
-current and the pack-terminal sag during a trot at the design mass. It needs the pack, and
-it is one afternoon at the bench with a supply that reads back. Until then the 5 V budget
-below is sized off a component list, not off the robot.
+**Measured, at a full pack:** the analytic trot draws about a tenth of what the
+paragraph above budgets for — the sum never passed 1.1 A and the servo-side sag was 0.4 V.
+At this gait the pack is not what limits anything; the same recording says the servos
+run **20–25° behind the goal at p95** on every pitch and knee (peak 31°), because the
+trot is scheduled at 3.09 of 3.28 rad/s available and the loaded servo does not deliver
+that. The transient case — a push-off that recruits several servos at once — has not
+happened yet because no gait on this robot pushes off. The servos are the meter, each
+reporting its supply volt and current in the feedback the loop reads anyway:
+
+```bash
+python runtime/walk.py --port /dev/ttyACM0 --profile --log bench/data/trot_pack_full.npz
+python bench/pack_sag.py bench/data/trot_pack_full.npz   # sag, R_eff, draw by gait phase
+```
+
+Still to do: the same run near-empty (the ~25 % softer robot), and any gait that
+actually pushes off. The 5 V budget below is still sized off a component list.
 
 ## The 5 V rail
 
 | load | draw | confidence |
 |---|---|---|
-| Orange Pi 5 Pro | 5 V, **4 A class** (20 W) | **verify** — vendor figure for the Type-C port |
+| Orange Pi 5 Pro | 5 V, **~1.8 A at full CPU load** (1.1 A into the buck at 9 V, 8 cores busy, 2 min, no throttle); vendor says 4 A class | measured on the buck, bench supply reading back |
 | IMX415 camera, USB UVC | ≤ 0.5 A | **verify** — bus-powered, vendor gives no figure |
 | GY-NEO6MV2 GPS + active patch | ~50 mA | **verify** — a bazaar part, like every other number on it (`mini_dog.py:651`) |
 | BMI088 IMU | ~5 mA, and **not on this rail** — see below | |
@@ -168,10 +183,11 @@ below is sized off a component list, not off the robot.
 3. **Wire it for the transient**, per the next section. This is the condition that actually
    gets skipped, and its symptom is a Pi that reboots when the robot pushes off.
 
-Also **verify** how the 5 Pro's Type-C port takes power — whether it accepts a dumb 5 V
-source or expects a PD negotiation it will not get from a buck module. If in doubt, feed
-the 5 V and GND header pins instead and accept that this bypasses the board's own input
-protection.
+The 5 Pro takes a dumb 5 V source: it boots and runs full-load from the XL4015 with no
+PD in the loop (the kernel exposes no `typec` port at all). Measured on the buck: OUT
+held at the same voltage at 9.0 V in as at 12 V in, so the pack floor is inside the
+converter's headroom. It is trimmed to **5.0 V under load** — the module as shipped read
+4.86 under load, 0.1 V above USB's floor.
 
 ## The node, and how the joints are made
 
@@ -256,17 +272,17 @@ optional. This is the part of the answer that "one 12 → 5 V converter" does no
 
 ## What it costs the CAD
 
-`ELECTRONICS_KG = 0.195` is "Orange Pi 5 Pro / wiring" (`mini_dog.py`, section 4); the
-node's two lever nuts and the leg pairs are inside it. A 5 A buck module at 15–25 g fits
-inside that allowance without moving the mass budget — but **there is no keep-out for it
-anywhere in the model**, and `3d/CLAUDE.md`'s rule is that anything
-the robot carries lives once, in `mini_dog.py`. If a converter goes inside the body it
-becomes a modelled envelope there, like `OPI_BOX` is for the Pi, and it goes through the
-usual ladder (rebuild → FEA → `export_sim.py --check` → regenerate the ROS 2 description)
-in the same pass.
+`ELECTRONICS_KG = 0.200 + 0.032` is the Orange Pi in its case plus the harness and bus
+adapter (`mini_dog.py`, section 4); the node's two lever nuts and the leg pairs are inside
+it. **The buck has its keep-out**: `BUCK_KG` = 18 g at `buck_com()`, on the Pi's case top
+under the GPS platform (`3d/README.md`, *Payload bays*), taken out of that allowance so
+the total did not move. The bus adapter and the fuse holder still have none, and
+`3d/CLAUDE.md`'s rule holds for them: anything the robot carries lives once, in
+`mini_dog.py`, as a modelled envelope like `OPI_BOX`, through the usual ladder (rebuild →
+FEA → `export_sim.py --check` → regenerate the ROS 2 description) in the same pass.
 
-Two placement constraints that are already decided: not in the 3.6 mm deck slot (the IMU
-has it), and a buck under load is a heat source, so not against the cells.
+Two placement constraints that held: not in the deck slot, and a buck under load is a heat
+source, so not against the cells — the case top is on the far side of the Pi from them.
 
 ## Where this sits in the plan
 
@@ -280,7 +296,6 @@ has it), and a buck under load is a heat source, so not against the cells.
 
 | | how to settle it |
 |---|---|
-| Orange Pi 5 Pro input: 5 V/4 A, and dumb-5 V vs PD | vendor spec, then a bench supply and a meter |
 | L2 input voltage tolerance | the L2 manual; it decides whether rail #2 exists |
 | camera and GPS draw on the 5 V rail | meter, once the Pi is up |
 | `PROTECTION_CURRENT` LSB | the Feetech register table, against a clamp meter on a stalled servo |

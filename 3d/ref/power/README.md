@@ -4,10 +4,12 @@ Vendor/caliper input for [`../../mini_dog.py`](../../mini_dog.py), like everythi
 under `ref/`: **read-only**, and nothing here is generated. The rails these parts serve,
 and why there are two of them, are in [`../../../POWER.md`](../../../POWER.md).
 
-Neither module has an envelope in `mini_dog.py` yet. `POWER.md`'s "What it costs the CAD"
-is the rule: the moment one goes inside the body it becomes a modelled keep-out like
-`OPI_BOX`, and that edit goes through the full ladder in `../../CLAUDE.md` (rebuild →
-`fea.py --all` → `export_sim.py --check` → regenerate `../../../ros2`).
+Rail 1 has its envelope: `BUCK_*` in `mini_dog.py`, on the Orange Pi's case top under
+the GPS platform, on foam tape (`../../README.md`, *Payload bays*). Rail 2 has none.
+`POWER.md`'s "What it costs the CAD" is the rule: the moment a module goes on the robot
+it becomes a modelled keep-out like `OPI_BOX`, and that edit goes through the full ladder
+in `../../CLAUDE.md` (rebuild → `fea.py --all` → `export_sim.py --check` → regenerate
+`../../../ros2`).
 
 ## Rail 1 — 12 → 5 V buck, for the Orange Pi
 
@@ -112,7 +114,9 @@ path, and it keeps the bay at 15.6.
 
 1. **The 5 V is set by a trimpot, not fixed.** A knocked pot puts an arbitrary voltage on
    the Pi. Set it, verify under load, then lock it — and mount the board so the pots are
-   not reachable by accident once the deck is on.
+   not reachable by accident once the deck is on. As shipped it read **4.86 V** with the
+   Pi at full CPU load; it is trimmed to **5.0 V** under that load, and OUT does not move
+   between 12 V and 9 V in (1.1 A in at 9 V).
 2. **The CC pot is a trap.** These ship with the current limit at an arbitrary setting; if
    it is low it folds back under the Pi's inrush and looks exactly like a brownout. Set it
    to the top before setting the voltage.

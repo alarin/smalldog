@@ -31,7 +31,7 @@
   <worldbody>
     <body name="base_link" pos="0 0 0.1807" childclass="mujoco">
       <freejoint name="base_freejoint"/>
-      <inertial pos="0.010230 -0.000020 0.026903" mass="1.61547" fullinertia="0.00391507 0.00863642 0.00741121 0.00000470 -0.00116594 -0.00000086"/>
+      <inertial pos="0.010019 -0.000020 0.027242" mass="1.61539" fullinertia="0.00395509 0.00870631 0.00742808 0.00000471 -0.00112218 -0.00000087"/>
       <geom class="visual" type="mesh" mesh="base_link"/>
       <geom class="servo" type="mesh" mesh="fl_roll_servo"/>
       <geom class="servo" type="mesh" mesh="fr_roll_servo"/>
@@ -44,8 +44,8 @@
       <geom name="lidar_body" type="cylinder" group="2" contype="0" conaffinity="0" size="0.0375 0.0325" pos="0.0955 0 0.095" quat="0.707107 0 0.707107 0" rgba="0.15 0.15 0.17 1"/>
       <camera name="camera" pos="0.0787343 0 0.0257543" quat="-0.473147 -0.525483 0.525483 0.473147" fovy="52.23" resolution="3840 2160"/>
       <geom name="camera_body" type="cylinder" group="2" contype="0" conaffinity="0" size="0.007 0.0081" pos="0.0700322 0 0.0248397" quat="0.525483 0.473147 0.473147 0.525483" rgba="0.1 0.1 0.12 1"/>
-      <site name="gps" pos="-0.05200 0.00000 0.10330" size="0.004" rgba="0.2 0.8 0.4 1"/>
-      <geom name="gps_body" class="visual" type="box" size="0.01800 0.01300 0.00605" pos="-0.05200 0.00000 0.10175" rgba="0.15 0.15 0.17 1"/>
+      <site name="gps" pos="-0.05200 0.00000 0.10420" size="0.004" rgba="0.2 0.8 0.4 1"/>
+      <geom name="gps_body" class="visual" type="box" size="0.01800 0.01300 0.00605" pos="-0.05200 0.00000 0.10265" rgba="0.15 0.15 0.17 1"/>
       <body name="fl_hip" pos="0.09000 0.03600 0.00000">
         <joint name="fl_roll" axis="1 0 0" range="-1.5408 1.5408"/>
         <inertial pos="0.000203 0.009219 -0.015260" mass="0.09005" fullinertia="0.00005179 0.00003278 0.00004057 -0.00000026 -0.00000028 0.00000064"/>
