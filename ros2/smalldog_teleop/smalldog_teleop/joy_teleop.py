@@ -133,7 +133,10 @@ def main(args=None):
     except (KeyboardInterrupt, rclpy.executors.ExternalShutdownException):
         pass
     finally:
-        node.pub.publish(Twist())
+        try:
+            node.pub.publish(Twist())       # the context may already be down
+        except Exception:
+            pass
         node.destroy_node()
         rclpy.try_shutdown()
 
