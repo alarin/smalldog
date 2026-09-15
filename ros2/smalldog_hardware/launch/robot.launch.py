@@ -42,7 +42,6 @@ from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
-from launch_ros.parameter_descriptions import ParameterValue
 
 PERIOD, TURN = 1.35, 0.65
 
@@ -50,9 +49,6 @@ PERIOD, TURN = 1.35, 0.65
 def _nodes(context):
     speed = float(LaunchConfiguration('speed').perform(context))
     yaw_max = float(LaunchConfiguration('yaw_max').perform(context))
-    with open(os.path.join(get_package_share_directory('smalldog_description'),
-                           'urdf', 'smalldog.urdf')) as f:
-        urdf = f.read()
     urdf = os.path.join(get_package_share_directory('smalldog_description'), 'urdf',
                         'smalldog.urdf')
     with open(urdf) as f:
@@ -107,15 +103,10 @@ def _nodes(context):
                           'width': ParameterValue(LaunchConfiguration('camera_width'), value_type=int),
                           'height': ParameterValue(LaunchConfiguration('camera_height'), value_type=int)}]),
 
-        # base_link -> every fixed frame (lidar_link, camera_optical_frame, imu) and the
-        # legs from /joint_states. smalldog_nav needs the lidar frame; Foxglove draws the
-        # robot from /robot_description. Always on: it is one small process.
-        Node(package='robot_state_publisher', executable='robot_state_publisher',
-             output='both', parameters=[{'robot_description': urdf}]),
-
-        # Foxglove over the LAN: everything above, plus /map, /scan and the costmaps when
-        # nav.launch.py is up. 0.0.0.0, unlike the sim's bridge — the Pi is the robot,
-        # the mac is where the screen is. README, "Watching the robot".
+        # Foxglove over the LAN: everything above (the robot itself from
+        # /robot_description), plus /map, /scan and the costmaps when nav.launch.py is
+        # up. 0.0.0.0, unlike the sim's bridge — the Pi is the robot, the mac is where
+        # the screen is. README, "Watching the robot".
         Node(package='foxglove_bridge', executable='foxglove_bridge', name='foxglove_bridge',
              output='screen', condition=IfCondition(LaunchConfiguration('foxglove')),
              parameters=[{'address': '0.0.0.0', 'port': 8765,

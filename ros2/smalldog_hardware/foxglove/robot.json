@@ -1,0 +1,137 @@
+{
+  "configById": {
+    "Image!camera": {
+      "cameraState": {},
+      "followMode": "follow-pose",
+      "scene": {},
+      "transforms": {},
+      "topics": {},
+      "layers": {},
+      "publish": {},
+      "imageMode": {
+        "imageTopic": "/camera/image/compressed",
+        "rotation": 180,
+        "flipHorizontal": false,
+        "flipVertical": false,
+        "synchronize": false
+      }
+    },
+    "3D!map": {
+      "cameraState": {
+        "perspective": false,
+        "distance": 8,
+        "phi": 0,
+        "thetaOffset": 0,
+        "targetOffset": [0, 0, 0],
+        "target": [0, 0, 0],
+        "targetOrientation": [0, 0, 0, 1],
+        "fovy": 45,
+        "near": 0.5,
+        "far": 5000
+      },
+      "followMode": "follow-position",
+      "followTf": "base_link",
+      "scene": {
+        "enableStats": false,
+        "transforms": {"axisScale": 0.5, "showLabel": false}
+      },
+      "transforms": {
+        "frame:base_link": {"visible": true},
+        "frame:lidar_link": {"visible": true},
+        "frame:map": {"visible": true},
+        "frame:odom": {"visible": false}
+      },
+      "topics": {
+        "/map": {"visible": true, "colorMode": "map", "frameLocked": true},
+        "/global_costmap/costmap": {"visible": true, "colorMode": "costmap", "alpha": 0.35},
+        "/scan": {"visible": true, "colorField": "intensity", "colorMode": "flat", "flatColor": "#ff5555", "pointSize": 4},
+        "/lidar/points": {"visible": false, "colorField": "z", "colorMode": "colormap", "colorMap": "turbo", "pointSize": 2},
+        "/plan": {"visible": true, "lineWidth": 0.03, "gradient": ["#00ff88", "#00ff88"]},
+        "/robot_description": {"visible": true}
+      },
+      "layers": {},
+      "publish": {"type": "pose_estimate", "poseTopic": "/initialpose", "pointTopic": "/clicked_point", "poseEstimateTopic": "/initialpose"}
+    },
+    "DiagnosticSummary!servos": {
+      "topicToRender": "/diagnostics",
+      "minLevel": 0,
+      "pinnedIds": [],
+      "hardwareIdFilter": "",
+      "sortByLevel": true
+    },
+    "DiagnosticStatusPanel!loop": {
+      "topicToRender": "/diagnostics",
+      "selectedHardwareId": "runtime",
+      "selectedName": "loop",
+      "splitFraction": 0.45,
+      "collapsedSections": []
+    },
+    "Plot!positions": {
+      "title": "joint positions, rad",
+      "paths": [
+        {"value": "/joint_states.position[0]", "enabled": true, "label": "fl_roll", "timestampMethod": "receiveTime"},
+        {"value": "/joint_states.position[1]", "enabled": true, "label": "fl_pitch", "timestampMethod": "receiveTime"},
+        {"value": "/joint_states.position[2]", "enabled": true, "label": "fl_knee", "timestampMethod": "receiveTime"},
+        {"value": "/joint_states.position[3]", "enabled": true, "label": "fr_roll", "timestampMethod": "receiveTime"},
+        {"value": "/joint_states.position[4]", "enabled": true, "label": "fr_pitch", "timestampMethod": "receiveTime"},
+        {"value": "/joint_states.position[5]", "enabled": true, "label": "fr_knee", "timestampMethod": "receiveTime"},
+        {"value": "/joint_states.position[6]", "enabled": true, "label": "rl_roll", "timestampMethod": "receiveTime"},
+        {"value": "/joint_states.position[7]", "enabled": true, "label": "rl_pitch", "timestampMethod": "receiveTime"},
+        {"value": "/joint_states.position[8]", "enabled": true, "label": "rl_knee", "timestampMethod": "receiveTime"},
+        {"value": "/joint_states.position[9]", "enabled": true, "label": "rr_roll", "timestampMethod": "receiveTime"},
+        {"value": "/joint_states.position[10]", "enabled": true, "label": "rr_pitch", "timestampMethod": "receiveTime"},
+        {"value": "/joint_states.position[11]", "enabled": true, "label": "rr_knee", "timestampMethod": "receiveTime"}
+      ],
+      "showXAxisLabels": true,
+      "showYAxisLabels": true,
+      "showLegend": true,
+      "legendDisplay": "floating",
+      "showPlotValuesInLegend": true,
+      "isSynced": true,
+      "xAxisVal": "timestamp",
+      "sidebarDimension": 240,
+      "followingViewWidth": 20
+    },
+    "Plot!load": {
+      "title": "servo load (Present Load) and effort",
+      "paths": [
+        {"value": "/joint_states.effort[:]", "enabled": true, "timestampMethod": "receiveTime"}
+      ],
+      "showXAxisLabels": true,
+      "showYAxisLabels": true,
+      "showLegend": false,
+      "isSynced": true,
+      "xAxisVal": "timestamp",
+      "followingViewWidth": 20
+    }
+  },
+  "globalVariables": {},
+  "userNodes": {},
+  "playbackConfig": {"speed": 1},
+  "layout": {
+    "direction": "row",
+    "first": {
+      "direction": "column",
+      "first": "Image!camera",
+      "second": {
+        "direction": "column",
+        "first": "Plot!positions",
+        "second": "Plot!load",
+        "splitPercentage": 60
+      },
+      "splitPercentage": 50
+    },
+    "second": {
+      "direction": "column",
+      "first": "3D!map",
+      "second": {
+        "direction": "row",
+        "first": "DiagnosticSummary!servos",
+        "second": "DiagnosticStatusPanel!loop",
+        "splitPercentage": 50
+      },
+      "splitPercentage": 60
+    },
+    "splitPercentage": 45
+  }
+}

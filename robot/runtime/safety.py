@@ -264,6 +264,13 @@ class Guard:
             raise trip
 
     # ---------------------------------------------------------------- report
+    def temp(self, joint) -> float | None:
+        """The filtered temperature of one joint — the figure the trip is judged on —
+        or None until the median window has filled. What a status display should show:
+        the raw byte is PWM noise while the motor drives (Limits.temp_hold_s)."""
+        d = self._temps[joint]
+        return sorted(d)[len(d) // 2] if len(d) == d.maxlen else None
+
     def summary(self) -> dict:
         p = dict(self.peak)
         if p["volt_min"] is math.inf:

@@ -12,6 +12,16 @@ Publishes   /joint_states                    sensor_msgs/JointState (position, v
             effort = Present Load), every tick
             /imu                             sensor_msgs/Imu, from the BMI088, every tick
             (`imu:=true`); the walker's default `imu_topic`
+            /diagnostics                     diagnostic_msgs/DiagnosticArray, `diag_hz`
+            (5 Hz): one status per servo (position, goal, tracking error, load, current,
+            volts, the guard's filtered temperature and the raw byte), one for the loop
+            (tick rate, overruns, bus errors, torque, how old the walker's goal is) and
+            one for the IMU. The level is the guard's own limits: WARN at the warn
+            temperature, at half the current trip, at half the tracking trip, or when
+            the pack is within 0.5 V of the undervoltage trip; ERROR is a servo that
+            did not answer, a stale goal, or the trip itself (published once, on the
+            way out). Foxglove's Diagnostics panels read it as is — README, "Watching
+            the robot".
 
 No ros2_control, no hardware_interface plugin. `robot/runtime` already is the hardware
 interface — the bus driver, the calibration, the safety guard and the 50 Hz tick that
@@ -55,6 +65,7 @@ import time
 
 import rclpy
 import rclpy.executors
+from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus, KeyValue
 from rclpy.node import Node
 from sensor_msgs.msg import Imu, JointState
 from trajectory_msgs.msg import JointTrajectory
@@ -115,6 +126,7 @@ class ServoNode(Node):
         p('current_a', Limits.current_a)
         p('volt_min', Limits.volt_min)
         p('track_rad', Limits.q_err_rad)
+        p('diag_hz', 5.0)                  # /diagnostics rate; 0 turns it off
         g = lambda k: self.get_parameter(k).value    # noqa: E731
 
         self.params = load_params()
@@ -148,6 +160,10 @@ class ServoNode(Node):
         self.imu_frame = g('imu_frame')
         self.imu = None                    # LiveIMU, made in start()
         self._yaw = 0.0                    # integrated gyro; drifts, and the gait knows
+        self._att = (0.0, 0.0, 0.0)        # roll, pitch, yaw of the last tick, for /diagnostics
+        self.diag_every = (int(round(self.hz / float(g('diag_hz')))) if float(g('diag_hz')) > 0
+                           else 0)
+        self.pub_diag = self.create_publisher(DiagnosticArray, '/diagnostics', 10)
 
         if self.dry:
             self.bus = Bus(transport=FollowingLoopback(self.calib.ids), discard_echo=False)
@@ -236,6 +252,7 @@ class ServoNode(Node):
             g, w, acc = self.imu.update(dt)
             roll, pitch = attitude_from_gravity(g)
             self._yaw += w[2] * dt
+            self._att = (roll, pitch, self._yaw)
             m = Imu()
             m.header.stamp = now
             m.header.frame_id = self.imu_frame
@@ -246,6 +263,84 @@ class ServoNode(Node):
             # roll/pitch from a complementary filter, yaw integrated: the covariances say so
             m.orientation_covariance = [0.01, 0.0, 0.0, 0.0, 0.01, 0.0, 0.0, 0.0, 1.0]
             self.pub_imu.publish(m)
+
+        if self.diag_every and k % self.diag_every == 0:
+            self.pub_diag.publish(self.diagnostics(fb, now))
+
+    # ------------------------------------------------------------ diagnostics
+    def diagnostics(self, fb, stamp, trip=None) -> DiagnosticArray:
+        """One DiagnosticArray: a status per servo, one for the loop, one for the IMU."""
+        lim, rt = self.rt.guard.lim, self.rt
+        kv = lambda **d: [KeyValue(key=k, value=v) for k, v in d.items()]    # noqa: E731
+        msg = DiagnosticArray()
+        msg.header.stamp = stamp
+        volts = []
+        for n in self.joints:
+            f = fb.get(n)
+            st = DiagnosticStatus(name=f'servo {n}', hardware_id=f'id {self.calib.id[n]}')
+            if f is None:
+                st.level, st.message = DiagnosticStatus.ERROR, 'no answer on the bus'
+                msg.status.append(st)
+                continue
+            err = f['q'] - rt.goal[n]
+            temp = self.rt.guard.temp(n)
+            volts.append(f['volt'])
+            why = []
+            if temp is not None and temp >= lim.temp_warn_c:
+                why.append(f'{temp:.0f} C')
+            if f['current'] >= 0.5 * lim.current_a:
+                why.append(f'{f["current"]:.2f} A')
+            if abs(err) >= 0.5 * lim.q_err_rad and rt.torque_on:
+                why.append(f'{math.degrees(err):+.0f} deg behind')
+            st.level = DiagnosticStatus.WARN if why else DiagnosticStatus.OK
+            st.message = ', '.join(why) or 'ok'
+            st.values = kv(position_deg=f'{math.degrees(f["q"]):+.1f}',
+                           goal_deg=f'{math.degrees(rt.goal[n]):+.1f}',
+                           error_deg=f'{math.degrees(err):+.1f}',
+                           velocity_rad_s=f'{f["w"]:+.2f}',
+                           load=f'{f["load"]:+d}',
+                           current_A=f'{f["current"]:.2f}',
+                           volt_V=f'{f["volt"]:.1f}',
+                           temp_C='' if temp is None else f'{temp:.0f}',
+                           temp_raw_C=f'{f["temp"]:.0f}')
+            msg.status.append(st)
+
+        st = DiagnosticStatus(name='loop', hardware_id='runtime')
+        goal, t = self.latest_goal()
+        age = math.nan if t is None else time.perf_counter() - t
+        pct = 100.0 * rt.overruns / max(1, rt.ticks)
+        if trip is not None:
+            st.level, st.message = DiagnosticStatus.ERROR, f'TRIPPED: {trip}'
+        elif goal is not None and age > self.goal_timeout:
+            st.level, st.message = DiagnosticStatus.ERROR, f'no trajectory for {age:.1f} s'
+        elif volts and min(volts) <= lim.volt_min + 0.5:
+            st.level, st.message = DiagnosticStatus.WARN, f'pack at {min(volts):.1f} V'
+        elif rt.bus_errors:
+            st.level, st.message = DiagnosticStatus.WARN, f'{rt.bus_errors} short bus reads'
+        else:
+            st.level = DiagnosticStatus.OK
+            st.message = ('walking' if rt.torque_on else 'torque off') + f', {pct:.1f} % late'
+        st.values = kv(torque='on' if rt.torque_on else 'off',
+                       hz=f'{rt.hz:.0f}', ticks=str(rt.ticks),
+                       overruns=f'{rt.overruns} ({pct:.1f} %)',
+                       bus_errors=str(rt.bus_errors),
+                       pack_V='' if not volts else f'{min(volts):.1f}..{max(volts):.1f}',
+                       goal_age_s='' if t is None else f'{age:.2f}',
+                       trajectory_msgs=str(self._msgs),
+                       trajectory_publishers=str(self.count_publishers(self.traj_topic)),
+                       peak_temp_C=f'{rt.guard.peak["temp"]:.0f}',
+                       peak_current_A=f'{rt.guard.peak["current"]:.2f}',
+                       peak_error_deg=f'{math.degrees(rt.guard.peak["q_err"]):.1f}')
+        msg.status.append(st)
+
+        if self.imu is not None:
+            r, p_, y = self._att
+            st = DiagnosticStatus(name='imu', hardware_id='bmi088', level=DiagnosticStatus.OK,
+                                  message=f'roll {math.degrees(r):+.1f} pitch {math.degrees(p_):+.1f}')
+            st.values = kv(roll_deg=f'{math.degrees(r):+.1f}', pitch_deg=f'{math.degrees(p_):+.1f}',
+                           yaw_deg=f'{math.degrees(y):+.1f}')
+            msg.status.append(st)
+        return msg
 
     def start_imu(self):
         if self.pub_imu is None:
@@ -309,6 +404,9 @@ class ServoNode(Node):
                 self.rt.relax(self.q_sit, ramp_s=1.5)
         except Tripped as e:
             log.error(f'TRIPPED: {e}')
+            # one last word on /diagnostics, so the panel says why the robot sat down
+            self.pub_diag.publish(self.diagnostics(
+                {n: None for n in self.joints}, self.get_clock().now().to_msg(), trip=e))
             code = 1
         except BusError as e:
             log.error(f'bus: {e}')

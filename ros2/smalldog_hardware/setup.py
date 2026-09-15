@@ -13,6 +13,8 @@ setup(
         ('share/' + package_name, ['package.xml']),
         (os.path.join('share', package_name, 'launch'),
          glob(os.path.join('launch', '*.launch.py'))),
+        (os.path.join('share', package_name, 'foxglove'),
+         glob(os.path.join('foxglove', '*.json'))),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
@@ -24,6 +26,7 @@ setup(
         'console_scripts': [
             'servos = smalldog_hardware.servo_node:main',
             'lidar = smalldog_hardware.lidar_node:main',
+            'camera = smalldog_hardware.camera_node:main',
         ],
     },
 )

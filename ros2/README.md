@@ -13,7 +13,7 @@ description → ros2_control → gait node, with MuJoCo standing in for the hard
 | `smalldog_ros_control` | ament_cmake | ros2_control wiring + MuJoCo launch |
 | `smalldog_walker` | ament_python | trot gait + analytic leg IK, `/cmd_vel` → joint trajectory |
 | `smalldog_teleop` | ament_python | keyboard teleop |
-| `smalldog_hardware` | ament_python | **the real robot**: `robot/runtime`'s servo loop behind the walker's topics, and the L2 as a topic — "On the robot" below |
+| `smalldog_hardware` | ament_python | **the real robot**: `robot/runtime`'s servo loop behind the walker's topics, the L2 and the camera as topics, `/diagnostics` and a Foxglove bridge — "On the robot" below |
 | `smalldog_nav` | ament_python | SLAM + Nav2 + the frontier explorer: the robot maps a room by itself — "SLAM and navigation" below |
 | `tools/` | — | standalone MuJoCo sim, no ROS needed |
 
@@ -579,8 +579,35 @@ admit it, and the heading hold capped at `yaw_max` 0.2 rad/s. Measured on the fl
 44° against a 40° trip held for 0.32 s is not margin. The blind trot veers ~7°/s on this
 floor, which is what the hold is correcting, at a speed cost.
 
+### Watching the robot
+
+Foxglove is the status page: servos, camera and map in one window, over the LAN.
+
+```bash
+ros2 launch smalldog_hardware robot.launch.py imu:=true joy:=true camera:=true foxglove:=true
+```
+
+Then on the mac: Foxglove → *Open connection* → `ws://10.0.1.47:8765`, and *Layout →
+Import* `smalldog_hardware/foxglove/robot.json`. What it shows:
+
+| panel | topic | from |
+|---|---|---|
+| camera | `/camera/image/compressed` (jpeg, 720p, ~20–30 fps) | `camera_node.py`: the module's own MJPEG frames through `ffmpeg -c:v copy`, nothing decoded; the panel rotates 180° because the board is mounted upside-down |
+| 3D: map, scan, costmap, plan, the robot | `/map`, `/scan`, `/global_costmap/costmap`, `/plan`, `/robot_description` + `/tf` | `nav.launch.py` for the first four; the robot from `robot_state_publisher` |
+| diagnostics | `/diagnostics`, 5 Hz | `servo_node.py`: one status per servo (position, goal, error, load, current, volts, the guard's filtered temperature and the raw byte), one for the loop (rate, overruns, bus errors, torque, goal age), one for the IMU. WARN and ERROR follow the guard's own limits; the trip is published once on the way out, so the panel says why the robot sat down |
+| plots | `/joint_states` position and effort (Present Load) | `servo_node.py`, every tick |
+
+`camera:=true` needs `ffmpeg` on the Pi (it is), `foxglove:=true` needs
+`ros-jazzy-foxglove-bridge` (installed 2026-09-15). The bridge binds `0.0.0.0`, the
+sim's binds localhost. Without a camera, `camera_input:=lavfi
+camera_device:=testsrc=size=1280x720:rate=20` is a test pattern — that is how the
+dry-run on the mac exercises the node. The layout is a plain JSON export; edit it in
+Foxglove and export it back over the file.
+
 ## Known gaps
 
+- The camera is a topic and nothing subscribes to it but a screen: no rectification, no
+  `camera_info`, and `camera.py`'s intrinsics are not published beside it.
 - Foot contact is not published under ROS 2 (`/smalldog/foot_load` has no publisher), so the
   launched robot runs with levelling and heading hold but without the landing latch. On
   hardware there are no foot switches either — the topic is a *load*, so the knee servo's
