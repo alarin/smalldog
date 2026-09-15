@@ -36,6 +36,13 @@ class SmallDogWalker(Node):
         # m/s) is silently shortened back unless the pin is raised to admit it — the
         # same line robot/runtime/walk.py has after its feasibility fit.
         self.declare_parameter('stride_max', 0.0)
+        # 0 = the gait's own. The heading hold adds up to `yaw_max` rad/s of turn ON TOP
+        # of the forward command, and on hardware there is no joint speed left for it:
+        # at 0.11 m/s the straight line uses the whole ceiling, and the gait's 0.5 rad/s
+        # of correction demands 4.65 rad/s of a 3.28 rad/s servo. The feet drag, a
+        # planted knee falls 0.7 rad behind its goal and the guard cuts torque (measured,
+        # 2026-09-15). robot.launch.py sets the pair (speed, yaw_max) that fits.
+        self.declare_parameter('yaw_max', 0.0)
         self.declare_parameter('cmd_timeout', 0.5)
         self.declare_parameter('imu_topic', '/imu')
         self.declare_parameter('foot_load_topic', '/smalldog/foot_load')
@@ -53,6 +60,8 @@ class SmallDogWalker(Node):
         self.gait.body_height = self.get_parameter('body_height').value
         if self.get_parameter('stride_max').value > 0:
             self.gait.stride_max = self.get_parameter('stride_max').value
+        if self.get_parameter('yaw_max').value > 0:
+            self.gait.yaw_max = self.get_parameter('yaw_max').value
 
         ctrl = self.get_parameter('controller').value
         self.pub = self.create_publisher(JointTrajectory, f'/{ctrl}/joint_trajectory', 10)
