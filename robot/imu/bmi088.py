@@ -41,14 +41,13 @@ positive. Change AXES, not the frame.
 
 Mount
 -----
-The chip is taped into the Pi's case and does not sit flat: measured 2026-09-15 it read
-roll -7.9 deg, pitch -7.4 deg on a body the L2's floor plane put at -0.5 / -0.9. Fed to
-the gait's levelling that is not a small error, it is a robot that tilts ITSELF 10 deg
-to make the reading come true (the joints tracked to a degree; the stance was the
-tilt). `--level` measures the accelerometer on a level, still, standing robot with
-levelling off and writes the mount rotation to `mount.json`; `BMI088` applies it to
-every read, so the gait, the policy and the ROS node all see the body's frame, not
-the tape's. Re-run it whenever the case is opened.
+The chip is taped into the Pi's case and AXES says which way round; what is left is the
+tape's tilt, a degree or two (measured 2026-09-15: roll -1.4, pitch -0.5). Small, but it
+goes straight into the gait's levelling, so `--level` measures the accelerometer on a
+level, still, standing robot with levelling off and writes the mount rotation to
+`mount.json`; `BMI088` applies it to every read, so the gait, the policy and the ROS
+node all see the body's frame, not the tape's. Re-run it whenever the case is opened,
+and after any change to AXES (the file is in model axes).
 """
 from __future__ import annotations
 
@@ -80,7 +79,14 @@ GYR_LSB_PER_DPS = {0x00: 16.384, 0x01: 32.768, 0x02: 65.536, 0x03: 131.072, 0x04
 G = 9.80665
 
 # chip axis -> model axis. Each entry is (chip index, sign) for model x, y, z.
-AXES = ((0, +1), (1, +1), (2, +1))          # UNVERIFIED — see the docstring
+# MEASURED 2026-09-15, the robot tilted by hand with the raw stream running: LiDAR end
+# down -> chip y +0.47, LiDAR end up -> chip y -0.67, chip x still; left side down ->
+# chip x -0.61. So the chip sits turned 90 deg in the case: body x is chip +y, body y
+# is chip -x (right-handed with z up, and the left-side test agrees). The identity it
+# shipped with put the pitch on the roll axis and the roll on the pitch axis with the
+# sign wrong, and the gait's levelling ran on it as positive feedback: the standing
+# robot tilted ITSELF 10 deg nose-down, 7 deg left-down, and the IMU read the opposite.
+AXES = ((1, +1), (0, -1), (2, +1))
 
 
 def remap(v, axes=AXES):
