@@ -58,6 +58,9 @@ def main():
     ap.add_argument("--period", type=float, default=1.35)
     ap.add_argument("--mem-fraction", type=float, default=0.5)
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--data", default=None, metavar="NPZ",
+                    help="skip collection: fit to a data.npz a previous run saved")
+    ap.add_argument("--hidden", type=int, nargs="+", default=[128, 128, 128])
     a = ap.parse_args()
 
     import jaxenv
@@ -97,7 +100,9 @@ def main():
     key = jax.random.PRNGKey(a.seed)
     OBS, ACT = [], []
     t0 = time.time()
-    for r in range(a.rollouts):
+    out = os.path.join(_RL, "runs", a.name)
+    os.makedirs(out, exist_ok=True)
+    for r in range(a.rollouts if a.data is None else 0):
         key, k = jax.random.split(key)
         st = reset(jax.random.split(k, a.envs))
         cmd = np.asarray(st.info["command"])
@@ -120,7 +125,12 @@ def main():
                 print(f"  rollout {r + 1} step {t + 1}/{a.steps}, {alive.sum()} upright, {time.time() - t0:.0f} s", flush=True)
         print(f"rollout {r + 1}/{a.rollouts}: {alive.sum()}/{a.envs} upright at {a.steps * dt:.0f} s, "
               f"{sum(len(o) for o in OBS)} samples, {time.time() - t0:.0f} s")
-    X = np.concatenate(OBS).astype(np.float32); Y = np.concatenate(ACT).astype(np.float32)
+    if a.data:
+        d = np.load(a.data); X, Y = d["obs"], d["act"]
+        print(f"data      {a.data}")
+    else:
+        X = np.concatenate(OBS).astype(np.float32); Y = np.concatenate(ACT).astype(np.float32)
+        np.savez_compressed(os.path.join(out, "data.npz"), obs=X, act=Y)
     print(f"data      {X.shape[0]} (obs, action) pairs; |action| p50 {np.median(np.abs(Y)):.3f}, "
           f"max {np.abs(Y).max():.2f}")
 
@@ -128,7 +138,7 @@ def main():
     networks = ppo_networks.make_ppo_networks(
         observation_size=obs_size, action_size=act_size,
         preprocess_observations_fn=running_statistics.normalize,
-        policy_hidden_layer_sizes=(128, 128, 128),
+        policy_hidden_layer_sizes=tuple(a.hidden),
         value_hidden_layer_sizes=(256, 256, 256))
     norm = running_statistics.init_state(jax.ShapeDtypeStruct((obs_size,), jnp.float32))
     norm = running_statistics.update(norm, jnp.asarray(X))
@@ -187,8 +197,6 @@ def main():
           f" .. {dx.max() if len(dx) else float('nan'):.2f}); the IK trot itself does ~0.4")
 
     # ---------------------------------------------------------- save, train_ppo's way
-    out = os.path.join(_RL, "runs", a.name)
-    os.makedirs(out, exist_ok=True)
     params = (norm, policy_params, value_params)
     check_obs_width(params, obs_size, a.name)
     brax_io_model.save_params(os.path.join(out, "params"), params)
