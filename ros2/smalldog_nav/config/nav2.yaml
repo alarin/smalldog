@@ -52,7 +52,7 @@ controller_server:
       rotate_to_heading_angular_vel: 0.5
       transform_tolerance: 0.3
       use_velocity_scaled_lookahead_dist: false
-      min_approach_linear_velocity: 0.04
+      min_approach_linear_velocity: 0.06
       approach_velocity_scaling_dist: 0.3
       use_collision_detection: true
       max_allowed_time_to_collision_up_to_carrot: 1.0
@@ -60,11 +60,14 @@ controller_server:
       use_fixed_curvature_lookahead: false
       curvature_lookahead_dist: 0.25
       use_cost_regulated_linear_velocity_scaling: false
-      regulated_linear_scaling_min_radius: 0.4
-      regulated_linear_scaling_min_speed: 0.04
+      # 0.8 and rotate_to_heading_min_angle 0.3 (from 0.4 / 0.6, 2026-09-15): both falls
+      # on the floor were forward + turn at the servo budget's edge, never a straight or
+      # a turn in place. Slow earlier on a curve, align first more often. Untested.
+      regulated_linear_scaling_min_radius: 0.8
+      regulated_linear_scaling_min_speed: 0.06
       use_rotate_to_heading: true
       allow_reversing: false
-      rotate_to_heading_min_angle: 0.6
+      rotate_to_heading_min_angle: 0.3
       # the ramp is one controller step (0.1 s) from the odom twist, which is the gait's
       # command times odom_scale (~0.5 in the sim): at 1.5 the turn converged to 0.3
       max_angular_accel: 3.2

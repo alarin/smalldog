@@ -35,6 +35,7 @@ from collections import deque
 
 import numpy as np
 import rclpy
+from rclpy.duration import Duration
 import rclpy.executors
 from rclpy.action import ActionClient
 from rclpy.node import Node
@@ -119,6 +120,9 @@ class Explorer(Node):
         self.declare_parameter('goal_timeout', 90.0)        # s, plus dist / 0.05
         self.declare_parameter('replan_period', 1.0)
         self.declare_parameter('done_after', 3)             # empty checks in a row
+        # "explored" needs a map behind it: slam_toolbox's first /map is one scan's worth
+        # (1.4 x 0.85 m on the robot), and a room is not done because its first cell is
+        self.declare_parameter('min_known_m2', 3.0)
         self.declare_parameter('save_map', '')              # path stem; '' = do not
         self.declare_parameter('home', True)                # walk back to (0, 0) when done
 
@@ -132,6 +136,8 @@ class Explorer(Node):
         self.goal_sent_at = None
         self.goal_deadline = 0.0
         self.empty_checks = 0
+        self.rejected = 0                # consecutive action-server rejections
+        self.retry_at = None             # rclpy Time; hold off sending until then
         self.spun = not bool(g('spin_first'))
         self.spinning = False
         self.spin_handle = None
@@ -146,6 +152,15 @@ class Explorer(Node):
         self.create_subscription(OccupancyGrid, g('map_topic'), self.on_map, latched)
         self.create_subscription(Bool, '/smalldog/explore', self.on_switch, 10)
         self.done_pub = self.create_publisher(Bool, '/smalldog/explored', latched)
+        # The switch is also PUBLISHED here when the explorer takes the robot on its own
+        # (autostart), because the pad node repeats a zero /cmd_vel at 20 Hz until it
+        # hears the switch — and 20 Hz of zeros interleaved with Nav2's commands is a
+        # gait that stops and restarts every tick and never finishes a stride (measured
+        # 2026-09-15: wz -0.32 commanded, heading unchanged for 30 s). Latched, so a
+        # pad node that comes up later hears it too.
+        self.switch_pub = self.create_publisher(Bool, '/smalldog/explore', latched)
+        if self.active:
+            self.switch_pub.publish(Bool(data=True))
         self.tf = Buffer()
         self.tf_listener = TransformListener(self.tf, self)
         self.nav = ActionClient(self, NavigateToPose, 'navigate_to_pose')
@@ -241,6 +256,10 @@ class Explorer(Node):
             return
         if self.homing:
             return
+        if self.retry_at is not None:
+            if self.get_clock().now() < self.retry_at:
+                return
+            self.retry_at = None
         if self.goal is not None:
             elapsed = (self.get_clock().now() - self.goal_sent_at).nanoseconds * 1e-9
             if elapsed > self.goal_deadline:
@@ -257,6 +276,13 @@ class Explorer(Node):
         if not cands:
             self.empty_checks += 1
             if self.empty_checks >= int(self.get_parameter('done_after').value):
+                info, grid = self.grid
+                known = int((grid >= 0).sum()) * info.resolution ** 2
+                if known < float(self.get_parameter('min_known_m2').value):
+                    self.get_logger().info(
+                        f'no frontier, but only {known:.1f} m2 known: waiting for the map',
+                        throttle_duration_sec=10.0)
+                    return
                 self.finish(here)
             return
         self.empty_checks = 0
@@ -288,10 +314,22 @@ class Explorer(Node):
     def on_accepted(self, fut):
         h = fut.result()
         if not h.accepted:
-            self.get_logger().warn('goal rejected, blacklisting')
-            self.fail(self.goal)
+            # A rejection is the SERVER's state, not the frontier's: bt_navigator says
+            # "Action server is inactive" for the first seconds after launch, and the
+            # explorer once blacklisted the only frontier for that, found nothing else
+            # in a 1.4 m map and went home (2026-09-15). Hold off and try again; only a
+            # frontier refused many times over is given up.
+            self.rejected += 1
+            if self.rejected >= 10:
+                self.get_logger().warn(f'goal rejected {self.rejected} times, blacklisting')
+                self.fail(self.goal)
+                self.rejected = 0
+            else:
+                self.get_logger().info(f'goal rejected ({self.rejected}); Nav2 not ready? retrying in 2 s')
+                self.retry_at = self.get_clock().now() + Duration(seconds=2.0)
             self.goal = None
             return
+        self.rejected = 0
         self.goal_handle = h
         h.get_result_async().add_done_callback(self.on_result)
 
