@@ -91,9 +91,13 @@ def _nodes(context):
              parameters=[{'speed': speed, 'turn': TURN}]),
 
         # the L2, off stream_pcd's TCP feed (3d/tools/stream_pcd.cpp, running on the Pi)
+        # yaw_offset: the SDK's X about the axis against the CAD's, MEASURED 2026-09-15
+        # off the L2's own accelerometer with the robot standing: up is 43.5 deg from the
+        # SDK's +X towards +Y; in lidar_link (rpy 0 pi/2 0) up is -X, so +136.5 deg.
         Node(package='smalldog_hardware', executable='lidar', name='smalldog_lidar',
              output='screen', condition=IfCondition(LaunchConfiguration('lidar')),
-             parameters=[{'source': LaunchConfiguration('lidar_source')}]),
+             parameters=[{'source': LaunchConfiguration('lidar_source'),
+                          'yaw_offset': 2.382}]),
 
         # the IMX415, the UVC module's own MJPEG frames passed through (camera_node.py)
         Node(package='smalldog_hardware', executable='camera', name='smalldog_camera',

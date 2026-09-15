@@ -14,11 +14,13 @@ talks to it, and `robot/slam/slam.py` already reads its feed. This node is that 
 sensor's own frame: +Z is the optical axis, which is what the CAD calls `lidar_link`
 (3d/lidar.py) — so the cloud lands where the URDF says the sensor is and TF does the rest.
 
-`yaw_offset` (verify): the SDK's X about the axis against the CAD's. lidar_link's +X is
-the CAD's, the sensor's is wherever Unitree put it; the two differ by a rotation about +Z
-that nobody has measured. Until someone stands the robot facing a wall and reads the
-scan, the offset is 0 and a room may come out turned — SLAM does not care, the robot's
-heading in the map does.
+`yaw_offset`: the SDK's X about the axis against the CAD's — a rotation about +Z the
+SDK does not document. Measured 2026-09-15 off the frame's own accelerometer with the
+robot standing: up is at 43.5 deg from the SDK's +X towards +Y, and in lidar_link
+(rpy 0 pi/2 0 off base_link) up is -X, so the offset is +136.5 deg = 2.382 rad;
+robot.launch.py passes it. With 0 the floor came out as a plane tilted through the
+room. Re-measure it the same way if the sensor is ever re-seated: `Source(...).frames()`
+gives `acc` in the sensor frame, its azimuth is the number.
 
 Stamps: the node's clock at receipt, not the sensor's own `stamp`. The L2's clock is not
 the Pi's, and slam_toolbox wants scans on the same clock as TF. At 12 Hz over localhost
