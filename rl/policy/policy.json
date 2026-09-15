@@ -1,9 +1,9 @@
 {
-  "run": "20260913-s4",
-  "commit": "8df9a58",
+  "run": "000005570560",
+  "commit": "59a0805",
   "trained_steps": 30000000,
   "onnx": "policy.onnx",
-  "verify_max_abs_diff": 3.8743019104003906e-07,
+  "verify_max_abs_diff": 3.2782554626464844e-07,
   "ctrl_hz": 50.0,
   "obs_hist": 5,
   "obs_frame": 48,
