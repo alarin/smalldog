@@ -579,6 +579,41 @@ admit it, and the heading hold capped at `yaw_max` 0.2 rad/s. Measured on the fl
 44° against a 40° trip held for 0.32 s is not margin. The blind trot veers ~7°/s on this
 floor, which is what the hold is correcting, at a speed cost.
 
+**Those runs were on a mirrored robot.** Later the same day `tools/straight_test.py` —
+a commanded run measured by the LiDAR (a 2-D scan match of the cloud before and after,
+independent of the gait's odometry) and the IMU — read `+wz 0.3` as a **right** turn
+(−32° in 4 s, LiDAR −31.5°, IMU −32.8°) and `+vy 0.05` as a **right** crab. Only
+`vx` was right. `robot/runtime/calib.json` had the leg names mirrored left/right and
+all four roll signs inverted — the bring-up was done belly-up — which made the heading
+hold positive feedback: the 0.08 m/s run above spiralled left at the hold's cap, +38°
+in 0.4 m. MuJoCo with the gait's output re-wired the same way reproduces the floor
+(`wz +0.3` → −41° against +41° correct). Both are fixed in `calib.json`; the pack died
+before the fixed map walked, so the first run after a charge is the check:
+
+```bash
+python3 tools/straight_test.py --wz 0.3 --seconds 4     # must read a positive turn
+python3 tools/straight_test.py --vy 0.05 --seconds 4    # must read a positive left
+python3 tools/straight_test.py --vx 0.08 --seconds 6 --log /tmp/st.npz   # then the straight
+```
+
+with `robot.launch.py imu:=true lidar:=true` and no pad (`joy:=true` repeats zeros on
+`/cmd_vel`). **Verified after the charge, same day**, LiDAR / IMU:
+
+| run | turned | moved | |
+|---|---|---|---|
+| `wz +0.3`, 4 s | **+38.8° / +39.0°** | — | was −32° |
+| `vy +0.05`, 4 s | −3.6° | **+8.9 cm left** | was right |
+| `vx +0.08`, 7 s, P hold | +2.5° / +3.9° | 0.38 m fwd, 5 cm left | the 5 cm did not repeat facing the other way: floor, not gait |
+| `vx −0.08`, 7 s, P hold | −14° | 0.41 m | the hold at kp 1.5 sits 4–6° off against a ~7°/s veer and loses it backwards |
+| `vx +0.08`, 7 s, **PI hold** (`yaw_ki` 0.5) | **+2.7° / +0.2°** | 0.42 m | |
+| `vx −0.08`, 7 s, PI hold | **−1.5°** | 0.45 m | |
+
+The walker's `yaw_ki` (0 in the sim, 0.5 in the launch) is the integral term that closes
+the P hold's steady error. `odom_scale` is 0.75 from these (0.68–0.82). `level_kp` is
+still 0 in the launch: the map is verified, so it can go back to the gait's own — not
+yet tried on the floor. The robot's L2 sees ±96° forward: the tool's free-space check
+is blind for a backward run and says so.
+
 ### Watching the robot
 
 Foxglove is the status page: servos, camera and map in one window, over the LAN.

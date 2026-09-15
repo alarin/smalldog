@@ -6,7 +6,7 @@ JointTrajectoryController, which is the same pattern the hexapod uses but
 streamed continuously instead of action-per-step, because a trot has no
 natural step boundary to wait on.
 """
-import json, math, os
+import json, math, os, time
 import rclpy
 import rclpy.executors
 from rclpy.node import Node
@@ -45,15 +45,24 @@ class SmallDogWalker(Node):
         # planted knee falls 0.7 rad behind its goal and the guard cuts torque (measured,
         # 2026-09-15). robot.launch.py sets the pair (speed, yaw_max) that fits.
         self.declare_parameter('yaw_max', 0.0)
+        # 0 = the gait's own (none). The hold's integral term, for a floor with a
+        # constant veer (gait.py, yaw_ki)
+        self.declare_parameter('yaw_ki', 0.0)
         # -1 = the gait's own. 0 turns the attitude levelling off while keeping the IMU
-        # for the heading hold and the level frame: robot.launch.py does that, because
-        # on the real robot the roll loop diverges (2026-09-15: IMU frame verified by
-        # hand tilts, legs verified by a turn, and the standing body still rolled itself
-        # 15 deg left-up against the 20 mm clamp; pitch converged). Unexplained - a hip
-        # roll direction is the next suspect - and a loop that fights the floor is worse
-        # than none.
+        # for the heading hold and the level frame: robot.launch.py does that. On the real
+        # robot the roll loop diverged (2026-09-15: the standing body rolled itself 15 deg
+        # left-up against the 20 mm clamp; pitch converged). Explained the same day: the
+        # leg names in robot/runtime/calib.json were mirrored left/right, so the levelling
+        # lifted the side it meant to lower (robot/README.md, bring-up step 1). The map is
+        # fixed; the launch keeps 0 until a straight_test.py run on the fixed map reads
+        # +wz -> left turn, then this can go back to -1.
         self.declare_parameter('level_kp', -1.0)
         self.declare_parameter('cmd_timeout', 0.5)
+        # Scale every /cmd_vel to what the servos can fly (TrotGait.fit_command): the turn
+        # first, then the speed. Off in the sim, whose feet grip whatever they are asked;
+        # on in robot.launch.py, where Nav2's pure pursuit asks 0.5 rad/s beside 0.08 m/s
+        # and the trot dragged its front feet and pitched over them (2026-09-15).
+        self.declare_parameter('fit_cmd', False)
         self.declare_parameter('imu_topic', '/imu')
         self.declare_parameter('foot_load_topic', '/smalldog/foot_load')
         self.declare_parameter('contact_threshold', 1.0)
@@ -83,6 +92,8 @@ class SmallDogWalker(Node):
             self.gait.stride_max = self.get_parameter('stride_max').value
         if self.get_parameter('yaw_max').value > 0:
             self.gait.yaw_max = self.get_parameter('yaw_max').value
+        if self.get_parameter('yaw_ki').value > 0:
+            self.gait.yaw_ki = self.get_parameter('yaw_ki').value
         if self.get_parameter('level_kp').value >= 0:
             self.gait.level_kp = self.get_parameter('level_kp').value
             self.gait.level_kd = 0.0 if self.gait.level_kp == 0 else self.gait.level_kd
@@ -116,6 +127,14 @@ class SmallDogWalker(Node):
         self._wall = Clock(clock_type=ClockType.SYSTEM_TIME)
         self.last_cmd = self._wall.now()
         self.timeout = self.get_parameter('cmd_timeout').value
+        self.fit_cmd = bool(self.get_parameter('fit_cmd').value)
+        self._fit_n = 0
+        if self.fit_cmd:
+            t0 = time.monotonic()
+            vx_max, rows = self.gait.fit_table()
+            self.get_logger().info(
+                f'servo budget in {time.monotonic() - t0:.1f} s: straight up to {vx_max:.3f} m/s; '
+                'turn beside ' + ', '.join(f'{v:.2f}->{w:.2f}' for v, w in rows[::max(1, len(rows) // 5)]))
 
         self.odom = self.get_parameter('odom').value
         if self.odom:
@@ -146,8 +165,20 @@ class SmallDogWalker(Node):
             f'{self.get_parameter("foot_load_topic").value}; open loop until they publish')
 
     def on_cmd_vel(self, msg):
-        self.cmd = (msg.linear.x, msg.linear.y, msg.angular.z)
+        cmd = (msg.linear.x, msg.linear.y, msg.angular.z)
+        if self.fit_cmd:
+            cmd = self._fit(cmd)
+        self.cmd = cmd
         self.last_cmd = self._wall.now()
+
+    def _fit(self, cmd):
+        vx, vy, wz, scaled = self.gait.fit_command(*cmd)
+        if scaled:
+            self._fit_n += 1
+            self.get_logger().info(
+                f'over the servo budget: {cmd[0]:+.2f} {cmd[1]:+.2f} {cmd[2]:+.2f} -> '
+                f'{vx:+.2f} {vy:+.2f} {wz:+.2f} ({self._fit_n} so far)', throttle_duration_sec=5.0)
+        return vx, vy, wz
 
     def on_enable(self, msg):
         self.enabled = msg.data

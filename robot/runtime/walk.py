@@ -106,28 +106,15 @@ RATE_MARGIN = 0.95          # of the gait's own limiter; 1.0 exactly is not a pl
 
 
 def joint_rate_demand(params, speed, period, swing, max_step, height, wz=0.0):
-    """Peak commanded joint rate over one cycle, rad/s, with the gait's own rate limiter
-    lifted so the number is the DEMAND rather than what survives the clip.
-
-    Ticks a throwaway gait, at 200 Hz for resolution rather than the control rate, and
-    discards the first cycle so the answer is the steady state and not the start-up ramp.
-
-    `wz` because a turn is not free: the gait gives the outer legs a longer stride, so
-    the same forward speed costs more joint rate while turning than in a straight line.
-    This took an argument only from 2026-09-11 — before that every turning command in
-    this file went out unchecked against the ceiling the straight line was fitted to.
+    """Peak commanded joint rate over one cycle, rad/s — `TrotGait.rate_demand`, the one
+    copy of the sweep, on a gait tuned like the one about to run. `wz` because a turn is
+    not free: the outer legs stride further, so the same forward speed costs more joint
+    rate while turning; every turning command in this file goes through it.
     """
     g = TrotGait(params)
     g.period, g.swing_height, g.max_step, g.body_height = period, swing, max_step, height
-    g.max_joint_rate = float("inf")
     g.stride_max = 1e3                      # so period_for cannot pin the period here
-    dt, prev, peak = 1.0 / 200.0, None, 0.0
-    for i in range(int(period * 200) * 3):
-        q = g.joint_targets(dt, speed, 0.0, wz)
-        if prev is not None and i > int(period * 200):
-            peak = max(peak, max(abs(x - y) / dt for x, y in zip(q, prev)))
-        prev = q
-    return peak
+    return g.rate_demand(speed, 0.0, wz)
 
 
 def feasible_gait(params, args, limit=None):
@@ -426,6 +413,8 @@ class TickLog:
         # gravity_b (3), gyro rad/s (3), accel m/s^2 (3): the same triple policy.py feeds
         # the network, so a walk.py log and a policy.py log are read the same way
         imu = [*sum(self.imu.update(dt), ())] if self.imu else [math.nan] * 9
+        if self.imu is not None:
+            self.rt.guard.attitude(dt, *self.imu.roll_pitch())   # Tripped: the robot is over
         self.rows.append((self.t, dt, np.array(fbv, np.float32), np.array(goal, np.float32),
                           np.array(phase, np.float32), np.array(cmd, np.float32),
                           np.array(imu, np.float32)))

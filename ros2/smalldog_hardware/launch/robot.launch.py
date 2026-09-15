@@ -76,14 +76,24 @@ def _nodes(context):
                           'period': PERIOD,
                           'stride_max': speed * PERIOD / 2.0,
                           'yaw_max': yaw_max,
-                          # levelling off: the roll loop diverges on this robot
-                          # (walker_node.py, level_kp); the IMU still feeds the
-                          # heading hold and the level frame for smalldog_nav
+                          # the floor veers the blind trot ~7 deg/s; a P hold sat 4 deg
+                          # off against that on three straight runs (2026-09-15)
+                          'yaw_ki': 0.5,
+                          # every /cmd_vel scaled to the servo budget (walker_node.py,
+                          # fit_cmd): Nav2 asks forward + turn together
+                          'fit_cmd': True,
+                          # levelling off until the corrected leg map (calib.json,
+                          # 2026-09-15) has read a positive turn on +wz on the floor;
+                          # the roll loop diverged on the mirrored map (walker_node.py,
+                          # level_kp). The IMU still feeds the heading hold and the
+                          # level frame for smalldog_nav
                           'level_kp': 0.0,
-                          # one 5 s walk on the floor (2026-09-15): 0.40 m commanded,
-                          # 0.20 m by odometry at scale 1, 0.13 m by the map - the same
-                          # ~0.5 the sim reads. One walk; measure it over a taped 2 m.
-                          'odom_scale': 0.5}]),
+                          # three 7 s walks measured by the LiDAR scan match
+                          # (tools/straight_test.py, 2026-09-15): 0.38 / 0.41 / 0.41 m
+                          # real against 0.55 / 0.55 / 0.55 m of stance-foot travel
+                          # -> 0.68-0.75 with the P hold, 0.78-0.82 once the
+                          # integral term stopped it turning; the map-based 0.5 was one walk
+                          'odom_scale': 0.75}]),
 
         Node(package='smalldog_teleop', executable='keyboard', name='smalldog_keyboard_teleop',
              output='screen', condition=IfCondition(LaunchConfiguration('teleop')),

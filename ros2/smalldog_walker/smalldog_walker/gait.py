@@ -93,19 +93,31 @@ class TrotGait:
         # slip on the slopes and it compounds - 1.65 m off the centreline in 25 s.
         self.yaw_kp     = 1.5      # rad/s of turn per rad of heading error
         self.yaw_kd     = 0.05     # ... and per rad/s of measured yaw rate, damping only
+        self.yaw_ki     = 0.0      # ... and per rad*s of accumulated error. 0 in the sim,
+                                   # which has no constant veer; the robot's floor does
+                                   # (~7 deg/s blind), and a P hold sits ~4 deg off against
+                                   # it (measured 2026-09-15, three runs). robot.launch.py
+                                   # sets it; the integral is clamped to yaw_max
         self.yaw_max    = 0.5      # rad/s, clamp on the correction
         self.yaw_cmd_eps = 0.02    # rad/s of commanded turn above which the hold lets go
+        self._stance_q = (0.0, p["stance_rad"]["pitch"], p["stance_rad"]["knee"])
+        self._fit = None                # (vx_max, [(vx, wz_max)]) from fit_table()
+        self._reset_motion()
+
+    def _reset_motion(self):
+        """Every piece of state that moves; the geometry and the tuning stay."""
         # start from the model's mechanical zero so the first command is ramped too
         self._q_prev = [0.0] * len(self.joint_names)
 
         self.t = 0.0
         self._phase = 0.0               # cycles, integrated directly: the period moves
-        self._q = {l: (0.0, p["stance_rad"]["pitch"], p["stance_rad"]["knee"]) for l in self.legs}
+        self._q = {l: self._stance_q for l in self.legs}
         self._moving = 0.0
         self._roll = self._pitch = self._wx = self._wy = 0.0
         self._roll_f = self._pitch_f = 0.0
         self._yaw = self._wzg = 0.0
         self._yaw_ref = None            # latched heading; None = not holding one
+        self._yaw_i = 0.0               # the hold's integral, rad*s; reset with the latch
         self._contact = {l: False for l in self.legs}
         self._gz      = {l: 0.0 for l in self.legs}    # ground height under each foot, vs nominal
         self._lift    = {l: 0.0 for l in self.legs}    # that foot's current swing lift
@@ -187,7 +199,7 @@ class TrotGait:
               - (self.level_kp * self._pitch_f + self.level_kd * self._wy) * nx)
         return _clamp(dz, self.level_max)
 
-    def _heading(self, wz_cmd, live):
+    def _heading(self, wz_cmd, live, dt=0.0):
         """Extra yaw rate that puts the body back on the heading it was told to hold.
 
         The gait commands body velocity in body axes: `fx = -(vx - wz*ny)` turns with the
@@ -209,12 +221,16 @@ class TrotGait:
         """
         if not live or self._moving < 0.5 or abs(wz_cmd) > self.yaw_cmd_eps:
             self._yaw_ref = None
+            self._yaw_i = 0.0
             return 0.0
         if self._yaw_ref is None:
             self._yaw_ref = self._yaw
             return 0.0
         e = _wrap(self._yaw_ref - self._yaw)
-        return _clamp(self.yaw_kp * e - self.yaw_kd * self._wzg, self.yaw_max)
+        if self.yaw_ki > 0:
+            self._yaw_i = _clamp(self._yaw_i + e * dt, self.yaw_max / self.yaw_ki)
+        return _clamp(self.yaw_kp * e + self.yaw_ki * self._yaw_i - self.yaw_kd * self._wzg,
+                      self.yaw_max)
 
     def _ground(self, l, dt, live, swing, a):
         """Update this leg's idea of where the ground is, and return it (m, vs nominal).
@@ -320,7 +336,7 @@ class TrotGait:
             self._contact = {l: False for l in self.legs}
         # the correction steers; it must not also shorten the gait period, so it lands
         # after `speed` and `period` are settled and only reaches the foot velocities
-        wz = wz + self._heading(wz, live)
+        wz = wz + self._heading(wz, live, dt)
         k = min(1.0, dt / max(self.level_tau, 1e-3))
         self._roll_f += (self._roll - self._roll_f) * k
         self._pitch_f += (self._pitch - self._pitch_f) * k
@@ -372,6 +388,94 @@ class TrotGait:
             m = self._moving
             out[l] = (nx + (px - nx) * m, ny + (py - ny) * m, pz)
         return out
+
+    # ------------------------------------------------------------ the servo budget
+    def rate_demand(self, vx, vy, wz, hz=200.0):
+        """Peak joint rate, rad/s, this gait asks for at a command — the DEMAND, with its
+        own rate limiter lifted, so it can be held against the servo's ceiling.
+
+        Ticks a throwaway copy of this gait's geometry and tuning through three cycles at
+        `hz` and reads the steepest step of the last two. A turn is not free: the outer
+        legs stride further, so the same forward speed costs more while turning. This is
+        `robot/runtime/walk.py`'s `joint_rate_demand`, moved here so the walker node can
+        ask the same question of a Nav2 command that the runtime asks of its demo profile.
+        """
+        g = TrotGait.__new__(TrotGait)
+        g.__dict__.update(self.__dict__)
+        g._reset_motion()
+        g.max_joint_rate = float("inf")
+        g.stride_max = 1e3                       # period_for must not pin the period here
+        period = self.period_for(math.hypot(vx, vy) + abs(wz) * 0.25)
+        dt, prev, peak = 1.0 / hz, None, 0.0
+        n = int(period * hz)
+        for i in range(n * 3):
+            q = g.joint_targets(dt, vx, vy, wz)
+            if prev is not None and i > n:
+                peak = max(peak, max(abs(a - b) for a, b in zip(q, prev)) / dt)
+            prev = q
+        return peak
+
+    def fit_table(self, margin=0.95, vx_step=0.01, wz_hi=0.7, hz=100.0):
+        """Precompute the servo budget: the fastest straight line, and for each forward
+        speed up to it the largest turn that fits beside it. ~1 s on the Orange Pi (a
+        single `rate_demand` sweep is 30–250 ms there, far too slow for a command
+        callback), so the node builds this once and `fit_command` interpolates. The
+        table is for |vx| — the trot's swing profile is fore/aft symmetric — and vy is
+        not in it: Nav2 does not ask for it (nav2.yaml, min_y_velocity_threshold)."""
+        ceiling = self.max_joint_rate * margin
+
+        def fits(vx, wz):
+            return self.rate_demand(vx, 0.0, wz, hz=hz) <= ceiling
+
+        def largest(f, hi, n=6):
+            lo = 0.0
+            if f(hi):
+                return hi
+            for _ in range(n):
+                mid = 0.5 * (lo + hi)
+                lo, hi = (mid, hi) if f(mid) else (lo, mid)
+            return lo
+
+        vx_max = largest(lambda v: fits(v, 0.0), 0.5)
+        rows = []
+        v = 0.0
+        while v < vx_max + 1e-9:
+            rows.append((v, largest(lambda w: fits(v, w), wz_hi)))
+            v += vx_step
+        if rows[-1][0] < vx_max - 1e-6:
+            rows.append((vx_max, largest(lambda w: fits(vx_max, w), wz_hi)))
+        # wz_hi stays under ~0.7: past it the lateral stride clamp (`ratio` in
+        # joint_targets, max_step_y) shrinks the whole stride and the demand FALLS with
+        # wz (0.08 m/s: 4.17 at 0.6, 3.12 at 0.7), so a wider search finds "fits" the
+        # clamp made. Below it the demand is monotone in wz and the bisection is sound.
+        self._fit = (vx_max, rows)
+        return self._fit
+
+    def fit_command(self, vx, vy, wz):
+        """Scale a command down to what the servos can fly: the turn first (it is the
+        cheaper thing to lose — a slower turn is a wider path, a dragging foot is a
+        fall), then the speed. Returns (vx, vy, wz, scaled: bool). Needs `fit_table()`.
+
+        On the floor a straight 0.08 m/s spends 2.7 of the 3.28 rad/s ceiling, wz 0.2 on
+        top fits and 0.3 does not; Nav2's pure pursuit asks up to 0.5 beside it, and what
+        happened (2026-09-15) was the trot dragging its front feet and the body pitching
+        over them at 49 deg.
+        """
+        vx_max, rows = self._fit
+        scaled = False
+        if abs(vx) > vx_max:
+            k = vx_max / abs(vx)
+            vx, vy, wz, scaled = vx * k, vy * k, wz * k, True
+        a = abs(vx)
+        # the largest turn beside this speed, linear between the table's rows
+        w_ok = rows[-1][1]
+        for (v0, w0), (v1, w1) in zip(rows, rows[1:]):
+            if v0 <= a <= v1:
+                w_ok = w0 + (w1 - w0) * (a - v0) / max(v1 - v0, 1e-9)
+                break
+        if abs(wz) > w_ok:
+            wz, scaled = math.copysign(w_ok, wz), True
+        return vx, vy, wz, scaled
 
     def body_velocity(self):
         """(vx, vy, wz) in the base frame that the last foot_targets() call is walking at
