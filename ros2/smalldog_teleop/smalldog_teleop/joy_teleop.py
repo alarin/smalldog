@@ -16,8 +16,11 @@ The layout is the Xbox 360 one the kernel's xpad driver presents for most 2.4 GH
     Start           gait enable / disable           button 7
     LB (hold)       turbo: full speed; without it the sticks reach `slow` of it   button 4
 
-A stick returns to centre, so letting go stops the robot; `/cmd_vel` is republished at
-`repeat_rate` because the walker drops a command older than 0.5 s. The speeds are caps,
+A stick returns to centre, so letting go stops the robot, and so does the pad going
+away: `/cmd_vel` is republished at `repeat_rate` because the walker drops a command
+older than 0.5 s, but it is republished as ZERO once `/joy` itself is older than
+`joy_timeout` — joy_node stops publishing when the receiver drops out, and repeating
+the last stick position into that is a robot walking away from a dead controller. The speeds are caps,
 the same numbers robot.launch.py fits to the servo (0.08 m/s, 0.65 rad/s), and they are
 caps on each axis: forward plus a turn at once is over the joint speed budget and the feet
 drag (`robot/README.md`, "The gait is fitted to the servo") — one stick at a time is the
@@ -52,6 +55,7 @@ class JoyTeleop(Node):
         p('body_height', 0.158)
         p('deadband', 0.15)
         p('repeat_rate', 20.0)
+        p('joy_timeout', 0.5)     # s without /joy -> stop
         p('axis_vx', 1)
         p('axis_vy', 0)
         p('axis_wz', 3)
@@ -72,6 +76,9 @@ class JoyTeleop(Node):
         self._prev_buttons = []
         self._prev_height_axis = 0.0
         self._msgs = 0
+        self._last_joy = None
+        self._joy_timeout = float(g('joy_timeout'))
+        self._stale_said = False
 
         self.pub = self.create_publisher(Twist, '/cmd_vel', 10)
         self.pub_h = self.create_publisher(Float64, '/smalldog/body_height', 10)
@@ -96,6 +103,7 @@ class JoyTeleop(Node):
         self._msgs += 1
         if self._msgs == 1:
             self.get_logger().info(f'/joy is live: {len(msg.axes)} axes, {len(msg.buttons)} buttons')
+        self._last_joy = self.get_clock().now()
         a, b = msg.axes, msg.buttons
         scale = 1.0 if self._get(b, self.bt['turbo'], 0) else self.slow
 
@@ -122,6 +130,15 @@ class JoyTeleop(Node):
         self._prev_buttons = list(b)
 
     def publish_cmd(self):
+        stale = (self._last_joy is None or
+                 (self.get_clock().now() - self._last_joy).nanoseconds * 1e-9 > self._joy_timeout)
+        if stale:
+            if self._last_joy is not None and not self._stale_said:
+                self._stale_said = True
+                self.get_logger().warn(f'no /joy for {self._joy_timeout:g} s — stopping')
+            self.cmd = Twist()
+        else:
+            self._stale_said = False
         self.pub.publish(self.cmd)
 
 
