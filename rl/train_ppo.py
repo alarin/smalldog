@@ -103,6 +103,10 @@ def parse():
                     help="curriculum: draw the servo's goal-profile acceleration per "
                          "episode from [LO, HI] rad/s^2 instead of the measured 8. "
                          "A stage, not a model: the last stage must run at 8 8.")
+    ap.add_argument("--vx", type=float, nargs=2, default=None, metavar=("LO", "HI"),
+                    help="curriculum: the forward-command range instead of Commands.vx. "
+                         "A stage from a policy that only walks at 0.4 has to be asked "
+                         "for 0.4 or it never walks in training.")
     ap.add_argument("--name", default=None)
     ap.add_argument("--smoke", action="store_true",
                     help="a two-minute run that proves the loop closes and "
@@ -154,6 +158,10 @@ def main():
             print(f"reward      {k} = {v:g}")
     kw = dict(terrain=a.terrain, n_boxes=a.boxes, weights=weights,
               frictionloss=not a.no_frictionloss)
+    if a.vx is not None:
+        from env.walk import Commands
+        kw["commands"] = Commands(vx=(float(a.vx[0]), float(a.vx[1])))
+        print(f"commands    vx {a.vx[0]:g} .. {a.vx[1]:g} m/s (CURRICULUM stage; Commands.vx is the default)")
     env = Walk(**kw)
     eval_env = Walk(**kw)
     for n in env.build_notes:
