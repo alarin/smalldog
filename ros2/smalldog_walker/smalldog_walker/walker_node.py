@@ -30,6 +30,11 @@ class SmallDogWalker(Node):
         self.declare_parameter('swing_height', 0.022)
         self.declare_parameter('body_height', 0.158)
         self.declare_parameter('max_step', 0.060)
+        # 0 = the gait's own. `period_for` pins the period at 2*stride_max/speed, so a
+        # period chosen for the servo's rate ceiling (robot.launch.py: 1.35 s at 0.11
+        # m/s) is silently shortened back unless the pin is raised to admit it — the
+        # same line robot/runtime/walk.py has after its feasibility fit.
+        self.declare_parameter('stride_max', 0.0)
         self.declare_parameter('cmd_timeout', 0.5)
         self.declare_parameter('imu_topic', '/imu')
         self.declare_parameter('foot_load_topic', '/smalldog/foot_load')
@@ -45,6 +50,8 @@ class SmallDogWalker(Node):
         self.gait.swing_height = self.get_parameter('swing_height').value
         self.gait.max_step = self.get_parameter('max_step').value
         self.gait.body_height = self.get_parameter('body_height').value
+        if self.get_parameter('stride_max').value > 0:
+            self.gait.stride_max = self.get_parameter('stride_max').value
 
         ctrl = self.get_parameter('controller').value
         self.pub = self.create_publisher(JointTrajectory, f'/{ctrl}/joint_trajectory', 10)
