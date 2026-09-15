@@ -309,6 +309,21 @@ class Attitude:
         return self.g, w, accel
 
 
+def level_from_tilted(accel_meas, roll, pitch):
+    """What the chip would have read on a LEVEL body, given what it read on one at
+    (roll, pitch) - the gait's convention, left side up and nose down positive - as
+    measured by something else (the L2's floor plane). The mount is the one rotation
+    taking the true gravity direction to the measured one; apply it to level gravity."""
+    g_true = (math.sin(pitch), -math.sin(roll) * math.cos(pitch), -math.cos(roll) * math.cos(pitch))
+    up_true = tuple(-v for v in g_true)                     # accel points up
+    A = _rot_to_up(accel_meas)                              # measured up -> z
+    B = _rot_to_up(up_true)                                 # true up -> z
+    # M = A^T B takes true up to measured up; level reading = M z * |accel| = A^T (B z)
+    n = math.sqrt(sum(v * v for v in accel_meas))
+    bz = tuple(sum(B[i][j] * (0.0, 0.0, 1.0)[j] for j in range(3)) for i in range(3))
+    return tuple(n * sum(A[j][i] * bz[j] for j in range(3)) for i in range(3))
+
+
 def measure_level(imu, seconds=5.0, hz=50.0):
     """Mean accelerometer over `seconds` of a LEVEL, still, standing robot: the mount."""
     n = int(seconds * hz)
@@ -344,6 +359,11 @@ def main():
     ap.add_argument("--bias", type=float, default=0.0, help="seconds still, then print gyro bias")
     ap.add_argument("--level", type=float, default=0.0,
                     help="seconds standing LEVEL with levelling off; writes imu/mount.json")
+    ap.add_argument("--true-roll", type=float, default=0.0,
+                    help="deg the body ACTUALLY is during --level (left side up +), from "
+                         "another sensor - the L2's floor plane; 0 = trust the floor")
+    ap.add_argument("--true-pitch", type=float, default=0.0,
+                    help="deg the body actually is during --level (nose down +)")
     ap.add_argument("--seconds", type=float, default=10.0)
     ap.add_argument("--hz", type=float, default=50.0)
     ap.add_argument("--selftest", action="store_true", help="fake chip, no hardware")
@@ -375,6 +395,11 @@ def main():
             print(f"levelling: the robot must be STANDING on a level floor with levelling off; "
                   f"{a.level:g} s ...")
             rest = measure_level(imu, a.level, a.hz)
+            if a.true_roll or a.true_pitch:
+                rest = level_from_tilted(rest, math.radians(a.true_roll),
+                                         math.radians(a.true_pitch))
+                print(f"  (body was roll {a.true_roll:+.1f}, pitch {a.true_pitch:+.1f} deg "
+                      f"during the measurement; taken out)")
             m = Mount(rest, time.strftime("%Y-%m-%d %H:%M"))
             r, p_ = m.tilt_deg()
             m.save()
