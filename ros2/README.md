@@ -407,10 +407,17 @@ handling the bench can test, and a C++ hardware_interface would be a second.
 cd ~/smalldog/ros2 && source /opt/ros/jazzy/setup.bash
 colcon build --symlink-install --packages-select smalldog_description smalldog_walker smalldog_teleop smalldog_hardware
 source install/setup.bash
-ros2 launch smalldog_hardware robot.launch.py imu:=true    # preflight, wait for the walker, stand
-ros2 run smalldog_teleop keyboard --ros-args -p speed:=0.08 -p turn:=0.65   # second terminal
-tools/robot_go.sh 5 0.08                                   # or: walk straight 5 s, no keyboard
+ros2 launch smalldog_hardware robot.launch.py imu:=true joy:=true   # stand; drive it from the gamepad
+ros2 run smalldog_teleop keyboard --ros-args -p speed:=0.08 -p turn:=0.65   # or a keyboard, second terminal
+tools/robot_go.sh 5 0.08                                   # or: walk straight 5 s, hands off
 ```
+
+The gamepad (a 2.4 GHz "Barrot" pad the kernel drives as an Xbox 360 controller,
+`/dev/input/js0`) goes through the `joy` package's `joy_node` and
+`smalldog_teleop/joy_teleop.py`: left stick walks and strafes, right stick turns, D-pad
+up/down is body height, B stops, Start toggles the gait, LB held is full speed (0.6 of
+it otherwise). Let go of the stick and it stops; lose the pad and it stops within 0.5 s.
+One stick at a time — forward plus a turn is over the servo's speed budget.
 
 Ctrl-C sits the robot down and cuts torque (the node's own signal handler; the loop
 leaves through `Runtime.__exit__`). The node refuses to enable torque when the trajectory
