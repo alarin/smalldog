@@ -92,7 +92,8 @@ def _nodes(context):
              parameters=[common, {
                  'save_map': ParameterValue(LaunchConfiguration('save_map'), value_type=str),
                  'home': ParameterValue(LaunchConfiguration('home'), value_type=bool),
-                 'autostart': ParameterValue(LaunchConfiguration('autostart'), value_type=bool)}]),
+                 'autostart': ParameterValue(LaunchConfiguration('autostart'), value_type=bool),
+                 'spin_first': ParameterValue(LaunchConfiguration('spin_first'), value_type=bool)}]),
     ]
 
 
@@ -119,5 +120,11 @@ def generate_launch_description():
                               description='explore as soon as the map is there; false = '
                                           'wait for /smalldog/explore true, i.e. the '
                                           'gamepad\'s Back button (robot.launch.py joy:=true)'),
+        DeclareLaunchArgument('spin_first', default_value='true',
+                              description='one full turn before the first goal, to see '
+                                          'the ring. false on the robot: its turn in place '
+                                          'runs at ~0.09 rad/s for a 0.5 command and '
+                                          'drifts backwards, so a 2 pi spin is a minute '
+                                          'of walking backwards'),
         OpaqueFunction(function=_nodes),
     ])
