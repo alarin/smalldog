@@ -26,7 +26,7 @@ crosses**, so a result that has to reach another machine gets committed.
 | a mac | CAD, FEA, both sim exporters, the ROS 2 workspace | `3d/CLAUDE.md` |
 | Windows/WSL2, RTX 3070 (8 GB) | RL training, the pure-Python sim regressions | `WSL.md` |
 | Windows/WSL2, RTX 5070 Ti (16 GB) | RL training — the box-terrain run 8 GB never allowed; also the gaming PC | `GPU.md` |
-| Orange Pi 5 Pro | `robot/runtime` on the robot | `robot/README.md` |
+| Orange Pi 5 Pro | `robot/runtime` on the robot, bare or under ROS 2 Jazzy (`ros2/smalldog_hardware`) | `robot/README.md`, `ros2/README.md` "On the robot" |
 
 Work out which one you are on before running anything; `WSL.md` has the check, and
 `nvidia-smi` says which of the two training boxes this is.

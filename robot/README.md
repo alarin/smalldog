@@ -74,7 +74,9 @@ Two things the bus does, understood and not:
 
 `loop.Runtime` takes `source(dt, feedback) -> 12 joint angles` in `robot_params.json`'s
 joint order and does the bus, the timing and the safety layer around it. Today the source
-is `smalldog_walker`'s analytic trot, imported from `ros2/` (pure Python), or the ONNX
+is `smalldog_walker`'s analytic trot, imported from `ros2/` (pure Python), the same trot
+streamed over ROS 2 by `ros2/smalldog_hardware` (the walker node's trajectory is the
+source; `ros2/README.md`, "On the robot"), or the ONNX
 policy out of `rl/` through `runtime/policy.py` (`pip install onnxruntime smbus2`; the IMU
 driver is `imu/bmi088.py`, I2C, two addresses, `--selftest` first and then `--ids` on the
 chip). Neither gets its own idea of a soft limit.

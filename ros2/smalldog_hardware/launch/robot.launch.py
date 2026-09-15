@@ -17,8 +17,9 @@ are measured on the floor (2026-09-15):
 
     blind (imu:=false)   0.11 m/s, period 1.35 s        demand 3.09 rad/s, walks
     imu:=true            0.08 m/s, period 1.35 s, the heading hold capped at 0.2 rad/s
-                         demand 3.04 rad/s; at 0.11 m/s with the gait's own 0.5 rad/s
-                         cap it is 4.65, a knee fell 0.7 rad behind and the guard tripped
+                         demand 3.04 rad/s, walks, 44 deg peak tracking error; at
+                         0.11 m/s with the gait's own 0.5 rad/s cap it is 4.65, a knee
+                         fell 0.7 rad behind and the guard tripped
 
 `speed` here sets the teleop's speed and the gait's `stride_max` (so `period_for` admits
 the period); it does not cap `/cmd_vel` from elsewhere — publish the same number.

@@ -13,6 +13,7 @@ description → ros2_control → gait node, with MuJoCo standing in for the hard
 | `smalldog_ros_control` | ament_cmake | ros2_control wiring + MuJoCo launch |
 | `smalldog_walker` | ament_python | trot gait + analytic leg IK, `/cmd_vel` → joint trajectory |
 | `smalldog_teleop` | ament_python | keyboard teleop |
+| `smalldog_hardware` | ament_python | **the real robot**: `robot/runtime`'s servo loop behind the walker's topics — "On the robot" below |
 | `tools/` | — | standalone MuJoCo sim, no ROS needed |
 
 One external source dependency: **`mujoco_ros2_control`**, a fork on its `kilted` branch,
@@ -391,10 +392,48 @@ tilted slabs) is the arm that can. And the walker feeds on `<touch>` sites of r 
 around each ankle; a foot whose contacts land further out is a foot the walker cannot feel
 (`SITE_R`, and the `site` control arm that proves the enlarged site is inert on its own).
 
+## On the robot
+
+The Orange Pi runs Ubuntu 24.04 with ROS 2 Jazzy from apt (`/opt/ros/jazzy`, no pixi, no
+ros2_control). `smalldog_hardware/servo_node.py` is the hardware side: it wraps
+`robot/runtime` — the bus driver, `calib.json`, the safety guard, the 50 Hz tick — and
+subscribes to the same `/smalldog_controller/joint_trajectory` the walker streams to the
+MuJoCo controller, so the walker does not know which one it is driving. It publishes
+`/joint_states` (effort = Present Load) and, with `imu:=true`, `/imu` from the BMI088.
+There is no ros2_control plugin on purpose: the runtime is the one copy of the servo
+handling the bench can test, and a C++ hardware_interface would be a second.
+
+```bash
+cd ~/smalldog/ros2 && source /opt/ros/jazzy/setup.bash
+colcon build --symlink-install --packages-select smalldog_description smalldog_walker smalldog_teleop smalldog_hardware
+source install/setup.bash
+ros2 launch smalldog_hardware robot.launch.py imu:=true    # preflight, wait for the walker, stand
+ros2 run smalldog_teleop keyboard --ros-args -p speed:=0.08 -p turn:=0.65   # second terminal
+tools/robot_go.sh 5 0.08                                   # or: walk straight 5 s, no keyboard
+```
+
+Ctrl-C sits the robot down and cuts torque (the node's own signal handler; the loop
+leaves through `Runtime.__exit__`). The node refuses to enable torque when the trajectory
+topic has two publishers — a leftover MuJoCo launch on the mac reaches the Pi over the
+LAN on domain 0 and was the robot's first goal once. Give the robot its own
+`ROS_DOMAIN_ID` if the mac is going to run the sim at the same time.
+
+The launch file carries the gait fitted to the servo (`robot/README.md`, "The gait is
+fitted to the servo"), not the sim's numbers: period 1.35 s, `stride_max` raised to
+admit it, and the heading hold capped at `yaw_max` 0.2 rad/s. Measured on the floor,
+2026-09-15, 2.5 kg, 10.7 V:
+
+| | speed | tracking error, peak | |
+|---|---|---|---|
+| `imu:=false` (the blind trot, what `walk.py` runs) | 0.11 m/s | 31° | walks; the same 30° `walk.py` sees |
+| `imu:=true`, the gait's own `yaw_max` 0.5 | 0.11 | 62° | **tripped** at 0.7 rad on a knee: 0.11 m/s already spends the whole 3.28 rad/s ceiling, and 0.5 rad/s of correction on top demands 4.65 |
+| `imu:=true`, `yaw_max` 0.2 (the default) | 0.08 | 44° | walks, 5 s; demand 3.04 rad/s |
+
+44° against a 40° trip held for 0.32 s is not margin. The blind trot veers ~7°/s on this
+floor, which is what the hold is correcting, at a speed cost.
+
 ## Known gaps
 
-- No hardware interface: `smalldog_ros_control` wires up the MuJoCo system only. The real
-  robot runs `robot/runtime` (pure Python, no ROS) for now.
 - Foot contact is not published under ROS 2 (`/smalldog/foot_load` has no publisher), so the
   launched robot runs with levelling and heading hold but without the landing latch. On
   hardware there are no foot switches either — the topic is a *load*, so the knee servo's
