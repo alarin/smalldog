@@ -8,6 +8,7 @@ natural step boundary to wait on.
 """
 import json, os
 import rclpy
+import rclpy.executors
 from rclpy.node import Node
 from rclpy.clock import Clock, ClockType
 from geometry_msgs.msg import Twist
@@ -164,8 +165,8 @@ def main(args=None):
     node = SmallDogWalker()
     try:
         rclpy.spin(node)
-    except KeyboardInterrupt:
-        pass
+    except (KeyboardInterrupt, rclpy.executors.ExternalShutdownException):
+        pass                    # Ctrl-C, or `ros2 launch` shutting down (Jazzy raises it)
     finally:
         node.destroy_node()
         rclpy.try_shutdown()

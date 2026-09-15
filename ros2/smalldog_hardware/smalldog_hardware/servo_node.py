@@ -105,6 +105,7 @@ class ServoNode(Node):
         p('ramp', 2.0)
         p('controller', 'smalldog_controller')
         p('first_goal_timeout', 15.0)      # s to wait for the walker before giving up
+        p('settle', 1.0)                   # s after the first goal before standing into it
         p('goal_timeout', 1.0)             # s without a trajectory before it is reported
         p('imu', False)
         p('i2c_bus', 1)
@@ -129,6 +130,7 @@ class ServoNode(Node):
         self.hz = float(g('hz'))
         self.ramp = float(g('ramp'))
         self.first_goal_timeout = float(g('first_goal_timeout'))
+        self.settle = float(g('settle'))
         self.goal_timeout = float(g('goal_timeout'))
 
         self._lock = threading.Lock()
@@ -288,6 +290,10 @@ class ServoNode(Node):
             log.error(f'{n_pub} publishers on {self.traj_topic}; a leftover walker? '
                       f'torque stays off')
             return 1
+        # The walker's first messages are its own start-up ramp from q = 0 to the
+        # stance, rate-limited at the joint ceiling: stand into where it has settled,
+        # not into the first frame of that ramp.
+        time.sleep(self.settle)
         q0 = self.latest_goal()[0]
         log.info('first goal, deg: ' + '  '.join(
             f'{self.joints[i][:2]} ' + '/'.join(f'{math.degrees(q0[i + j]):+.0f}' for j in range(3))
