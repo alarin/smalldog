@@ -353,6 +353,14 @@ class ServoNode(Node):
             from imu.bmi088 import BMI088, measure_bias
             chip = BMI088(int(self.get_parameter('i2c_bus').value))
             chip.configure()
+            if chip.mount.measured:
+                r, p_ = chip.mount.tilt_deg()
+                self.get_logger().info(f'IMU mount ({chip.mount.measured}): taking out roll '
+                                       f'{r:+.1f}, pitch {p_:+.1f} deg')
+            else:
+                self.get_logger().warn('IMU mount not levelled (no imu/mount.json): the '
+                                       'chip\'s tilt in the case goes straight into the '
+                                       'gait\'s levelling - run imu/bmi088.py --level')
             secs = float(self.get_parameter('bias_seconds').value)
             self.get_logger().info(f'IMU: hold still {secs:g} s for the gyro bias ...')
             bias = measure_bias(chip, secs, self.hz)

@@ -6,6 +6,9 @@ bmi088.py — the BMI088 over I2C, and the gravity vector the policy is trained 
     python imu/bmi088.py --ids                           # find the two dies on the bus
     python imu/bmi088.py                                 # stream, 50 Hz
     python imu/bmi088.py --bias 5                        # 5 s still, gyro bias
+    python imu/bmi088.py --level 5                       # 5 s STANDING LEVEL, no levelling
+                                                         # (walk.py / robot.launch imu:=false):
+                                                         # the mount tilt -> imu/mount.json
     python imu/bmi088.py --i2c-bus 1 --acc-addr 0x19 --gyro-addr 0x69
 
 The BMI088 is two dies with two I2C addresses: accelerometer 0x18 or 0x19 (SDO1
@@ -35,11 +38,24 @@ nose DOWN must send gravity's x POSITIVE (the body's x axis now points partly
 at the ground, so gravity has a component along it) and the accelerometer's x
 negative; rolled onto its LEFT side (y axis toward the ground), gravity's y
 positive. Change AXES, not the frame.
+
+Mount
+-----
+The chip is taped into the Pi's case and does not sit flat: measured 2026-09-15 it read
+roll -7.9 deg, pitch -7.4 deg on a body the L2's floor plane put at -0.5 / -0.9. Fed to
+the gait's levelling that is not a small error, it is a robot that tilts ITSELF 10 deg
+to make the reading come true (the joints tracked to a degree; the stance was the
+tilt). `--level` measures the accelerometer on a level, still, standing robot with
+levelling off and writes the mount rotation to `mount.json`; `BMI088` applies it to
+every read, so the gait, the policy and the ROS node all see the body's frame, not
+the tape's. Re-run it whenever the case is opened.
 """
 from __future__ import annotations
 
 import argparse
+import json
 import math
+import os
 import struct
 import sys
 import time
@@ -71,6 +87,68 @@ def remap(v, axes=AXES):
     return tuple(s * v[i] for i, s in axes)
 
 
+HERE = os.path.dirname(os.path.abspath(__file__))
+MOUNT_FILE = os.path.join(HERE, "mount.json")
+
+
+def _rot_to_up(g_rest):
+    """3x3 rotation taking the at-rest accelerometer direction to +z (Rodrigues)."""
+    x, y, z = g_rest
+    n = math.sqrt(x * x + y * y + z * z)
+    a = (x / n, y / n, z / n)
+    # axis = a x z_hat, angle = acos(a . z_hat)
+    kx, ky, kz = a[1], -a[0], 0.0
+    s = math.sqrt(kx * kx + ky * ky)
+    c = a[2]
+    if s < 1e-9:
+        return ((1, 0, 0), (0, 1, 0), (0, 0, 1)) if c > 0 else ((1, 0, 0), (0, -1, 0), (0, 0, -1))
+    kx, ky = kx / s, ky / s
+    K = ((0, -kz, ky), (kz, 0, -kx), (-ky, kx, 0))
+    I = ((1, 0, 0), (0, 1, 0), (0, 0, 1))
+    KK = tuple(tuple(sum(K[i][m] * K[m][j] for m in range(3)) for j in range(3)) for i in range(3))
+    return tuple(tuple(I[i][j] + s * K[i][j] + (1 - c) * KK[i][j] for j in range(3))
+                 for i in range(3))
+
+
+class Mount:
+    """The chip's tilt in the body: the rotation that levels it, from `--level`."""
+
+    def __init__(self, accel_at_rest=None, measured=None):
+        self.accel_at_rest = tuple(accel_at_rest) if accel_at_rest else None
+        self.measured = measured
+        self.R = _rot_to_up(self.accel_at_rest) if self.accel_at_rest else None
+
+    def apply(self, v):
+        if self.R is None:
+            return v
+        return tuple(sum(self.R[i][j] * v[j] for j in range(3)) for i in range(3))
+
+    def tilt_deg(self):
+        """(roll, pitch) the raw chip reads on a level body — what is being taken out."""
+        if self.accel_at_rest is None:
+            return 0.0, 0.0
+        ax, ay, az = self.accel_at_rest
+        n = math.sqrt(ax * ax + ay * ay + az * az)
+        gx, gy, gz = -ax / n, -ay / n, -az / n           # gravity = -accel
+        return math.degrees(math.atan2(-gy, -gz)), math.degrees(math.asin(max(-1.0, min(1.0, gx))))
+
+    @classmethod
+    def load(cls, path=MOUNT_FILE):
+        """The saved mount, or an identity one (and `.measured` None) if never levelled."""
+        if not os.path.exists(path):
+            return cls()
+        with open(path) as f:
+            d = json.load(f)
+        return cls(d["accel_at_rest"], d.get("measured"))
+
+    def save(self, path=MOUNT_FILE):
+        with open(path, "w") as f:
+            json.dump({"accel_at_rest": list(self.accel_at_rest), "measured": self.measured,
+                       "note": "imu/bmi088.py --level: the accelerometer, model axes, on a "
+                               "level standing robot with levelling off"}, f, indent=2)
+            f.write("\n")
+
+
 # ----------------------------------------------------------------- the chip
 ACC_ADDRS, GYR_ADDRS = (0x18, 0x19), (0x68, 0x69)
 
@@ -93,9 +171,11 @@ def probe(bus_no):
 class BMI088:
     """One smbus2 handle, two addresses, the register dance. Units out: m/s^2, rad/s."""
 
-    def __init__(self, bus=1, acc_addr=None, gyro_addr=None, axes=AXES):
+    def __init__(self, bus=1, acc_addr=None, gyro_addr=None, axes=AXES, mount=None):
         from smbus2 import SMBus
         self.bus = SMBus(bus)
+        # the mount tilt out of every read; `mount=Mount()` is the raw chip, for --level
+        self.mount = Mount.load() if mount is None else mount
         if acc_addr is None or gyro_addr is None:
             hits = probe(bus)
             accs = [a for a, (v, ok) in hits.items() if ok and a in ACC_ADDRS]
@@ -160,8 +240,8 @@ class BMI088:
         """(accel m/s^2, gyro rad/s), both in the MODEL frame."""
         a = struct.unpack("<hhh", self._acc_read(ACC_DATA, 6))
         w = struct.unpack("<hhh", self._gyr_read(GYR_DATA, 6))
-        accel = remap(tuple(v * self._acc_scale for v in a), self.axes)
-        gyro = remap(tuple(v * self._gyr_scale for v in w), self.axes)
+        accel = self.mount.apply(remap(tuple(v * self._acc_scale for v in a), self.axes))
+        gyro = self.mount.apply(remap(tuple(v * self._gyr_scale for v in w), self.axes))
         return accel, gyro
 
     def close(self):
@@ -223,6 +303,18 @@ class Attitude:
         return self.g, w, accel
 
 
+def measure_level(imu, seconds=5.0, hz=50.0):
+    """Mean accelerometer over `seconds` of a LEVEL, still, standing robot: the mount."""
+    n = int(seconds * hz)
+    s = [0.0, 0.0, 0.0]
+    for _ in range(n):
+        a, _ = imu.read()
+        for i in range(3):
+            s[i] += a[i]
+        time.sleep(1.0 / hz)
+    return tuple(v / n for v in s)
+
+
 def measure_bias(imu, seconds=5.0, hz=50.0):
     """Mean gyro over `seconds` of the robot standing still: the bias to subtract."""
     n = int(seconds * hz)
@@ -244,6 +336,8 @@ def main():
     ap.add_argument("--gyro-addr", type=lambda x: int(x, 0), default=None, help="0x68 or 0x69")
     ap.add_argument("--ids", action="store_true", help="probe the four addresses and stop")
     ap.add_argument("--bias", type=float, default=0.0, help="seconds still, then print gyro bias")
+    ap.add_argument("--level", type=float, default=0.0,
+                    help="seconds standing LEVEL with levelling off; writes imu/mount.json")
     ap.add_argument("--seconds", type=float, default=10.0)
     ap.add_argument("--hz", type=float, default=50.0)
     ap.add_argument("--selftest", action="store_true", help="fake chip, no hardware")
@@ -264,10 +358,30 @@ def main():
             if not hits:
                 print(f"  nothing answered on /dev/i2c-{a.i2c_bus}; try `i2cdetect -l` for the bus")
             return 0 if any(ok for _, ok in hits.values()) else 1
-        imu = BMI088(a.i2c_bus, a.acc_addr, a.gyro_addr)
+        # --level wants the RAW chip; every other run gets the saved mount like the robot
+        imu = BMI088(a.i2c_bus, a.acc_addr, a.gyro_addr, mount=Mount() if a.level > 0 else None)
     acc_id, gyr_id = imu.configure()
     print(f"accel id 0x{acc_id:02X}  gyro id 0x{gyr_id:02X}" + ("  (fake)" if a.selftest else
           f"  (i2c-{a.i2c_bus}: 0x{imu.acc_addr:02X} / 0x{imu.gyr_addr:02X})"))
+    if not a.selftest:
+        m = imu.mount
+        if a.level > 0:
+            print(f"levelling: the robot must be STANDING on a level floor with levelling off; "
+                  f"{a.level:g} s ...")
+            rest = measure_level(imu, a.level, a.hz)
+            m = Mount(rest, time.strftime("%Y-%m-%d %H:%M"))
+            r, p_ = m.tilt_deg()
+            m.save()
+            imu.mount = m
+            print(f"mount: raw chip reads roll {r:+.1f} deg, pitch {p_:+.1f} deg on a level "
+                  f"body (accel {rest[0]:+.2f} {rest[1]:+.2f} {rest[2]:+.2f}); wrote {MOUNT_FILE}")
+        elif m.measured:
+            r, p_ = m.tilt_deg()
+            print(f"mount from {MOUNT_FILE} ({m.measured}): taking out roll {r:+.1f}, "
+                  f"pitch {p_:+.1f} deg")
+        else:
+            print(f"no {MOUNT_FILE}: the chip's tilt in the case is NOT taken out; "
+                  f"run --level on a standing robot")
 
     bias = (0.0, 0.0, 0.0)
     if a.bias > 0:
