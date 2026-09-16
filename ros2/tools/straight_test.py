@@ -258,9 +258,9 @@ def run(a) -> int:
         return thin(np.concatenate(pts)) if pts else np.zeros((0, 2))
 
     # discovery: with Nav2 up beside the robot launch the first cloud can take > 5 s to arrive
-    end = time.monotonic() + 12.0
+    end = time.monotonic() + 40.0
     while time.monotonic() < end and (state["imu"] is None or state["cloud"] is None):
-        spin_pub.publish(Bool(data=True))       # a parked head takes ~3 s to come back
+        spin_pub.publish(Bool(data=True))       # a parked head takes ~25 s to come back
         rclpy.spin_once(node, timeout_sec=0.5)
     spin(1.0)                                   # and a second for /tf_static
     if state["imu"] is None:
