@@ -170,5 +170,14 @@ function both `env/walk.py` and `eval.py` call), `--host-loop` on `train_ppo.py`
 - 165 Hz is not an integer number of 1 ms steps: a phase accumulator recomputes every 6th or
   7th step, and the phase is drawn per episode so the 50 Hz tick and the loop are not locked.
 
+## The run (2026-09-17)
+
+`20260916-host-s0` on the 5070 Ti (2048 envs, seed 0, 134 min) is in `rl/policy/` (cb643a8).
+Sim acceptance met: cmd 0.2 → 2.19 m in 10 s with no falls (s4 0.75 m, 6 of 64 down), cmd
+0.4 → 2.27 m (s4 1.27), start-up 0.26 s (s4 0.80), pitch std under way 0.28° (s4 0.31), stands
+from a ±15° hand-over. Lost reverse: the `--vx 0 0.4` stage never asks for it. Seed 1 on the 3070
+(`20260916-host-s1`, 1024 envs) is the second seed. **Robot acceptance is the open item:**
+the bench's 40 cm twice, then `straight_test.py` ≥ 0.8 m in 5 s.
+
 ## Questions for review
 
