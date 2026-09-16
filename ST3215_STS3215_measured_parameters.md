@@ -359,13 +359,21 @@ register that lifts it. (Steps at ACC 0 / 10 / 49–254, two servos, 2026-09-14 
 
 **The way past it is MODE 2 (open-loop PWM) with the position loop on the host.** The
 bridge has no profile: a free horn reaches its steady speed in ~70 ms from rest. A host
-loop at 250 Hz over one servo (`duty = kp·err − kd·ω`, kp 3000 duty/rad ≈ 14 N·m/rad,
-duty clamped at ±800) passed a ±15° sine at **0.90 / 0.72 / 0.58 / 0.41** at 1 / 2 / 3 /
-5 Hz against the firmware's 0.74 / 0.25 / – / 0.07, and peaked a 0.3 rad step at 3.0 rad/s
-against 1.5. Costs: 1.8 A peaks on a saturated step from rest, a 0.55° standing error
-from Coulomb friction with no integral term, and every protection the firmware gave you
-is now yours to write. Whether the firmware's overcurrent trip still fires in MODE 2 is
-not measured. (`robot/bench/pwm_loop.py`, 2026-09-16, one servo at 11.4 V.)
+loop at 250 Hz over one servo (`duty = kp·err − kd·ω + kff·ω_target`, kp 9000 duty/rad
+≈ 41 N·m/rad — the firmware's own stiffness — kd 150, kff 200, duty ±1000) passed a ±15°
+sine at **0.99 / 0.97 / 0.95 / 0.62** at 1 / 2 / 3 / 5 Hz with 6 / 12 / 17 / 72° of lag,
+against the firmware's 0.74 / 0.25 / – / 0.07. The 0.62 at 5 Hz is the motor's speed
+ceiling (8.2 rad/s asked, 4.7 available), not the loop. A 0.1 rad step reaches 2.9 rad/s
+(≈ 80 rad/s² against the profile's 7.7); standing error 0.05°.
+
+What it costs: the register current peaks at 3.8 A (≈ 2.3 A real) on the 5 Hz sine, and
+**the firmware's overload protection is off in MODE 2** — 5 s at duty 1000 with the load
+register at 100 % and `PROTECTION_TIME` 2 s tripped nothing. Whether `PROTECTION_CURRENT`
+still acts is not measured (it needs a stalled horn). Also: **`PRESENT_POSITION` is raw in
+MODE 2** — the `OFFSET` register is not applied, so a centre read in position mode is off by
+exactly `OFFSET`. (`robot/bench/pwm_loop.py`, `mode2_protect.py`, 2026-09-16, one servo,
+11.3 V; the bus from an Orange Pi over a CH340 costs 2.0 ms per transaction whatever its
+size, so a 12-servo read + write tick is ~5.5 ms.)
 
 ---
 

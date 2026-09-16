@@ -158,10 +158,12 @@ class Params:
     # documented 100 counts/s^2 (ACC 10 -> 1.6 rad/s^2, 49 -> 7.4), but the
     # firmware clamps every write above 50 to 50 = 7.67 rad/s^2, and 0 selects
     # that maximum.  There is no register that lifts it — but MODE 2 (open-loop
-    # PWM) has no profile at all: a host P-loop at 250 Hz over one servo passed
-    # 0.41 of a +-15 deg sine at 5 Hz against the firmware's 0.07
-    # (bench/pwm_loop.py).  The path past this cap is the position loop on the
-    # Pi, not a register.
+    # PWM) has no profile at all: a host PD loop at 250 Hz over one servo (kp
+    # 9000 duty/rad, kd 150, kff 200) passed 0.99 / 0.97 / 0.95 / 0.62 of a
+    # +-15 deg sine at 1 / 2 / 3 / 5 Hz against the firmware's 0.74 / 0.25 / - /
+    # 0.07, the 5 Hz figure being the motor's speed ceiling (bench/pwm_loop.py).
+    # The path past this cap is the position loop on the Pi, not a register;
+    # the firmware's overload protection is off in that mode (mode2_protect.py).
     goal_acc: float = 8.0     # rad/s^2, the profile's acceleration cap
     goal_vel: float = 3.86    # rad/s, the profile's speed cap (the measured plateau)
     # --- transmission -----------------------------------------------------

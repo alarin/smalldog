@@ -44,28 +44,40 @@ def duty_write(bus, dev_id, d):
 class Loop:
     """One host-side position loop over one servo, logging everything."""
 
-    def __init__(self, bus, servo, kp, kd, dmax, qmax):
+    def __init__(self, bus, servo, kp, kd, dmax, qmax, ki=0.0, kff=0.0, rate=0.0):
         self.bus, self.s, self.kp, self.kd, self.dmax, self.qmax = bus, servo, kp, kd, dmax, qmax
+        self.ki, self.kff, self.rate = ki, kff, rate
         self.trip = None
 
     def run(self, target, T, open_loop=None):
         """Follow target(t) for T seconds; open_loop(t) instead gives the duty directly."""
         t0 = time.perf_counter()
-        log = []
+        log, integ, tprev, tgprev = [], 0.0, 0.0, None
         while (t := time.perf_counter() - t0) < T:
+            if self.rate:                        # pace the loop below the bus rate
+                nxt = tprev + 1.0 / self.rate
+                while time.perf_counter() - t0 < nxt:
+                    pass
+                t = time.perf_counter() - t0
             fb = self.s.feedback()
             q, w = fb["q"], fb["w"]
             if abs(q) > self.qmax:
                 duty_write(self.bus, self.s.id, 0)
-                self.trip = f"runaway guard: q = {q:.2f} rad"
+                self.trip = f"runaway guard: q = {q:.2f} rad, counts {fb['counts']}, centre {self.s.centre}"
+                for row in log[-8:]:
+                    print("    trip trace t %.3f tg %.3f q %.3f w %.2f d %.0f" % tuple(row[:5]))
                 break
             if open_loop is not None:
                 d = open_loop(t)
                 tg = float("nan")
             else:
                 tg = target(t)
+                dt = t - tprev
+                v_ff = 0.0 if tgprev is None or dt <= 0 else (tg - tgprev) / dt
+                integ = max(-200.0, min(200.0, integ + self.ki * (tg - q) * dt))
                 # the bridge's sign is opposite to the encoder's: +duty turns q negative
-                d = -(self.kp * (tg - q) - self.kd * w)
+                d = -(self.kp * (tg - q) - self.kd * w + integ + self.kff * v_ff)
+                tprev, tgprev = t, tg
             d = max(-self.dmax, min(self.dmax, d))
             duty_write(self.bus, self.s.id, d)
             log.append((t, tg, q, w, d, fb["current"]))
@@ -87,6 +99,11 @@ def main():
     ap.add_argument("--id", type=int, required=True, help="a FREE servo — this spins horns")
     ap.add_argument("--kp", type=float, default=3000.0, help="duty units per rad")
     ap.add_argument("--kd", type=float, default=60.0, help="duty units per rad/s")
+    ap.add_argument("--ki", type=float, default=0.0, help="duty units per rad*s, clamped +-200")
+    ap.add_argument("--kff", type=float, default=0.0,
+                    help="duty units per rad/s of TARGET velocity (back-EMF is ~210)")
+    ap.add_argument("--rate", type=float, default=0.0, help="pace the loop, Hz (0: bus rate)")
+    ap.add_argument("--runs", default="ABC", help="which of A (open loop), B (steps), C (sines)")
     ap.add_argument("--dmax", type=int, default=800, help="duty clamp, of 1000")
     ap.add_argument("--qmax", type=float, default=1.6, help="runaway guard, rad from start")
     ap.add_argument("--amp", type=float, default=0.26, help="sine amplitude, rad")
@@ -106,13 +123,19 @@ def main():
     print(f"id {a.id}: centre {s.centre}, {fb['volt']:.1f} V, {fb['temp']} C, "
           f"MODE {bus.read(a.id, R.MODE)}, TORQUE_LIMIT {bus.read(a.id, R.TORQUE_LIMIT)}")
     mode0 = bus.read(a.id, R.MODE)
-    loop = Loop(bus, s, a.kp, a.kd, a.dmax, a.qmax)
+    loop = Loop(bus, s, a.kp, a.kd, a.dmax, a.qmax, a.ki, a.kff, a.rate)
     try:
         s.torque(False)
         bus.write(a.id, R.MODE, 2)
         if bus.read(a.id, R.MODE) != 2:
             sys.exit("!! MODE would not take 2")
         duty_write(bus, a.id, 0)
+        # MODE 2 reports PRESENT_POSITION RAW: the OFFSET register (the middle-position
+        # calibration) is not applied.  Read the centre here, not in MODE 0.
+        raw = s.feedback()["counts"]
+        print(f"MODE 2: position {raw} raw against {s.centre} in MODE 0 "
+              f"(OFFSET {bus.read(a.id, R.OFFSET)}) — centring on the raw value")
+        s.centre = raw
         s.torque(True)
 
         # loop rate
@@ -122,7 +145,7 @@ def main():
         hz = 100 / (time.perf_counter() - t0)
         print(f"host loop: {hz:.0f} Hz (one feedback read + one duty write)")
 
-        if not a.skip_open:
+        if "A" in a.runs and not a.skip_open:
             print("\nA. open-loop duty steps from rest, 0.25 s, free horn")
             print(f"  {'duty':>5} {'U':>5} {'acc0':>7} {'w@0.25':>7} {'I_pk':>5}")
             for d in ((300, 500, -300, -500) if not a.trace else (500, -500)):
@@ -153,10 +176,12 @@ def main():
             print("!!", loop.trip)
             return
 
-        print(f"\nB. host loop steps, kp {a.kp:.0f} kd {a.kd:.0f} dmax {a.dmax}"
+        gains = f"kp {a.kp:.0f} kd {a.kd:.0f} ki {a.ki:.0f} kff {a.kff:.0f} dmax {a.dmax} rate {a.rate or hz:.0f}"
+        if "B" in a.runs:
+          print(f"\nB. host loop steps, {gains}"
               f"   (position mode: w_peak 2.8*sqrt(d), t_arr 0.23/0.38/0.60)")
-        print(f"  {'step':>5} {'w_peak':>7} {'a_fit':>6} {'t_arr':>6} {'over':>6} {'err_ss':>7} {'I_pk':>5}")
-        for d in a.steps:
+          print(f"  {'step':>5} {'w_peak':>7} {'a_fit':>6} {'t_arr':>6} {'over':>6} {'err_ss':>7} {'I_pk':>5}")
+        for d in (a.steps if "B" in a.runs else ()):
             res = []
             for q0, q1 in ((0.0, d), (d, 0.0)):
                 loop.run(lambda t: q0, 0.6)
@@ -165,7 +190,7 @@ def main():
                     break
                 ts, w = smooth_rate(L[:, 0], L[:, 2])
                 wpk = float(np.abs(w).max())
-                arr = np.nonzero(np.abs(L[:, 2] - q1) < 0.02 * abs(d))[0]
+                arr = np.nonzero(np.abs(L[:, 2] - q1) < max(0.02 * abs(d), math.radians(1)))[0]
                 over = float(np.max((L[:, 2] - q1) * np.sign(q1 - q0)))
                 res.append((wpk, L[arr[0], 0] if len(arr) else float("nan"), over,
                             abs(L[-10:, 2].mean() - q1), L[:, 5].max()))
@@ -179,9 +204,10 @@ def main():
             print("!!", loop.trip)
             return
 
-        print(f"\nC. host loop sines ±{math.degrees(a.amp):.0f}°   (position mode: 0.74 @1, 0.25 @2, 0.07 @5 Hz)")
-        print(f"  {'Hz':>4} {'gain':>5} {'lag':>6} {'w_rms':>6} {'I_rms':>5} {'temp':>4}")
-        for f in a.freqs:
+        if "C" in a.runs:
+          print(f"\nC. host loop sines ±{math.degrees(a.amp):.0f}°, {gains}   (position mode: 0.74 @1, 0.25 @2, 0.07 @5 Hz)")
+          print(f"  {'Hz':>4} {'gain':>5} {'lag':>6} {'w_rms':>6} {'I_rms':>5} {'I_pk':>5} {'temp':>4}")
+        for f in (a.freqs if "C" in a.runs else ()):
             T = max(3.0, 6 / f)
             L = loop.run(lambda t: a.amp * math.sin(2 * math.pi * f * t), T)
             if loop.trip:
@@ -197,7 +223,7 @@ def main():
                  for k in range(0, nmax + 1)]
             lag = -int(np.argmax(c)) * dt * f * 360
             print(f"  {f:>4.1f} {g:5.2f} {lag:5.0f}° {np.sqrt(np.mean(L[m, 3] ** 2)):6.2f} "
-                  f"{np.sqrt(np.mean(L[m, 5] ** 2)):5.2f} {s.feedback()['temp']:>4}")
+                  f"{np.sqrt(np.mean(L[m, 5] ** 2)):5.2f} {L[m, 5].max():5.2f} {s.feedback()['temp']:>4}")
             time.sleep(0.5)
         if loop.trip:
             print("!!", loop.trip)
