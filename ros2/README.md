@@ -318,7 +318,7 @@ The chain, each step one node:
 
 ```bash
 ros2 launch smalldog_nav nav.launch.py explore:=true                 # sim (sim.sh teleop:=false first)
-ros2 launch smalldog_nav nav.launch.py use_sim_time:=false cloud:=/lidar/points speed:=0.08 explore:=true
+ros2 launch smalldog_nav nav.launch.py use_sim_time:=false cloud:=/lidar/points speed:=0.12 explore:=true
                                                                      # robot (robot.launch.py imu:=true lidar:=true)
 ros2 topic pub -1 /smalldog/explore std_msgs/msg/Bool "{data: false}"   # pause; true resumes
 ```
@@ -549,7 +549,7 @@ source install/setup.bash
 ros2 launch smalldog_hardware robot.launch.py imu:=true joy:=true   # stand; drive it from the gamepad
 ros2 launch smalldog_hardware robot.launch.py mode2:=false ...        # the servo firmware's own loop (the old runtime)
 ros2 launch smalldog_hardware robot.launch.py imu:=true lidar:=true  # + the L2 on /lidar/points, for smalldog_nav
-ros2 run smalldog_teleop keyboard --ros-args -p speed:=0.08 -p turn:=0.65   # or a keyboard, second terminal
+ros2 run smalldog_teleop keyboard --ros-args -p speed:=0.12 -p turn:=0.9   # or a keyboard, second terminal (MODE 2 fit)
 tools/robot_go.sh 5 0.08                                   # or: walk straight 5 s, hands off
 ```
 
@@ -583,10 +583,14 @@ topic has two publishers — a leftover MuJoCo launch on the mac reaches the Pi 
 LAN on domain 0 and was the robot's first goal once. Give the robot its own
 `ROS_DOMAIN_ID` if the mac is going to run the sim at the same time.
 
-The launch file carries the gait fitted to the servo (`robot/README.md`, "The gait is
-fitted to the servo"), not the sim's numbers: period 1.35 s, `stride_max` raised to
-admit it, `period_min` pinned to the same period, and the heading hold capped at
-`yaw_max` 0.2 rad/s. The pin matters for turns: `period_for` counts `|wz| · 0.25` as
+The launch file carries the gait fitted to the servo loop (`robot/README.md`, "The gait
+is fitted to the servo"), not the sim's numbers — one point per loop (`FIT` in
+`robot.launch.py`): **MODE 2, the default: period 0.95 s, 0.12 m/s, turn 0.9 rad/s**
+under the 4.7 rad/s ceiling of the host loop; `mode2:=false`: period 1.35 s, 0.08 m/s,
+turn 0.65 under the firmware's 3.28. Either way `stride_max` is raised to admit the
+speed, `period_min` is pinned to the same period, and the heading hold is capped at
+`yaw_max` 0.2 rad/s. The floor numbers below are the firmware loop's; the MODE 2 point
+has walked the bench (`robot/README.md`) and not yet the floor (**verify**). The pin matters for turns: `period_for` counts `|wz| · 0.25` as
 speed and cut the cycle to 0.86 s at Nav2's 0.5 rad/s, where the servos lag a foot into
 the wrong half of the stride and the turn's direction is a coin toss (`wz +0.5` read
 −36° and then +30°, `−0.5` read +34°, IMU, 2026-09-16). Pinned at 1.35 s: `+0.5` →

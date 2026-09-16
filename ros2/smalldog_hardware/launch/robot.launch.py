@@ -15,24 +15,21 @@ Or without a keyboard:
 
     ros2 topic pub -r 20 /cmd_vel geometry_msgs/msg/Twist "{linear: {x: 0.08}}"
 
-The gait numbers are an operating point fitted to the servo's 3.28 rad/s ceiling
+The gait numbers are an operating point fitted to the servo loop's rate ceiling
 (`robot/runtime/walk.py --dry-run` prints the fit; `joint_rate_demand` there is the
 table), not the sim's defaults. The sim's 0.20 m/s at period 0.45 s demands 7.55 rad/s
-and drags the feet (`robot/README.md`, "The gait is fitted to the servo"). Two points
-are measured on the floor (2026-09-15):
+and drags the feet (`robot/README.md`, "The gait is fitted to the servo"). `FIT` below
+holds one point per loop:
 
-    blind (imu:=false)   0.11 m/s, period 1.35 s        demand 3.09 rad/s, walks
-    imu:=true            0.08 m/s, period 1.35 s, the heading hold capped at 0.2 rad/s
-                         demand 3.04 rad/s, walks, 44 deg peak tracking error; at
-                         0.11 m/s with the gait's own 0.5 rad/s cap it is 4.65, a knee
-                         fell 0.7 rad behind and the guard tripped
+    mode2:=true (default)  period 0.95 s, 0.12 m/s, turn 0.90 — under the 4.7 rad/s the
+                           bridge does at full duty; 0.16 fits blind (verify on the floor)
+    mode2:=false           period 1.35 s, 0.08 m/s, turn 0.65 — the firmware's 3.28;
+                           measured 2026-09-15: 0.11 blind walks, 0.08 with the heading
+                           hold walks at 44 deg peak tracking error, 0.11 + hold tripped
 
 `speed` here sets the teleop's speed and the gait's `stride_max` (so `period_for` admits
 the period); it does not cap `/cmd_vel` from elsewhere — publish the same number.
 """
-import os
-
-from ament_index_python.packages import get_package_share_directory
 import os
 
 from ament_index_python.packages import get_package_share_directory
@@ -43,15 +40,21 @@ from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 
-PERIOD, TURN = 1.35, 0.65
 #: robot/runtime/walk.py MODE2_RATE_LIMIT — the bridge at full duty at the pack's 11.3 V
 MODE2_RATE_CEILING = 4.7
+#: The gait's operating point per servo loop: (period s, turn rad/s, default speed m/s).
+#: Both are `walk.py --dry-run`'s fit. The firmware loop's is measured on the floor
+#: (above); MODE 2's period 0.95 admits 0.16 m/s, and 0.12 leaves the heading hold
+#: and Nav2's turns room under the 4.7 rad/s ceiling (fit_cmd scales the rest).
+FIT = {True: (0.95, 0.90, 0.12), False: (1.35, 0.65, 0.08)}
 
 
 def _nodes(context):
-    speed = float(LaunchConfiguration('speed').perform(context))
-    yaw_max = float(LaunchConfiguration('yaw_max').perform(context))
     mode2 = LaunchConfiguration('mode2').perform(context).lower() in ('true', '1', 'yes')
+    PERIOD, TURN, speed_default = FIT[mode2]
+    speed = LaunchConfiguration('speed').perform(context)
+    speed = float(speed) if speed else speed_default
+    yaw_max = float(LaunchConfiguration('yaw_max').perform(context))
     urdf = os.path.join(get_package_share_directory('smalldog_description'), 'urdf',
                         'smalldog.urdf')
     with open(urdf) as f:
@@ -157,8 +160,9 @@ def generate_launch_description():
         DeclareLaunchArgument('mode2', default_value='true',
                               description='the position loop on the Pi (robot/runtime/mode2.py); '
                                           'false = the servo firmware\'s own loop'),
-        DeclareLaunchArgument('speed', default_value='0.08',
-                              description='m/s; 0.11 fits blind, 0.08 leaves room for the heading hold'),
+        DeclareLaunchArgument('speed', default_value='',
+                              description='m/s; empty = the fit for the servo loop (0.12 in '
+                                          'MODE 2, 0.08 under the firmware loop)'),
         DeclareLaunchArgument('yaw_max', default_value='0.2',
                               description='rad/s the heading hold may add; 0 = the gait\'s own 0.5'),
         # off by default: the teleop reads keys from a TTY it does not have under launch

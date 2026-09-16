@@ -2,7 +2,7 @@
 
     ros2 launch smalldog_nav nav.launch.py                        # sim: cloud from MuJoCo
     ros2 launch smalldog_nav nav.launch.py explore:=true          # ... and walk the room out
-    ros2 launch smalldog_nav nav.launch.py use_sim_time:=false cloud:=/lidar/points speed:=0.08 \
+    ros2 launch smalldog_nav nav.launch.py use_sim_time:=false cloud:=/lidar/points speed:=0.12 \
                                            explore:=true autostart:=false
                           # the robot (robot.launch.py imu:=true lidar:=true joy:=true): Back starts it
     ros2 launch smalldog_nav nav.launch.py explore:=true save_map:=/tmp/room
