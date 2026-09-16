@@ -208,6 +208,12 @@ def run(a) -> int:
     node.create_subscription(PointCloud2, a.cloud, lambda m: state.__setitem__("cloud", m),
                              qos_profile_sensor_data)
     pub = node.create_publisher(Twist, "/cmd_vel", 10)
+    # the lidar node parks the L2 after `idle_stop` s without a /cmd_vel, and this tool
+    # waits for a cloud before it commands anything: hold the head on. /lidar/spin is
+    # an override with no "release" (lidar_node.py), so it stays on after the run —
+    # which is what SLAM wants anyway
+    from std_msgs.msg import Bool
+    spin_pub = node.create_publisher(Bool, "/lidar/spin", 10)
     buf = tf2_ros.Buffer()
     tf2_ros.TransformListener(buf, node)
 
@@ -252,9 +258,10 @@ def run(a) -> int:
         return thin(np.concatenate(pts)) if pts else np.zeros((0, 2))
 
     # discovery: with Nav2 up beside the robot launch the first cloud can take > 5 s to arrive
-    end = time.monotonic() + 10.0
+    end = time.monotonic() + 12.0
     while time.monotonic() < end and (state["imu"] is None or state["cloud"] is None):
-        rclpy.spin_once(node, timeout_sec=0.05)
+        spin_pub.publish(Bool(data=True))       # a parked head takes ~3 s to come back
+        rclpy.spin_once(node, timeout_sec=0.5)
     spin(1.0)                                   # and a second for /tf_static
     if state["imu"] is None:
         print("!! no /imu — robot.launch.py imu:=true")
