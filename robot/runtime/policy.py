@@ -255,6 +255,10 @@ def main():
     ap.add_argument("--port", default=None)
     ap.add_argument("--baud", type=int, default=1_000_000)
     ap.add_argument("--preflight", action="store_true")
+    ap.add_argument("--mode2", action="store_true",
+                    help="MODE 2: the position loop on the host (runtime/mode2.py)")
+    ap.add_argument("--sub-hz", type=float, default=0.0,
+                    help="--mode2: pace the host loop, Hz (0: as fast as the bus goes)")
     ap.add_argument("--stand", action="store_true", help="hold the stance under the policy at command 0")
     ap.add_argument("--vx", type=float, default=0.0)
     ap.add_argument("--vy", type=float, default=0.0)
@@ -291,7 +295,12 @@ def main():
     bus = Bus(a.port, a.baud)
     limits = Limits(temp_c=a.temp_c, current_a=a.current_a, volt_min=a.volt_min,
                     q_err_rad=a.track_rad)
-    rt = Runtime(bus, calib, hz=CTRL_HZ, limits=limits)
+    if a.mode2:
+        from runtime.mode2 import Mode2Runtime
+        rt = Mode2Runtime(bus, calib, hz=CTRL_HZ, limits=limits, sub_hz=a.sub_hz)
+        print("MODE 2: host position loop (runtime/mode2.py)")
+    else:
+        rt = Runtime(bus, calib, hz=CTRL_HZ, limits=limits)
     pre = rt.preflight(a.port)
     if not pre["ok"]:
         print("!! not every servo answered; refusing to move")

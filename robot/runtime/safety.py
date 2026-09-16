@@ -103,6 +103,12 @@ class Limits:
     volt_min: float = 9.5           # 3S nearly empty; the bench's lowest point is 9.9
     volt_max: float = 13.2          # 3S full is 12.6; higher is a supply set wrong
     volt_hold_s: float = 0.30
+    #: Over-voltage is judged at once AT REST (`check_at_rest`) and held while driving.
+    #: A bench supply cannot sink: a servo braking hard in MODE 2 pushed the bus from
+    #: 12.7 to 13.8 V for one tick (2026-09-16, one servo, a 2 Hz sine) and tripped a
+    #: limit meant for a supply set wrong before it was asked to move. On the pack the
+    #: regen goes into the cells; on a supply it is a spike, and a spike is held.
+    volt_max_hold_s: float = 0.10
     #: MEASURED, loaded, on the ground, which is the only place this number exists.
     #: It was 0.35 rad (~20 deg), and that was a guess that stopped the very run that
     #: could settle it: at 2.55 kg the first 3 s trot on the bench tripped after one
@@ -153,6 +159,7 @@ class Guard:
         self._err = {n: 0.0 for n in self.joints}
         self._tilt = 0.0
         self._low_v = 0.0
+        self._high_v = 0.0
         self._miss = 0
         self._warned = set()
         #: `temp` is the filtered figure — the robot's actual temperature. `temp_raw`
@@ -187,6 +194,9 @@ class Guard:
             if fb is not None and fb["temp"] >= self.lim.temp_c:
                 raise Tripped("over temperature before torque",
                               n, fb["temp"], self.lim.temp_c)
+            if fb is not None and fb["volt"] >= self.lim.volt_max:
+                raise Tripped("over voltage before torque — the supply is set wrong",
+                              n, fb["volt"], self.lim.volt_max)
 
     # ---------------------------------------------------------------- update
     def update(self, dt, feedback: dict, goal: dict | None = None):
@@ -242,8 +252,6 @@ class Guard:
             v = fb["volt"]
             self.peak["volt_min"] = min(self.peak["volt_min"], v)
             self.peak["volt_max"] = max(self.peak["volt_max"], v)
-            if v >= lim.volt_max and trip is None:
-                trip = Tripped("over voltage", n, v, lim.volt_max)
 
             if goal is not None and n in goal:
                 e = abs(goal[n] - fb["q"])
@@ -257,11 +265,16 @@ class Guard:
         # lowest reading of the tick so a single noisy frame does not start the clock.
         volts = [fb["volt"] for fb in feedback.values() if fb is not None]
         if volts:
-            lo = min(volts)
+            lo, hi = min(volts), max(volts)
             self._low_v = self._low_v + dt if lo <= lim.volt_min else 0.0
             if self._low_v >= lim.volt_hold_s and trip is None:
                 trip = Tripped(f"under voltage for {self._low_v:.2f} s — the pack is done",
                                None, lo, lim.volt_min)
+            # ... and over-voltage, held for the regen spike a bench supply cannot sink
+            self._high_v = self._high_v + dt if hi >= lim.volt_max else 0.0
+            if self._high_v >= lim.volt_max_hold_s and trip is None:
+                trip = Tripped(f"over voltage for {self._high_v:.2f} s",
+                               None, hi, lim.volt_max)
 
         self._miss = 0 if live else self._miss + 1
         if self._miss >= lim.bus_fail and trip is None:
@@ -411,7 +424,14 @@ def _selftest() -> int:
         and feed(g, 10, current=2.5) is None)
 
     g = Guard(joints, log=quiet)
-    chk("over voltage trips at once", feed(g, 1, volt=16.0) is not None)
+    chk("a one-tick regen spike does not trip", feed(g, 2, volt=13.8) is None)
+    chk("... sustained over voltage does", feed(g, 10, volt=13.8) is not None)
+    g = Guard(joints, log=quiet)
+    try:
+        g.check_at_rest({j: frame(volt=16.0) for j in joints})
+        chk("at rest, over voltage refuses at once", False)
+    except Tripped:
+        chk("at rest, over voltage refuses at once", True)
 
     g = Guard(joints, log=quiet)
     chk("a voltage sag does not trip", feed(g, 10, volt=9.0) is None)

@@ -64,20 +64,27 @@ Facts that shape the runtime:
   servos doing that at once is ~8 A from the pack — `pack_sag.py`'s territory.
 - **The bus from the Pi over the CH340 costs 2.0 ms per transaction whatever its size**,
   read or write. A 12-servo read + write tick is ~5.5 ms → ~180 Hz. An FTDI adapter at
-  `latency_timer` 1 would roughly halve it.
+  `latency_timer` 1 would roughly halve it. The mac's adapter does one servo at 1.9 kHz
+  (0.05 ms per transaction) — the Pi's adapter is the slow part, not the bus.
+- **A duty write turns torque on by itself** (`TORQUE_ENABLE` reads 1 after `GOAL_TIME`
+  in MODE 2), so the exit order is duty 0, then torque off, then MODE 0.
+- **Regen on a bench supply**: one servo braking at 3 Hz pushed the bus from 12.7 to
+  15.2 V. The pack absorbs it; on a supply, run twelve of these off the pack.
 
 ## Plan
 
 1. **Stall test** ✅ — the firmware still guards current in MODE 2 (2 A for 2 s, then the
    servo is dead until torque-off). `safety.py` must act below that: a per-servo current
    ceiling that folds the duty back, so a pinned joint softens instead of switching off.
-2. **Runtime in MODE 2.** `loop.py` runs the PD at the bus rate on all twelve (kp 9000 /
-   kd 150 / kff 200, duty ±1000, a duty slew or a current-derived clamp so twelve joints do
-   not draw stall current together); `calib.py` reads centres after the mode switch;
-   `safety.py` owns current, temperature, runaway, and puts MODE 0 back on exit. Test on
-   the stand with the IK trot: `feasible_gait()`'s 0.11 m/s cap came from limit (2); in
-   MODE 2 the ceiling is 4.7 rad/s and acceleration is free, so the trot alone should reach
-   ~0.2 m/s. A result with no training.
+2. **Runtime in MODE 2** — written, `robot/runtime/mode2.py`, `--mode2` on `walk.py` and
+   `policy.py`. ✅ on one free servo through the real tick: 0.99 / 0.98 / 0.96 / 0.63 at
+   1 / 2 / 3 / 5 Hz, the bench table. Centres shift by `OFFSET` at the switch (measured,
+   cross-checked against the register — the raw frame appears ~50 ms after the MODE
+   write); the duty folds back on the current register before the firmware's 2 A / 2 s
+   cut; a runaway check per sub-tick; MODE 0, duty 0, torque off on every exit. Under it
+   `feasible_gait()` caps the trot at 0.16 m/s (period 0.95 s) instead of 0.11.
+   ⏳ **The stand, all twelve, IK trot**: `walk.py --mode2 --stand`, then `--go`. What a
+   loaded leg keeps of the 4.7 rad/s, and the pack's sag with twelve host loops on it.
 3. **s4 on the floor in MODE 2.** It was trained against almost this actuator. If it
    walks, the whole idea is confirmed before any GPU time; if it dances, the difference is
    the host loop's 5 ms delay and the current limit, and that goes into the model.

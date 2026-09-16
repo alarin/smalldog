@@ -57,6 +57,7 @@ sys.path.insert(0, os.path.join(REPO, "ros2", "smalldog_walker"))
 from feetech.bus import Bus                                          # noqa: E402
 from runtime.calib import CALIB, Calibration, load_params            # noqa: E402
 from runtime.loop import CTRL_HZ, FollowingLoopback, Runtime         # noqa: E402
+from runtime.mode2 import DutyLoopback, Mode2Runtime                 # noqa: E402
 from runtime.safety import Limits, Tripped                           # noqa: E402
 from smalldog_walker.contact import Baseline, ServoContact           # noqa: E402
 from smalldog_walker.gait import TrotGait                            # noqa: E402
@@ -103,6 +104,11 @@ def build_gait(params, args) -> TrotGait:
 # what it changed; the gait is left exactly as the sim and the policy know it.
 #
 RATE_MARGIN = 0.95          # of the gait's own limiter; 1.0 exactly is not a place to sit
+#: In MODE 2 (`--mode2`, `runtime/mode2.py`) the profile is gone and the ceiling is the
+#: motor's: 4.7 rad/s at the pack's 11.3 V (`ideas/FAST_SERVOS.md`, limit 1 — the bridge
+#: at full duty, the 3.86 no-load figure being the firmware's plateau). Not `verify`: it
+#: is the bench's number; what is unmeasured is how much of it a loaded leg keeps.
+MODE2_RATE_LIMIT = 4.7
 
 
 def joint_rate_demand(params, speed, period, swing, max_step, height, wz=0.0):
@@ -443,6 +449,10 @@ def main():
                     help="loopback bus, no hardware; implies --profile")
     ap.add_argument("--calib", default=CALIB)
     ap.add_argument("--hz", type=float, default=CTRL_HZ)
+    ap.add_argument("--mode2", action="store_true",
+                    help="MODE 2: the position loop on the host (runtime/mode2.py)")
+    ap.add_argument("--sub-hz", type=float, default=0.0,
+                    help="--mode2: pace the host loop, Hz (0: as fast as the bus goes)")
 
     ap.add_argument("--preflight", action="store_true", help="check everything, no motion")
     ap.add_argument("--stand", action="store_true", help="stand up and hold, no gait")
@@ -500,16 +510,22 @@ def main():
         print("!! run: python runtime/calib.py --capture, then --sign all")
         return 2
 
+    limit = MODE2_RATE_LIMIT if a.mode2 else None
     if not a.as_commanded:
-        speed, period, note = feasible_gait(params, a)
+        speed, period, note = feasible_gait(params, a, limit=limit)
         a.speed, a.period = speed, period
         if note:
             print(note)
-        turn, tnote = feasible_turn(params, a, a.period)
+        turn, tnote = feasible_turn(params, a, a.period, limit=limit)
         a.turn = turn
         if tnote:
             print(tnote)
     gait = build_gait(params, a)
+    if a.mode2:
+        # the gait's own limiter is the position-mode ceiling; lift it to the motor's,
+        # or every command over 3.3 rad/s is clipped before the host loop sees it
+        gait.max_joint_rate = MODE2_RATE_LIMIT
+        print(f"MODE 2: host position loop, joint rate ceiling {MODE2_RATE_LIMIT} rad/s")
     if not a.as_commanded:
         # period_for() only ever SHORTENS the period, pinning it at 2*stride_max/speed, so
         # a period chosen for feasibility has to be admissible there too or it is silently
@@ -542,14 +558,18 @@ def main():
                  else "  !! CLIPPED — the feet will drag in the turn"))
 
     if a.dry_run:
-        bus = Bus(transport=FollowingLoopback(calib.ids), discard_echo=False)
+        loop = DutyLoopback if a.mode2 else FollowingLoopback
+        bus = Bus(transport=loop(calib.ids), discard_echo=False)
         a.profile = a.profile or not a.stand
     else:
         bus = Bus(a.port, a.baud)
 
     limits = Limits(temp_c=a.temp_c, current_a=a.current_a, volt_min=a.volt_min,
                     q_err_rad=a.track_rad)
-    rt = Runtime(bus, calib, hz=a.hz, limits=limits)
+    if a.mode2:
+        rt = Mode2Runtime(bus, calib, hz=a.hz, limits=limits, sub_hz=a.sub_hz)
+    else:
+        rt = Runtime(bus, calib, hz=a.hz, limits=limits)
 
     pre = rt.preflight(None if a.dry_run else a.port)
     if not pre["ok"]:

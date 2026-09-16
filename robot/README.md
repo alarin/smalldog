@@ -22,6 +22,7 @@ because `robot/bench` had to run before there was a robot.
 | `runtime/calib.py`, `calib.json` | which servo is which joint, its zero, its sign — a measurement of one robot, in git |
 | `runtime/safety.py` | the limits, and the one place that decides to cut torque |
 | `runtime/loop.py` | the 50 Hz tick, controller-agnostic |
+| `runtime/mode2.py` | the same tick with the servo's position loop replaced by a PD on the host (MODE 2, open-loop PWM) — `--mode2` on `walk.py` and `policy.py`; `--sine` runs one free servo through it |
 | `runtime/walk.py` | the CLI that runs the trot on the robot; `--go S` walks straight for S seconds, `--log FILE.npz` records every tick, `--imu` adds the BMI088 to it |
 | `slam/slam.py` | LiDAR odometry and a voxel map from the L2. **Not the robot's mapping stack** — `ros2/smalldog_nav` is. Read "SLAM" below before relying on a pose it prints |
 
@@ -220,6 +221,22 @@ in 8 s = 0.083 m/s**, 75 % of the command, on the 1 m bench at 2.5 kg (three 186
 new case, 12.3–12.7 V, 0.25 A peak, 30° peak tracking error, no drag) — the longer stride
 slips more than the 0.14 point did. `feasible_turn()` fits the turn the same way: the teleop's
 1.2 rad/s is capped to 0.65; `clamp_profile()` caps the scripted demo's own velocities.
+
+**`--mode2` lifts the ceiling to 4.7 rad/s** — the motor's, not the firmware's. The
+firmware's position loop profiles every goal at 7.7 rad/s² and no register lifts it
+(`ideas/FAST_SERVOS.md`); `runtime/mode2.py` switches the servos to MODE 2 (a duty on the
+bridge) and closes the position loop itself, on the bus, in the time the 50 Hz tick would
+have slept. Through the real runtime on one free servo a ±15° sine passes at **0.99 / 0.98 /
+0.96 / 0.63** at 1 / 2 / 3 / 5 Hz, against the firmware's 0.74 / 0.25 / – / 0.07. Under it
+`feasible_gait()` caps at **0.16 m/s at period 0.95 s** instead of 0.11 at 1.35 (dry run);
+what a loaded leg keeps of the 4.7 is **verify** — the stand and the IK trot are the test.
+Three facts the runtime handles that `loop.py` never had to: `PRESENT_POSITION` is raw in
+MODE 2 (centres shift by `OFFSET`, measured at the switch and checked against the register);
+the firmware still cuts torque at 2 A for 2 s and a servo cut that way is dead until torque
+is cycled, so the duty is folded back on the current register before that (`i_soft` 1.4 →
+`i_hard` 2.0 A per servo, `i_sum` 10 A on the bus); and a bench supply cannot sink the
+regen of a hard stop — one servo braking at 3 Hz pushed 12.7 V to 15.2 V, which the pack
+absorbs and the guard now holds for 0.1 s rather than tripping on the spike.
 
 The sim does not have this bug — MuJoCo's feet grip at μ ≈ 1.2 — so `gait.py` is untouched;
 fixing it there would move every tuned number in `ros2/` to cure something only the
