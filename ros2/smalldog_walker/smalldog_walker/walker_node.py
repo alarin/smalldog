@@ -68,6 +68,11 @@ class SmallDogWalker(Node):
         # on in robot.launch.py, where Nav2's pure pursuit asks 0.5 rad/s beside 0.08 m/s
         # and the trot dragged its front feet and pitched over them (2026-09-15).
         self.declare_parameter('fit_cmd', False)
+        # The joint-rate budget the gait limits itself to and fit_cmd scales /cmd_vel
+        # against. 0 = robot_params.json's joint_rate_ceiling_rad_s (3.28), the
+        # servo's own position loop. Under the host loop (smalldog_hardware mode2) the
+        # ceiling is the motor's 4.7 rad/s, and robot.launch.py says so here.
+        self.declare_parameter('joint_rate_ceiling', 0.0)
         self.declare_parameter('imu_topic', '/imu')
         self.declare_parameter('foot_load_topic', '/smalldog/foot_load')
         self.declare_parameter('contact_threshold', 1.0)
@@ -88,6 +93,8 @@ class SmallDogWalker(Node):
             params = json.load(f)
 
         self.gait = TrotGait(params)
+        if self.get_parameter('joint_rate_ceiling').value > 0:
+            self.gait.max_joint_rate = float(self.get_parameter('joint_rate_ceiling').value)
         # order matters: the body-height setter clamps against swing and step
         self.gait.period = self.get_parameter('period').value
         self.gait.swing_height = self.get_parameter('swing_height').value

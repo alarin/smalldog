@@ -81,6 +81,7 @@ sys.path.insert(0, os.path.join(REPO, 'robot'))
 from feetech.bus import Bus, BusError                                # noqa: E402
 from runtime.calib import CALIB, Calibration, load_params            # noqa: E402
 from runtime.loop import CTRL_HZ, FollowingLoopback, Runtime         # noqa: E402
+from runtime.mode2 import DutyLoopback, KD, KFF, KP, Mode2Runtime    # noqa: E402
 from runtime.safety import Limits, Tripped                           # noqa: E402
 from smalldog_walker.gait import TrotGait                            # noqa: E402
 
@@ -127,6 +128,14 @@ class ServoNode(Node):
         p('volt_min', Limits.volt_min)
         p('track_rad', Limits.q_err_rad)
         p('diag_hz', 5.0)                  # /diagnostics rate; 0 turns it off
+        # MODE 2, the position loop on the host (robot/runtime/mode2.py): the firmware's
+        # own loop cannot follow the trot (ideas/FAST_SERVOS.md). The walker's rate
+        # budget has to agree — robot.launch.py hands it joint_rate_ceiling 4.7.
+        p('mode2', True)
+        p('sub_hz', 0.0)                   # pace the host loop; 0 = as fast as the bus goes
+        p('kp', KP)
+        p('kd', KD)
+        p('kff', KFF)
         g = lambda k: self.get_parameter(k).value    # noqa: E731
 
         self.params = load_params()
@@ -165,14 +174,21 @@ class ServoNode(Node):
                            else 0)
         self.pub_diag = self.create_publisher(DiagnosticArray, '/diagnostics', 10)
 
+        self.mode2 = bool(g('mode2'))
         if self.dry:
-            self.bus = Bus(transport=FollowingLoopback(self.calib.ids), discard_echo=False)
+            loop = DutyLoopback if self.mode2 else FollowingLoopback
+            self.bus = Bus(transport=loop(self.calib.ids), discard_echo=False)
         else:
             self.bus = Bus(g('port'), int(g('baud')))
         limits = Limits(temp_c=g('temp_c'), current_a=g('current_a'),
                         volt_min=g('volt_min'), q_err_rad=g('track_rad'))
-        self.rt = Runtime(self.bus, self.calib, hz=self.hz, limits=limits,
-                          log=lambda s: self.get_logger().info(str(s)))
+        log = lambda s: self.get_logger().info(str(s))    # noqa: E731
+        if self.mode2:
+            self.rt = Mode2Runtime(self.bus, self.calib, hz=self.hz, limits=limits, log=log,
+                                   kp=float(g('kp')), kd=float(g('kd')), kff=float(g('kff')),
+                                   sub_hz=float(g('sub_hz')))
+        else:
+            self.rt = Runtime(self.bus, self.calib, hz=self.hz, limits=limits, log=log)
 
         # the gait's lowest stance, to sit down into — walk.py's `--no-sit` inverse
         gait = TrotGait(self.params)

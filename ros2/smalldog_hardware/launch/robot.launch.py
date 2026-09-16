@@ -44,11 +44,14 @@ from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 
 PERIOD, TURN = 1.35, 0.65
+#: robot/runtime/walk.py MODE2_RATE_LIMIT — the bridge at full duty at the pack's 11.3 V
+MODE2_RATE_CEILING = 4.7
 
 
 def _nodes(context):
     speed = float(LaunchConfiguration('speed').perform(context))
     yaw_max = float(LaunchConfiguration('yaw_max').perform(context))
+    mode2 = LaunchConfiguration('mode2').perform(context).lower() in ('true', '1', 'yes')
     urdf = os.path.join(get_package_share_directory('smalldog_description'), 'urdf',
                         'smalldog.urdf')
     with open(urdf) as f:
@@ -66,7 +69,8 @@ def _nodes(context):
              output='screen',
              parameters=[{'port': LaunchConfiguration('port'),
                           'imu': LaunchConfiguration('imu'),
-                          'dry_run': LaunchConfiguration('dry_run')}]),
+                          'dry_run': LaunchConfiguration('dry_run'),
+                          'mode2': mode2}]),
 
         Node(package='smalldog_walker', executable='walker', name='smalldog_walker',
              output='screen',
@@ -88,6 +92,9 @@ def _nodes(context):
                           # every /cmd_vel scaled to the servo budget (walker_node.py,
                           # fit_cmd): Nav2 asks forward + turn together
                           'fit_cmd': True,
+                          # the budget fit_cmd scales against: the motor's 4.7 rad/s under
+                          # the host loop, the firmware's 3.28 under its own (0 = params)
+                          'joint_rate_ceiling': MODE2_RATE_CEILING if mode2 else 0.0,
                           # levelling off until the corrected leg map (calib.json,
                           # 2026-09-15) has read a positive turn on +wz on the floor;
                           # the roll loop diverged on the mirrored map (walker_node.py,
@@ -147,6 +154,9 @@ def generate_launch_description():
         DeclareLaunchArgument('port', default_value='/dev/ttyACM0'),
         DeclareLaunchArgument('imu', default_value='false'),
         DeclareLaunchArgument('dry_run', default_value='false'),
+        DeclareLaunchArgument('mode2', default_value='true',
+                              description='the position loop on the Pi (robot/runtime/mode2.py); '
+                                          'false = the servo firmware\'s own loop'),
         DeclareLaunchArgument('speed', default_value='0.08',
                               description='m/s; 0.11 fits blind, 0.08 leaves room for the heading hold'),
         DeclareLaunchArgument('yaw_max', default_value='0.2',

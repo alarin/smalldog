@@ -255,13 +255,18 @@ def main():
     ap.add_argument("--port", default=None)
     ap.add_argument("--baud", type=int, default=1_000_000)
     ap.add_argument("--preflight", action="store_true")
-    ap.add_argument("--mode2", action="store_true",
-                    help="MODE 2: the position loop on the host (runtime/mode2.py)")
+    ap.add_argument("--mode0", action="store_true",
+                    help="the servo's own position loop (MODE 0) instead of the host loop")
+    ap.add_argument("--mode2", action="store_true", help=argparse.SUPPRESS)   # the default
     ap.add_argument("--sub-hz", type=float, default=0.0,
                     help="--mode2: pace the host loop, Hz (0: as fast as the bus goes)")
-    ap.add_argument("--kp", type=float, default=None, help="--mode2: duty per rad")
-    ap.add_argument("--kd", type=float, default=None, help="--mode2: duty per rad/s")
-    ap.add_argument("--kff", type=float, default=None, help="--mode2: duty per rad/s of target")
+    # The MODEL's gains, not the trot's: actuator.Params.kp 5.22 duty/rad, no kd, and no
+    # feed-forward — a policy's target can step 0.1 rad in a tick, which kff 200 turned
+    # into a 1000-duty kick and a dive at command 0 (2026-09-16). 5220 is 5.22 in
+    # register units; s4 walks with these.
+    ap.add_argument("--kp", type=float, default=5220.0, help="host loop, duty per rad")
+    ap.add_argument("--kd", type=float, default=0.0, help="host loop, duty per rad/s")
+    ap.add_argument("--kff", type=float, default=0.0, help="host loop, duty per rad/s of target")
     ap.add_argument("--stand", action="store_true", help="hold the stance under the policy at command 0")
     ap.add_argument("--vx", type=float, default=0.0)
     ap.add_argument("--vy", type=float, default=0.0)
@@ -298,9 +303,9 @@ def main():
     bus = Bus(a.port, a.baud)
     limits = Limits(temp_c=a.temp_c, current_a=a.current_a, volt_min=a.volt_min,
                     q_err_rad=a.track_rad)
-    if a.mode2:
+    if not a.mode0:
         from runtime.mode2 import Mode2Runtime
-        gains = {k: v for k, v in dict(kp=a.kp, kd=a.kd, kff=a.kff).items() if v is not None}
+        gains = dict(kp=a.kp, kd=a.kd, kff=a.kff)
         # smooth=False: the policy was trained against a PD that saw its target at once
         rt = Mode2Runtime(bus, calib, hz=CTRL_HZ, limits=limits, sub_hz=a.sub_hz,
                           smooth=False, **gains)

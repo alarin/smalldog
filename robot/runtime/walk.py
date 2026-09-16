@@ -6,6 +6,11 @@ walk.py — the trot, on the real robot. The CLI that wires everything together.
     python runtime/walk.py --port /dev/ttyUSB0 --stand --seconds 10
     python runtime/walk.py --port /dev/ttyUSB0 --profile
     python runtime/walk.py --port /dev/ttyUSB0            # keyboard teleop
+    python runtime/walk.py --port /dev/ttyUSB0 --mode0    # the firmware's loop, for comparison
+
+The servos run in MODE 2 — the position loop on the host, `runtime/mode2.py` — since
+2026-09-16: the firmware's own loop profiles every goal at 7.7 rad/s² and cannot follow
+the trot (`ideas/FAST_SERVOS.md`). `--mode0` is the old behaviour, kept for comparison.
 
         W/S forward/back   A/D strafe   Q/E turn   space stop
         R/F body up/down   ,/. slower/faster   T torque off/on   Ctrl-C quit
@@ -449,8 +454,9 @@ def main():
                     help="loopback bus, no hardware; implies --profile")
     ap.add_argument("--calib", default=CALIB)
     ap.add_argument("--hz", type=float, default=CTRL_HZ)
-    ap.add_argument("--mode2", action="store_true",
-                    help="MODE 2: the position loop on the host (runtime/mode2.py)")
+    ap.add_argument("--mode0", action="store_true",
+                    help="the servo's own position loop (MODE 0) instead of the host loop")
+    ap.add_argument("--mode2", action="store_true", help=argparse.SUPPRESS)   # the default
     ap.add_argument("--sub-hz", type=float, default=0.0,
                     help="--mode2: pace the host loop, Hz (0: as fast as the bus goes)")
     ap.add_argument("--kp", type=float, default=None, help="--mode2: duty per rad")
@@ -504,6 +510,7 @@ def main():
     ap.add_argument("--track-rad", type=float, default=Limits.q_err_rad,
                     help="tracking-error trip, rad (default %(default)s)")
     a = ap.parse_args()
+    a.mode2 = not a.mode0                  # MODE 2 is the runtime (ideas/FAST_SERVOS.md)
 
     params = load_params()
     calib = Calibration.load(a.calib, params) if os.path.exists(a.calib) \
