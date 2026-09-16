@@ -5,8 +5,9 @@ the firmware, and the plan to run it that way. Measured 2026-09-16 on a free ser
 from the Orange Pi, `robot/bench/{acc_register,pwm_loop,mode2_protect}.py`; the public
 write-up is `ST3215_STS3215_measured_parameters.md`, "Control loop".
 
-**Decision (proposed):** run all twelve servos in MODE 2 (open-loop PWM) with the position
-loop on the Pi at the bus rate. Not taken yet — steps 1–3 below decide it.
+**Decision:** run all twelve servos in MODE 2 (open-loop PWM) with the position loop on
+the Pi at the bus rate. Taken 2026-09-16: steps 1–3 below are done and the s4 policy,
+which danced in place under the firmware loop, walks at ~0.2 m/s under the host loop.
 
 ## The three speed limits, and which one mattered
 
@@ -83,14 +84,35 @@ Facts that shape the runtime:
    write); the duty folds back on the current register before the firmware's 2 A / 2 s
    cut; a runaway check per sub-tick; MODE 0, duty 0, torque off on every exit. Under it
    `feasible_gait()` caps the trot at 0.16 m/s (period 0.95 s) instead of 0.11.
-   ⏳ **The stand, all twelve, IK trot**: `walk.py --mode2 --stand`, then `--go`. What a
-   loaded leg keeps of the 4.7 rad/s, and the pack's sag with twelve host loops on it.
-3. **s4 on the floor in MODE 2.** It was trained against almost this actuator. If it
-   walks, the whole idea is confirmed before any GPU time; if it dances, the difference is
-   the host loop's 5 ms delay and the current limit, and that goes into the model.
-4. **Then train.** `actuator.py` gets a host-loop mode: profile off, PD at ~180 Hz with a
-   one-tick delay, duty clamp, the current limit. `chirp_gain.py` must reproduce the
-   measured table above before a run starts. Start from s4 or bc-ft depending on step 3.
+   ✅ All twelve on the Pi: the loop runs at **165 Hz** (the CH340's 2 ms per
+   transaction; a UART on the Pi or an ESP32 doing the sub-ticks would give 500+). Stand
+   hanging and on the ground: 0.5–1.3° error, peak duty ~200. Trot in air: every joint
+   reaches its full amplitude 20–40 ms behind, 1–2° median error (position mode: 30° at a
+   slower gait). On the bench, `--go 2` at the fitted 0.16 m/s: **~20 cm in 2 s = 0.10 m/s**
+   (position mode 0.083 at 0.11) — the feet slip on the bare bench and the gait's lift-off
+   is a velocity step the loop now follows at full duty, so it looks jerky. Small win; the
+   gait is the limit now, not the servo. Two facts from the bring-up: the target has to
+   slide across the 50 Hz tick (a staircase at kp 9000 is a 600-duty kick every 20 ms and
+   the load flapped ±500 in stance), and a loose joint mount looks exactly like a runaway
+   (fl_roll after the stairwell fall: the runaway trip caught it twice before a hand did).
+3. **s4 on the floor in MODE 2** ✅ — **it walks.** `policy.py ../rl/policy_s4 --mode2
+   --kp 5220 --kd 0 --kff 0` (the model's own gains: kp 5.22 duty/rad, no kd, no
+   feed-forward — with the trot's 9000 / 150 / 200 it dived forward at command 0, the kff
+   turning every action step into a 1000-duty kick). At cmd 0.2 on the bench: **20 cm in
+   1.5 s**, the gait starting 0.6 s after the command, so ~0.2 m/s walking — the sim's
+   0.22 — with joints at 3–5 rad/s, pitch within −7°, roll ±3°, heading held to 0.3°.
+   Twice, `bench/data/mode2_s4_vx02_{a,b}.npz`. The first run tipped at the handover
+   because the 2 s stand-up ended nose-down (−16°) and the policy swung ±17° correcting;
+   `--ramp 4 --stand-before 2` hands over at −3° and it stands dead still for the 2 s.
+   The whole idea is confirmed before any GPU time.
+4. **Then train** ⏳ — from s4. `actuator.py` gets a host-loop mode: profile off, PD at
+   165 Hz with a one-sub-tick delay (6 ms), duty clamp, the current fold (1.4 → 2.0 A
+   register, floor 0.25). `chirp_gain.py` must reproduce the measured table above before
+   a run starts. What to train for: the 0.6 s start-up and the pitch under way; s4 already
+   walks at the sim's speed, so the gain is in robustness, not speed.
+5. **The loop rate** — optional. 165 Hz is the USB adapter. The URT-1 on the Pi's own UART,
+   or an ESP32 running the sub-ticks with the Pi sending targets at 50 Hz, would give 500+
+   Hz and take the 2 ms bus cost off the Pi; do it if step 4's policy wants it.
 
 ## What we do not do
 

@@ -85,6 +85,12 @@ chip). Neither gets its own idea of a soft limit. **The policy on the floor, 202
 on the corrected leg map** (`rl/policy` = 20260915-bc-ft @ 5.6 M, cmd 0.15, measured by
 `../ros2/tools/straight_test.py --watch` with the L2): **0.34 m in 5 s, +2.0° of
 heading** (IMU +2.6°) — the sim's 0.26–0.35 m for this command. That is with
+**And in MODE 2, 2026-09-16** (`--mode2 --kp 5220 --kd 0 --kff 0`, the model's own gains —
+`ideas/FAST_SERVOS.md`): `rl/policy_s4`, the policy that only danced in place under the
+firmware loop, walks: **20 cm in 1.5 s at cmd 0.2** on the bench, the gait starting 0.6 s
+after the command, so ~0.2 m/s under way — the sim's 0.22. Hand over from a level stance
+(`--ramp 4 --stand-before 2`); from a nose-down one the policy swings ±17° correcting.
+That is with
 `policy.py`'s `HeadingHold` on its `wz` command (kp 3, on by default): the policy has no
 heading in its observation and arcs −21° in 5 s at cmd 0.2 in the sim on its own. Body
 rates while walking are still 0.5–0.6 rad/s std against the sim's 0.1–0.3. Backwards at
