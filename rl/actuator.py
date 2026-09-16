@@ -153,6 +153,11 @@ class Params:
     # the P loop alone (the law without the profile) passed 100 % at 2 Hz —
     # which is how a policy learned a 5 Hz trot the servos turned into a
     # 0.74 s rocking on the floor.  `profile_goal()`; a state per joint.
+    # It is a FIRMWARE CEILING, not a setting (bench/acc_register.py, 2026-09-16,
+    # a second servo at 11.6 V): the ACCELERATION register works, in the
+    # documented 100 counts/s^2 (ACC 10 -> 1.6 rad/s^2, 49 -> 7.4), but the
+    # firmware clamps every write above 50 to 50 = 7.67 rad/s^2, and 0 selects
+    # that maximum.  There is no register that lifts it.
     goal_acc: float = 8.0     # rad/s^2, the profile's acceleration cap
     goal_vel: float = 3.86    # rad/s, the profile's speed cap (the measured plateau)
     # --- transmission -----------------------------------------------------

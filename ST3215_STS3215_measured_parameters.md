@@ -341,6 +341,22 @@ the observed droop, and it will be too soft the moment the joint moves.
 
 **Dead zone 0.36°** at the output.
 
+**The goal profile: a firmware acceleration ceiling of 7.7 rad/s², and `ACCELERATION` 0
+selects it.** The loop does not chase your target; it chases an internal goal that moves
+toward the target under a speed cap (the 3.86 rad/s plateau) and an acceleration cap. A
+step's peak speed is `2.8·√(step)` — 0.8 rad/s for a 0.1 rad step, 2.5 for 0.8 — the
+triangle `√(a·d)` at `a ≈ 8`, the same on two arm inertias and at 8 / 10 / 12 V, so it is a
+profile and not the motor. Its consequence is the servo's whole frequency response: a ±15°
+sine passes 74 % at 1 Hz, 25 % at 2 Hz, **7 % at 5 Hz**, while the P loop alone would pass
+100 % at 2 Hz. A policy trained against a model without this term learns a 5 Hz gait the
+servo turns into a slow rock.
+
+Register 41 does move it, in the documented unit of 100 counts/s² (0.153 rad/s²): ACC 10
+gives 1.6 rad/s², 49 gives 7.4, 50 gives 7.7. **Every write above 50 reads back 50**, and
+0 behaves as 50. So the vendor-side readings "0 = instant" and "the smaller, the slower" are
+each half true: 0 is the fastest the servo will go, and that is 7.7 rad/s². There is no
+register that lifts it. (Steps at ACC 0 / 10 / 49–254, two servos, 2026-09-14 and -16.)
+
 ---
 
 ## What is NOT measured here
