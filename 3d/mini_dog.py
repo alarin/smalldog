@@ -844,6 +844,16 @@ LIDAR_CORE_R = 11.0                   # cable core: through the seat on the axis
 LIDAR_NUT_Z  = (8.0,)                 # nut-slot floor above the deck, for the M3 that
                                       # comes up from under the deck.  There is no second
                                       # nut: the L2 screw threads into the L2.
+# ... and that M3 is a FLAT head, countersunk into the deck's underside, for the reason
+# the Orange Pi's bolts are: the rear pair sit over the battery lid, 0.6 mm below the
+# deck, and a socket head there is 3 mm of steel the deck cannot be lowered onto the tray
+# past.  ISO 10642 M3: @6.0 head, 90 deg, in a @6.2 bore; its face LIDAR_SEAT_D below
+# flush, the cone 1.4 tall above that, 2.3 mm of deck left under the bracket's plate -
+# which is what carries the clamp, the deck is a spacer here.  Same M3 x 16: a flat head's
+# length includes the head, so the nut still lands at LIDAR_NUT_Z with 5 mm to spare.
+LIDAR_HEAD_R = 3.1                    # ISO 10642 M3 flat head: @6.0 max, in a @6.2 bore
+LIDAR_SEAT_D = 0.3                    # the head's flat face, up from the deck's underside
+LIDAR_SEAT_H = LIDAR_HEAD_R - M3_CLR  # ... the 90 deg seat's height, 1.4
 
 # The L2 as a SENSOR rather than as a lump of mass.  Everything above describes where the
 # thing is bolted; these are what it sees, and they are here for the same reason the
@@ -2179,9 +2189,15 @@ def chassis_top():
             s = s.cut(cyl(M25_CLR, DECK_T+OPI_STAND_H+2, (p[0], p[1], z0-1)))
             s = s.cut(cyl(OPI_HEAD_R, OPI_SEAT_D+1, (p[0], p[1], z0-1)))
             s = s.cut(cone(OPI_HEAD_R, M25_CLR, OPI_SEAT_H, (p[0], p[1], z0+OPI_SEAT_D)))
+    # LiDAR bracket bolts: M3 clearance, and the flat head's seat sunk from the deck's
+    # UNDERSIDE (LIDAR_HEAD_R / LIDAR_SEAT_D) - the rear pair are over the battery lid, and
+    # a socket head there stopped the deck 2.4 mm short of the tray.
     for i in range(LIDAR_N):
         a = math.radians(360.0*i/LIDAR_N+45.0)
-        s = s.cut(cyl(M3_CLR, 20, (LIDAR_X+LIDAR_BC/2*math.cos(a), LIDAR_BC/2*math.sin(a), z0-1)))
+        p = (LIDAR_X+LIDAR_BC/2*math.cos(a), LIDAR_BC/2*math.sin(a), z0)
+        s = s.cut(cyl(M3_CLR, 20, (p[0], p[1], z0-1)))
+        s = s.cut(cyl(LIDAR_HEAD_R, LIDAR_SEAT_D+1, (p[0], p[1], z0-1)))
+        s = s.cut(cone(LIDAR_HEAD_R, M3_CLR, LIDAR_SEAT_H, (p[0], p[1], z0+LIDAR_SEAT_D)))
     s = s.cut(cyl(LIDAR_CORE_R, 20, (LIDAR_X, 0, z0-1)))   # the LiDAR cable, into the tray
     s = s.cut(bxc(IMU_WINDOW[0], IMU_WINDOW[1], -34, 34, z0-1, z1+1))
     s = s.cut(bxc(58, 60, -26, 26, z0-1, z1+1))
@@ -3084,6 +3100,15 @@ def opi_bolt_check():
     return (OPI_BOLT_L - (stack - OPI_SEAT_D), OPI_SEAT_D,
             DECK_T + OPI_STAND_H - OPI_SEAT_D - OPI_SEAT_H)
 
+def lidar_bolt_check():
+    """The bracket's deck bolt, M3 x 16 flat from under the deck: (seat_mm, deck_mm,
+    spare_mm).  seat is the head's face below the deck's underside (>= 0 or the head stands
+    proud, into the battery lid - which is how the deck once stopped 2.4 mm above the
+    tray); deck is what is left of DECK_T above the cone, under the bracket's plate; spare
+    is the thread past the nut in the boss."""
+    return (LIDAR_SEAT_D, DECK_T - LIDAR_SEAT_D - LIDAR_SEAT_H,
+            16.0 - LIDAR_SEAT_D - LIDAR_NUT_Z[0] - M3_NUT_H)
+
 def opi_clear():
     """The Orange Pi's case against the LiDAR bracket in front of it.  Returns
     (overlap_mm3, gap_mm): mm3 of lidar_mount inside OPI_BOX, and the air between the
@@ -3475,6 +3500,14 @@ def main():
         print(f"  buck clear:  {BUCK_BOX[0]:.0f}x{BUCK_BOX[1]:.0f}x{BUCK_BOX[2]:.1f} on the case"
               f" top at x {BUCK_X:.0f}, {bz:+.2f} mm under the GPS plate, {by:+.2f} mm to"
               f" the mast arms")
+    seat, deck, spare = lidar_bolt_check()
+    if seat < 0.0 or deck < 2.0 or spare < 2.0:
+        print(f"  !! LIDAR BOLTS  M3 x 16 flat: head face {seat:.1f} up from the deck's"
+              f" underside, {deck:.1f} mm of deck above the seat, {spare:.1f} mm past the nut")
+    else:
+        print(f"  lidar bolts: 4 x M3 x 16 flat from under the deck, head faces {seat:.1f} mm"
+              f" up the @{2*LIDAR_HEAD_R:.1f} bores, {deck:.1f} mm of deck above the seats,"
+              f" {spare:.1f} mm past the nut")
     ov, cg = opi_clear()
     xr = OPI_X+OPI_HOLE_DX-OPI_HOLES[0]/2 - OPI_STAND_R
     eng, seat, boss = opi_bolt_check()

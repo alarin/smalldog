@@ -297,7 +297,11 @@ through the **lateral** wall, the neutral axis for the bending the knee does.
   - `LIDAR_X` = 42 is the **deck interface** and is pinned: the base plate must clear the
     Orange Pi's case behind it (leg bosses at 20.65, case front at 19.5) and its bolts must land on a deck ending at 63
     (≤ 44.1). The stem stands on that plate, flush with the chassis front face, and two
-    ribs behind it carry the sensor's moment back to the four deck bolts. The ribs thread
+    ribs behind it carry the sensor's moment back to the four deck bolts. Those are
+    **hex-socket flat heads, countersunk into the deck's underside** (`LIDAR_HEAD_R`,
+    `LIDAR_SEAT_D`: Ø6.2 bore, 90° seat, face 0.3 below flush, 2.3 mm of deck left under
+    the plate): the rear pair sit over the battery lid, 0.6 mm below the deck, and a head
+    standing proud there is what stops the deck going onto the tray. The ribs thread
     between the L2's inner and outer screw heads so a driver reaches all four from behind.
   - Two bolt circles: ours ⌀45 at 45° for the deck screws; the sensor's **⌀51 at
     22.5° + k·90°, 4 × M3 tapped 6 mm deep**, off the L2 drawing (⌀60 spigot, ⌀75 base), on
@@ -464,7 +468,7 @@ Counts are per robot and come off the geometry: 12 joints × (one `sleeve()` + o
 | M2.5 × 11, hex-socket flat (ISO 10642) (deck, from below → spacer boss → Pi case plate → the case's brass spacers) | 4 |
 | M2.5 × 8 **thread-forming**, no nut (battery lid → the module's front wall) | 2 |
 | foam strip, ~1.4 × 20 × 90 mm (over the battery lid, under the deck — the gap is 0.60 mm) | 1 |
-| M3 × 16 + M3 nut (LiDAR bracket → deck, from underneath) | 4 |
+| M3 × 16, hex-socket flat (ISO 10642) + M3 nut (LiDAR bracket → deck, from underneath, countersunk into the deck) | 4 |
 | M3 × 12 (Unitree L2 → bracket seat, into the L2's own M3 threads) | 4 |
 | M3 × 24 (GPS mast + deck → tray boss, **replaces** the rear two deck screws) | 2 |
 | cable tie, 2.5 mm (GPS receiver → platform) | 2 |
@@ -486,6 +490,11 @@ Lengths that are derived, and where a longer screw is *not* the safe direction:
   the Pi's own screw shares from the top. 4.55 mm of boss carries the seat; a 1.5 mm
   key reaches the head through the Ø5.2 bore. On a deck printed before this, drill
   Ø5.2 to 4.8 deep from below and countersink — `opi_bolt_check()` prints the numbers.
+- **LiDAR bracket, M3 × 16 flat, from below**: the head sits in a 90° seat in the deck's
+  underside, its face 0.3 mm up a Ø6.2 bore, 2.3 mm of deck left above the cone under the
+  bracket's 6 mm plate, which is what the bolt clamps; the nut lands at `LIDAR_NUT_Z`
+  with 5 mm of thread past it. On a deck printed before this, countersink the four holes
+  from below to Ø6.2 — `lidar_bolt_check()` prints the numbers.
 - **cradle, M3 × 10**: counterbore floor 59.4 into the insert at 64.5…70.5 by 4.9 of its
   6; × 12 would stop 0.1 mm inside the boss, a burr from the servo's rear face.
 - **foot, M3 × 30**: head seats `FOOT_CB_Z` = 8 mm below `FOOT_Z` in the sole's ⌀6.4
