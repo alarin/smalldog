@@ -107,8 +107,17 @@ class Mode2Runtime(Runtime):
                  limits: Limits | None = None, log=print,
                  kp=KP, kd=KD, kff=KFF, duty_max=DUTY_MAX,
                  i_soft=1.4, i_hard=2.0, i_floor=0.25, i_sum=10.0,
-                 runaway_rad=1.2, sub_hz=0.0):
+                 runaway_rad=1.2, sub_hz=0.0, smooth=True):
         super().__init__(bus, calib, hz, limits, log)
+        #: The source hands over a target every tick, so the host loop sees a 50 Hz
+        #: staircase — and at kp 9000 each 20 ms step is a ~600-duty kick that the
+        #: joint answers and overshoots (the load flapped ±500 tick to tick in stance
+        #: on the first air trot). Smoothing slides the target linearly from the
+        #: previous setpoint to the new one over the tick: one tick of lag, no kicks.
+        #: Off for a policy trained against a PD that saw its target at once.
+        self.smooth = smooth
+        self._goal_prev = dict(self.goal)
+        self._t_goal = time.perf_counter()
         self.kp, self.kd, self.kff, self.duty_max = kp, kd, kff, duty_max
         self.i_soft, self.i_hard, self.i_floor, self.i_sum = i_soft, i_hard, i_floor, i_sum
         self.runaway_rad = runaway_rad
@@ -193,7 +202,7 @@ class Mode2Runtime(Runtime):
         fb = self.read()
         for n in self.calib.joints:
             if fb[n] is not None:
-                self.goal[n] = fb[n]["q"]
+                self.goal[n] = self._goal_prev[n] = fb[n]["q"]
             self.v_ff[n] = 0.0
         shifts = {n: (raw[n] - self.calib.centre[n]) for n in self.calib.joints}
         self.log("MODE 2 on all servos; raw centre shift: " + " ".join(
@@ -239,7 +248,9 @@ class Mode2Runtime(Runtime):
         q = self.calib.clamp(q)
         for n, v in zip(self.calib.joints, q):
             self.v_ff[n] = (v - self.goal[n]) / self.dt
+            self._goal_prev[n] = self.goal[n]
             self.goal[n] = v
+        self._t_goal = time.perf_counter()
         if self._fb is not None:
             self._pd(self._fb)
         return q
@@ -247,12 +258,14 @@ class Mode2Runtime(Runtime):
     def _pd(self, fb: dict):
         """One duty per joint from one feedback frame, folded, written in one packet."""
         duties, cur, folded = {}, {}, False
+        a = min(1.0, (time.perf_counter() - self._t_goal) / self.dt) if self.smooth else 1.0
         for n in self.calib.joints:
             f = fb.get(n)
             if f is None:
                 duties[n] = 0                    # a joint we cannot hear gets no drive
                 continue
-            err = self.goal[n] - f["q"]
+            target = self._goal_prev[n] + (self.goal[n] - self._goal_prev[n]) * a
+            err = target - f["q"]
             if abs(err) > self.runaway_rad:
                 self._zero_all()
                 self.log(f"!! trip trace, last sub-ticks (t, joint, q, goal, w, duty, I):")

@@ -301,7 +301,9 @@ def main():
     if a.mode2:
         from runtime.mode2 import Mode2Runtime
         gains = {k: v for k, v in dict(kp=a.kp, kd=a.kd, kff=a.kff).items() if v is not None}
-        rt = Mode2Runtime(bus, calib, hz=CTRL_HZ, limits=limits, sub_hz=a.sub_hz, **gains)
+        # smooth=False: the policy was trained against a PD that saw its target at once
+        rt = Mode2Runtime(bus, calib, hz=CTRL_HZ, limits=limits, sub_hz=a.sub_hz,
+                          smooth=False, **gains)
         print("MODE 2: host position loop (runtime/mode2.py)")
     else:
         rt = Runtime(bus, calib, hz=CTRL_HZ, limits=limits)
