@@ -58,6 +58,7 @@ or the next run's preflight finds MODE 2 and restores it.
 from __future__ import annotations
 
 import argparse
+import collections
 import math
 import os
 import sys
@@ -118,8 +119,10 @@ class Mode2Runtime(Runtime):
         self._mode0: dict[int, int] = {}
         self.in_mode2 = False
         self.sub_ticks = 0
+        self.sub_time = 0.0                # wall seconds spent in the sub-tick loop
         self.folds = 0                     # sub-ticks on which some duty was folded
         self.peak_duty = 0
+        self._trace = collections.deque(maxlen=40)   # (t, joint, q, goal, w, duty, I)
 
     # ------------------------------------------------------------- the mode
     def enter_mode2(self):
@@ -252,8 +255,12 @@ class Mode2Runtime(Runtime):
             err = self.goal[n] - f["q"]
             if abs(err) > self.runaway_rad:
                 self._zero_all()
-                raise Tripped("host loop runaway — the bridge drives the count the wrong "
-                              "way on this unit, or the joint is jammed",
+                self.log(f"!! trip trace, last sub-ticks (t, joint, q, goal, w, duty, I):")
+                for row in self._trace:
+                    if row[1] == n:
+                        self.log("     %.3f %s q %+.3f goal %+.3f w %+.2f d %+5d I %.2f" % row)
+                raise Tripped("host loop runaway — the loop is unstable on this joint, or "
+                              "it is jammed",
                               n, abs(err), self.runaway_rad)
             scale = VOLT_REF / max(f["volt"], 6.0)
             d = scale * (self.kp * err - self.kd * f["w"] + self.kff * self.v_ff[n])
@@ -270,11 +277,15 @@ class Mode2Runtime(Runtime):
         if folded or total < 1.0:
             self.folds += 1
         words = {}
+        now = time.perf_counter()
         for n in self.calib.joints:
             d = int(round(duties[n] * total))
             self.duty[n] = d
             self.peak_duty = max(self.peak_duty, abs(d))
             words[self.calib.id[n]] = duty_word(d)
+            f = fb.get(n)
+            if f is not None and abs(self.goal[n] - f["q"]) > 0.5 * self.runaway_rad:
+                self._trace.append((now, n, f["q"], self.goal[n], f["w"], d, f["current"]))
         self.bus.sync_write(R.GOAL_TIME, words)
 
     def _fold(self, i, soft, hard) -> float:
@@ -315,6 +326,7 @@ class Mode2Runtime(Runtime):
             fb = self.read()
             self._pd(fb)
             self.sub_ticks += 1
+            self.sub_time += time.perf_counter() - t
             if self.sub_dt:
                 nxt = t + self.sub_dt
                 while time.perf_counter() < min(nxt, when):
@@ -327,7 +339,7 @@ class Mode2Runtime(Runtime):
     def report(self) -> dict:
         out = super().report()
         out["sub_ticks"] = self.sub_ticks
-        out["sub_hz"] = (self.sub_ticks + self.ticks) * self.hz / max(1, self.ticks)
+        out["sub_hz"] = self.sub_ticks / self.sub_time if self.sub_time else 0.0
         out["folds"] = self.folds
         out["peak_duty"] = self.peak_duty
         return out
@@ -335,7 +347,8 @@ class Mode2Runtime(Runtime):
     def report_lines(self) -> str:
         r = self.report()
         return (super().report_lines()
-                + f"\n  host loop: {r['sub_hz']:.0f} Hz over the bus, peak duty "
+                + f"\n  host loop: {r['sub_hz']:.0f} Hz over the bus (kp {self.kp:.0f} kd "
+                  f"{self.kd:.0f} kff {self.kff:.0f}), peak duty "
                   f"{r['peak_duty']} of {self.duty_max}, current fold on {r['folds']} "
                   f"of {r['sub_ticks']} sub-ticks")
 

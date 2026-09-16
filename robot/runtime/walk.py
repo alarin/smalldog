@@ -453,6 +453,9 @@ def main():
                     help="MODE 2: the position loop on the host (runtime/mode2.py)")
     ap.add_argument("--sub-hz", type=float, default=0.0,
                     help="--mode2: pace the host loop, Hz (0: as fast as the bus goes)")
+    ap.add_argument("--kp", type=float, default=None, help="--mode2: duty per rad")
+    ap.add_argument("--kd", type=float, default=None, help="--mode2: duty per rad/s")
+    ap.add_argument("--kff", type=float, default=None, help="--mode2: duty per rad/s of target")
 
     ap.add_argument("--preflight", action="store_true", help="check everything, no motion")
     ap.add_argument("--stand", action="store_true", help="stand up and hold, no gait")
@@ -567,7 +570,8 @@ def main():
     limits = Limits(temp_c=a.temp_c, current_a=a.current_a, volt_min=a.volt_min,
                     q_err_rad=a.track_rad)
     if a.mode2:
-        rt = Mode2Runtime(bus, calib, hz=a.hz, limits=limits, sub_hz=a.sub_hz)
+        gains = {k: v for k, v in dict(kp=a.kp, kd=a.kd, kff=a.kff).items() if v is not None}
+        rt = Mode2Runtime(bus, calib, hz=a.hz, limits=limits, sub_hz=a.sub_hz, **gains)
     else:
         rt = Runtime(bus, calib, hz=a.hz, limits=limits)
 
