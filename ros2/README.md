@@ -547,10 +547,19 @@ cd ~/smalldog/ros2 && source /opt/ros/jazzy/setup.bash
 colcon build --symlink-install --packages-select smalldog_description smalldog_walker smalldog_teleop smalldog_hardware
 source install/setup.bash
 ros2 launch smalldog_hardware robot.launch.py imu:=true joy:=true   # stand; drive it from the gamepad
+ros2 launch smalldog_hardware robot.launch.py mode2:=false ...        # the servo firmware's own loop (the old runtime)
 ros2 launch smalldog_hardware robot.launch.py imu:=true lidar:=true  # + the L2 on /lidar/points, for smalldog_nav
 ros2 run smalldog_teleop keyboard --ros-args -p speed:=0.08 -p turn:=0.65   # or a keyboard, second terminal
 tools/robot_go.sh 5 0.08                                   # or: walk straight 5 s, hands off
 ```
+
+`mode2:=true` (the default since 2026-09-16) runs the servos in MODE 2 with the position
+loop on the Pi — `robot/runtime/mode2.py`, `ideas/FAST_SERVOS.md` — and hands the walker
+`joint_rate_ceiling` 4.7 rad/s, so `fit_cmd`'s budget goes straight to 0.164 m/s
+(dry run) instead of 0.11. The launch's `speed` default, `PERIOD` and `odom_scale` were
+measured under the firmware's loop and still hold as a conservative operating point; the
+bench walk at 0.16 m/s / 0.95 s slipped to ~0.10 real on the bare bench (**verify** on the
+floor with `tools/straight_test.py` before raising `speed`).
 
 `lidar:=true` is `smalldog_hardware/lidar_node.py`: `3d/tools/stream_pcd`'s TCP feed
 (`robot/slam/slam.py`'s reader, imported) republished as `PointCloud2` in `lidar_link`,

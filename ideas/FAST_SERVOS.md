@@ -105,7 +105,7 @@ Facts that shape the runtime:
    because the 2 s stand-up ended nose-down (−16°) and the policy swung ±17° correcting;
    `--ramp 4 --stand-before 2` hands over at −3° and it stands dead still for the 2 s.
    The whole idea is confirmed before any GPU time.
-4. **Then train** ⏳ — from s4. `actuator.py` gets a host-loop mode: profile off, PD at
+4. **Then train** ⏳ — from s4; the spec is `TRAIN_HOST_LOOP.md`. `actuator.py` gets a host-loop mode: profile off, PD at
    165 Hz with a one-sub-tick delay (6 ms), duty clamp, the current fold (1.4 → 2.0 A
    register, floor 0.25). `chirp_gain.py` must reproduce the measured table above before
    a run starts. What to train for: the 0.6 s start-up and the pitch under way; s4 already
