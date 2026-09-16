@@ -357,6 +357,16 @@ gives 1.6 rad/s², 49 gives 7.4, 50 gives 7.7. **Every write above 50 reads back
 each half true: 0 is the fastest the servo will go, and that is 7.7 rad/s². There is no
 register that lifts it. (Steps at ACC 0 / 10 / 49–254, two servos, 2026-09-14 and -16.)
 
+**The way past it is MODE 2 (open-loop PWM) with the position loop on the host.** The
+bridge has no profile: a free horn reaches its steady speed in ~70 ms from rest. A host
+loop at 250 Hz over one servo (`duty = kp·err − kd·ω`, kp 3000 duty/rad ≈ 14 N·m/rad,
+duty clamped at ±800) passed a ±15° sine at **0.90 / 0.72 / 0.58 / 0.41** at 1 / 2 / 3 /
+5 Hz against the firmware's 0.74 / 0.25 / – / 0.07, and peaked a 0.3 rad step at 3.0 rad/s
+against 1.5. Costs: 1.8 A peaks on a saturated step from rest, a 0.55° standing error
+from Coulomb friction with no integral term, and every protection the firmware gave you
+is now yours to write. Whether the firmware's overcurrent trip still fires in MODE 2 is
+not measured. (`robot/bench/pwm_loop.py`, 2026-09-16, one servo at 11.4 V.)
+
 ---
 
 ## What is NOT measured here

@@ -157,7 +157,11 @@ class Params:
     # a second servo at 11.6 V): the ACCELERATION register works, in the
     # documented 100 counts/s^2 (ACC 10 -> 1.6 rad/s^2, 49 -> 7.4), but the
     # firmware clamps every write above 50 to 50 = 7.67 rad/s^2, and 0 selects
-    # that maximum.  There is no register that lifts it.
+    # that maximum.  There is no register that lifts it — but MODE 2 (open-loop
+    # PWM) has no profile at all: a host P-loop at 250 Hz over one servo passed
+    # 0.41 of a +-15 deg sine at 5 Hz against the firmware's 0.07
+    # (bench/pwm_loop.py).  The path past this cap is the position loop on the
+    # Pi, not a register.
     goal_acc: float = 8.0     # rad/s^2, the profile's acceleration cap
     goal_vel: float = 3.86    # rad/s, the profile's speed cap (the measured plateau)
     # --- transmission -----------------------------------------------------
