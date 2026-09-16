@@ -25,6 +25,17 @@ gives `acc` in the sensor frame, its azimuth is the number.
 Stamps: the node's clock at receipt, not the sensor's own `stamp`. The L2's clock is not
 the Pi's, and slam_toolbox wants scans on the same clock as TF. At 12 Hz over localhost
 the difference is under a frame.
+
+Parking: the L2 stops turning `idle_stop` seconds after the last non-zero /cmd_vel and
+starts again on the next one (stream_pcd's 's' / 'g' bytes). While parked nothing is
+published; slam_toolbox and the costmaps keep what they have, and nav2.yaml sets no
+expected_update_rate, so a silent /scan is not a fault. The catch, measured 2026-09-16:
+the head takes about 25 s to come back (22-28 s over four restarts), and the sensor
+sends nothing until it has. A robot that wakes on /cmd_vel walks that long on the last
+map, which on a nav run is 3 m blind, so the default idle is a minute, long enough that
+a nav pause never parks it, and `idle_stop:=0` never parks. /lidar/spin (Bool) is a
+nudge, not a latch: true starts it now and restarts the idle clock, false parks it now
+and the next /cmd_vel wakes it. Publish true half a minute before a nav run.
 """
 import os
 import sys
@@ -35,8 +46,9 @@ import rclpy
 import rclpy.executors
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
+from geometry_msgs.msg import Twist
 from sensor_msgs.msg import PointCloud2, PointField
-from std_msgs.msg import Header
+from std_msgs.msg import Bool, Header
 
 _HERE = os.path.dirname(os.path.realpath(__file__))
 REPO = os.environ.get('SMALLDOG_REPO') or os.path.dirname(os.path.dirname(os.path.dirname(_HERE)))
@@ -55,6 +67,7 @@ class LidarNode(Node):
         self.declare_parameter('topic', '/lidar/points')
         self.declare_parameter('yaw_offset', 0.0)           # rad about +Z, SDK -> CAD (verify)
         self.declare_parameter('min_range', 0.0)            # m, 0 = everything the SDK sends
+        self.declare_parameter('idle_stop', 60.0)           # s of zero /cmd_vel before the head parks; 0 = never
         src = self.get_parameter('source').value
         self.frame = self.get_parameter('frame_id').value
         self.min_r2 = float(self.get_parameter('min_range').value) ** 2
@@ -73,6 +86,14 @@ class LidarNode(Node):
         self.thread = threading.Thread(target=self.run, daemon=True)
         self.thread.start()
         self.create_timer(5.0, self.report)
+
+        self.idle_stop = float(self.get_parameter('idle_stop').value)
+        self.spinning = True
+        self.last_motion = self.get_clock().now()
+        if self.idle_stop > 0 and hasattr(self.source, 'sock'):
+            self.create_subscription(Twist, '/cmd_vel', self.on_cmd, 10)
+            self.create_subscription(Bool, '/lidar/spin', self.on_spin, 10)
+            self.create_timer(0.5, self.idle_check)
         self.get_logger().info(f'L2 from {self.source.name} -> {self.pub.topic_name} '
                                f'in {self.frame}')
 
@@ -100,8 +121,39 @@ class LidarNode(Node):
         self.get_logger().error(f'L2 feed ended after {self.n} frames: {err or "sender closed"}')
 
     def report(self):
-        self.get_logger().info(f'{self.n} frames, lag {self.source.lag}',
+        self.get_logger().info(f'{self.n} frames, lag {self.source.lag}'
+                               f'{"" if self.spinning else ", parked"}',
                                throttle_duration_sec=30.0)
+
+    # -- parking the head while the robot stands ---------------------------------
+
+    def on_cmd(self, msg):
+        if abs(msg.linear.x) + abs(msg.linear.y) + abs(msg.angular.z) > 1e-3:
+            self.last_motion = self.get_clock().now()
+            self.set_spin(True)
+
+    def on_spin(self, msg):
+        if msg.data:
+            self.last_motion = self.get_clock().now()
+        self.set_spin(msg.data)
+
+    def idle_check(self):
+        if not self.spinning:
+            return
+        idle = (self.get_clock().now() - self.last_motion).nanoseconds * 1e-9
+        if idle > self.idle_stop:
+            self.set_spin(False)
+
+    def set_spin(self, on):
+        if on == self.spinning:
+            return
+        try:
+            self.source.sock.sendall(b'g' if on else b's')
+        except OSError as e:
+            self.get_logger().warn(f'could not {"start" if on else "stop"} the L2: {e}')
+            return
+        self.spinning = on
+        self.get_logger().info('L2 spinning' if on else 'L2 parked')
 
 
 def main(args=None):

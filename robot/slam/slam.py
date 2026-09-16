@@ -122,6 +122,8 @@ class Source:
                 if magic != MAGIC:
                     raise ValueError(f"bad frame magic {magic!r} - wrong port?")
                 n, stamp, ax, ay, az = struct.unpack("<Id3f", _recv_exactly(self.sock, 24, self.stop))
+                if n == 0:                      # stream_pcd's heartbeat: the L2 is parked
+                    continue
                 raw = _recv_exactly(self.sock, 16 * n, self.stop)
                 xyzi = np.frombuffer(raw, dtype="<f4").reshape(n, 4)
                 self.q.put((stamp, (ax, ay, az), xyzi))

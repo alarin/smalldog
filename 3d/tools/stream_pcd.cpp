@@ -17,6 +17,10 @@
  *     accel   float32[3]     the L2's own accelerometer, m/s^2, sensor frame
  *     points  float32[4*n]   x y z intensity, metres, sensor frame (+Z = optical axis)
  *
+ * A frame with n = 0 is a heartbeat: sent once a second whenever the sensor has been
+ * quiet that long (parked, or winding up), so a reader with a receive timeout keeps its
+ * connection.  Readers drop it.
+ *
  * The accelerometer rides along because a cloud in the sensor frame is barely readable
  * when the sensor is not level - and on this robot it is bolted at 45 degrees.  At rest
  * an accelerometer points UP, which is all the viewer needs to stand the room upright.
@@ -24,6 +28,19 @@
  * Deliberately not PCD: a header per frame is 16 bytes against ~200 for a PCD one, and
  * the reader wants a length up front so it can frame the stream without parsing text.
  * A frame is ~5200 points = 83 kB, 12 times a second, so this is ~1 MB/s on the wire.
+ *
+ * CONTROL, the other way on the same socket, one byte each:
+ *
+ *     's'   stop the rotation (the SDK's standby) - the head parks, no frames are sent
+ *     'g'   start it again
+ *
+ * The client (lidar_node.py) uses it to park the L2 while the robot stands still.  The
+ * price, measured 2026-09-16: the head takes about 25 s (22-28) from 'g' to its first
+ * point - the sensor sends nothing at all until it is back at speed, then the full rate
+ * at once - so a parked robot is blind for that long after it decides to move.  Park
+ * on long idles only.  A client that never writes gets the old behaviour, and the
+ * rotation is put back when the client goes away, so a viewer that connects afterwards
+ * finds the sensor turning - half a minute later.
  */
 #include "unitree_lidar_sdk.h"
 #include <arpa/inet.h>
@@ -35,6 +52,7 @@
 #include <sys/socket.h>
 #include <unistd.h>
 #include <vector>
+#include <chrono>
 
 using namespace unilidar_sdk2;
 
@@ -109,8 +127,33 @@ int main(int argc, char *argv[])
         for (int i = 0; i < 500; i++) lreader->runParse();
 
         long frames = 0;
-        bool live = true;
+        bool live = true, spinning = true;
+        auto now = [] { return std::chrono::duration<double>(
+            std::chrono::steady_clock::now().time_since_epoch()).count(); };
+        double started_at = 0.0;            // the last 'g'; 0 once the first point after it is in
+        double last_sent = now();
+        const uint32_t zero = 0;
         while (live) {
+            if (now() - last_sent > 1.0) {  // heartbeat: the sensor is quiet, the socket is not
+                double t = now();
+                live = send_all(client_fd, "ULF3", 4) && send_all(client_fd, &zero, sizeof(zero))
+                    && send_all(client_fd, &t, sizeof(t)) && send_all(client_fd, acc, sizeof(acc));
+                last_sent = now();
+                if (!live) break;
+            }
+            char c;
+            ssize_t k = recv(client_fd, &c, 1, MSG_DONTWAIT);
+            if (k == 0) break;                                  // client closed
+            if (k == 1 && c == 's' && spinning) {
+                lreader->stopLidarRotation();
+                spinning = false;
+                printf("  rotation stopped after %ld frames\n", frames);
+            } else if (k == 1 && c == 'g' && !spinning) {
+                lreader->startLidarRotation();
+                spinning = true;
+                started_at = now();
+                printf("  rotation started\n");
+            }
             int r = lreader->runParse();
             if (r == LIDAR_IMU_DATA_PACKET_TYPE && lreader->getImuData(imu)) {
                 memcpy(acc, imu.linear_acceleration, sizeof(acc));
@@ -118,6 +161,11 @@ int main(int argc, char *argv[])
             }
             if (r != LIDAR_POINT_DATA_PACKET_TYPE) continue;
             if (!lreader->getPointCloud(cloud)) continue;
+            if (!spinning) continue;        // the wind-down: the head still turns for ~1 s
+            if (started_at) {
+                printf("  first points %.1f s after the start\n", now() - started_at);
+                started_at = 0.0;
+            }
             uint32_t n = (uint32_t)cloud.points.size();
             if (!n) continue;
             flat.resize(4 * (size_t)n);
@@ -133,11 +181,13 @@ int main(int argc, char *argv[])
                 && send_all(client_fd, &stamp, sizeof(stamp))
                 && send_all(client_fd, acc, sizeof(acc))
                 && send_all(client_fd, flat.data(), flat.size() * sizeof(float));
+            last_sent = now();
             if (live && ++frames % 120 == 0)
                 printf("  %ld frames sent\n", frames);
         }
         printf("viewer went away after %ld frames\n", frames);
         close(client_fd);
         client_fd = -1;
+        if (!spinning) lreader->startLidarRotation();
     }
 }

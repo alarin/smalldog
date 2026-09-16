@@ -569,6 +569,12 @@ the same shape the sim publishes, so `nav.launch.py` is the same launch over eit
 -bt-navigator -lifecycle-manager -navfn-planner -regulated-pure-pursuit-controller`).
 Untested on the robot (**verify**): the SDK's X about the axis against the CAD's
 (`yaw_offset`), the odometry scale, and the scan slice against the real floor.
+The head parks after 60 s without a non-zero `/cmd_vel` and restarts on the next one
+(`lidar_idle_stop:=0` keeps it turning; `/lidar/spin` `std_msgs/Bool` starts or parks it
+now). Parked, nothing is published and the map holds. Restarting takes **about 25 s**
+(22–28 s measured: the L2 sends nothing until it is back at speed), so a robot woken by
+`/cmd_vel` walks that long on the last map — publish `/lidar/spin true` before a nav run
+rather than let the run wake it.
 
 The gamepad (a 2.4 GHz "Barrot" pad the kernel drives as an Xbox 360 controller,
 `/dev/input/js0`) goes through the `joy` package's `joy_node` and

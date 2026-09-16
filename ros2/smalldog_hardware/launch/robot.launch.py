@@ -131,7 +131,8 @@ def _nodes(context):
         Node(package='smalldog_hardware', executable='lidar', name='smalldog_lidar',
              output='screen', condition=IfCondition(LaunchConfiguration('lidar')),
              parameters=[{'source': LaunchConfiguration('lidar_source'),
-                          'yaw_offset': 2.382}]),
+                          'yaw_offset': 2.382,
+                          'idle_stop': LaunchConfiguration('lidar_idle_stop')}]),
 
         # the IMX415, the UVC module's own MJPEG frames passed through (camera_node.py)
         Node(package='smalldog_hardware', executable='camera', name='smalldog_camera',
@@ -172,6 +173,9 @@ def generate_launch_description():
                               description='publish the L2 on /lidar/points (needs stream_pcd)'),
         DeclareLaunchArgument('lidar_source', default_value='127.0.0.1:9910',
                               description='where stream_pcd serves'),
+        DeclareLaunchArgument('lidar_idle_stop', default_value='60.0',
+                              description='s of zero /cmd_vel before the L2 stops turning '
+                                          '(it needs ~25 s to come back); 0 keeps it spinning'),
         DeclareLaunchArgument('camera', default_value='false',
                               description='publish the IMX415 on /camera/image/compressed'),
         DeclareLaunchArgument('camera_device', default_value='/dev/video0'),

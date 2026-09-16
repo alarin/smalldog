@@ -283,6 +283,8 @@ class Stream:
                 (n,) = struct.unpack("<I", self._recv_exactly(4))
                 (stamp,) = struct.unpack("<d", self._recv_exactly(8))
                 acc = struct.unpack("<3f", self._recv_exactly(12))
+                if n == 0:                      # heartbeat: the L2 is parked
+                    continue
                 raw = self._recv_exactly(16 * n)
                 a = np.frombuffer(raw, dtype="<f4").reshape(n, 4)
                 with self.lock:
