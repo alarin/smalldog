@@ -174,7 +174,15 @@ def report(o: dict) -> str:
                  + (f"; odom_scale measured {o['odom_scale_measured']:.2f}" if "odom_scale_measured" in o else ""))
     if "lidar" in o:
         L = o["lidar"]
-        if abs(o["wz"]) > 0.05 and L["turn_deg"] * o["wz"] < 0:
+        # the 2-D match searches +-60 deg of yaw: past that, or under 70 % inliers, it
+        # lands on the wrong wall (a +103 deg turn read -47 at 51 %, 2026-09-16) - the
+        # sign check then goes to the IMU
+        weak = L["frac"] < 0.70 or abs(L["turn_deg"]) > 60.0
+        if weak:
+            s.append(f"lidar      match is weak ({L['frac'] * 100:.0f} % inliers, {L['turn_deg']:+.0f} deg): "
+                     "read the IMU line for the turn")
+        turn = o.get("imu_yaw_deg", L["turn_deg"]) if weak else L["turn_deg"]
+        if abs(o["wz"]) > 0.05 and turn * o["wz"] < 0:
             s.append("!! turned AGAINST the commanded wz")
         if abs(o["vy"]) > 0.01 and L["left"] * o["vy"] < 0:
             s.append("!! crabbed AGAINST the commanded vy")
@@ -243,7 +251,11 @@ def run(a) -> int:
                 pts.append(s)
         return thin(np.concatenate(pts)) if pts else np.zeros((0, 2))
 
-    spin(2.0)
+    # discovery: with Nav2 up beside the robot launch the first cloud can take > 5 s to arrive
+    end = time.monotonic() + 10.0
+    while time.monotonic() < end and (state["imu"] is None or state["cloud"] is None):
+        rclpy.spin_once(node, timeout_sec=0.05)
+    spin(1.0)                                   # and a second for /tf_static
     if state["imu"] is None:
         print("!! no /imu — robot.launch.py imu:=true")
     if state["cloud"] is None:

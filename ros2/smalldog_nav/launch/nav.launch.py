@@ -58,7 +58,9 @@ def _nodes(context):
                  'angle_min': -HALF_FOV, 'angle_max': HALF_FOV,
                  'angle_increment': math.radians(0.5),
                  'scan_time': 1.0 / 12.0,
-                 'range_min': 0.30, 'range_max': 6.0}]),
+                 'range_min': 0.30, 'range_max': 6.0,
+                 # a return below the floor is a drop, walled at its edge (the stairwell)
+                 'drop_depth': 0.12, 'drop_range': 2.0}]),
 
         # slam_toolbox is a lifecycle node in Kilted and comes up unconfigured - no scan
         # subscription, no map - until something transitions it. Its own manager, with

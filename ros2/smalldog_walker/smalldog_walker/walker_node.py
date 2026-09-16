@@ -38,6 +38,11 @@ class SmallDogWalker(Node):
         # m/s) is silently shortened back unless the pin is raised to admit it — the
         # same line robot/runtime/walk.py has after its feasibility fit.
         self.declare_parameter('stride_max', 0.0)
+        # 0 = the gait's own (0.30 s). The floor of `period_for`: a turn counts as
+        # |wz| * 0.25 of speed and shortens the cycle past `stride_max`, and the servo
+        # does not track a shorter cycle than the one the period was fitted for (measured
+        # 2026-09-15: at 0.86 s the turn's direction is a coin toss, robot.launch.py)
+        self.declare_parameter('period_min', 0.0)
         # 0 = the gait's own. The heading hold adds up to `yaw_max` rad/s of turn ON TOP
         # of the forward command, and on hardware there is no joint speed left for it:
         # at 0.11 m/s the straight line uses the whole ceiling, and the gait's 0.5 rad/s
@@ -90,6 +95,8 @@ class SmallDogWalker(Node):
         self.gait.body_height = self.get_parameter('body_height').value
         if self.get_parameter('stride_max').value > 0:
             self.gait.stride_max = self.get_parameter('stride_max').value
+        if self.get_parameter('period_min').value > 0:
+            self.gait.period_min = self.get_parameter('period_min').value
         if self.get_parameter('yaw_max').value > 0:
             self.gait.yaw_max = self.get_parameter('yaw_max').value
         if self.get_parameter('yaw_ki').value > 0:

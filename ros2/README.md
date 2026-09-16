@@ -309,7 +309,7 @@ The chain, each step one node:
 | step | node | in → out |
 |---|---|---|
 | odometry | `smalldog_walker` (in the walker, `odom:=true` default) | gait velocity + IMU yaw → `/odom`, TF `odom → base_footprint → base_link` |
-| cloud → scan | `smalldog_nav cloud_to_scan` | the L2 cloud → `/scan`, a 0.10..0.35 m slice in the level frame, ±96° |
+| cloud → scan | `smalldog_nav cloud_to_scan` | the L2 cloud → `/scan`, a 0.10..0.35 m slice in the level frame, ±96°, plus every drop in the floor as a wall at its edge |
 | SLAM | `slam_toolbox` (async, mapping) | `/scan` + `odom` → `/map`, TF `map → odom` |
 | navigation | Nav2: planner (NavFn), controller (regulated pure pursuit), behaviors, BT | `/map`, `/scan`, a goal → `/cmd_vel` |
 | exploration | `smalldog_nav explore` | `/map` → `navigate_to_pose` goals until no frontier is left |
@@ -345,6 +345,15 @@ why the explorer spins once before choosing a goal. `cloud_to_scan` is this pack
 sixty lines rather than `pointcloud_to_laserscan`: that node's TF message filter held every
 cloud and dropped it ten seconds later under this Kilted env while `can_transform` said yes
 throughout (the header of `cloud_to_scan.py` has the details).
+
+**A drop is a wall.** The slice cannot see a stairwell — empty air in the band is free
+space — and the explorer walked the robot down one (2026-09-16, two legs). The L2 looks
+down as well as out, so `cloud_to_scan` takes every return more than `drop_depth`
+(0.12 m) below the floor plane within `drop_range` (2 m) and puts it in the scan at the
+range where its ray crossed the floor — the edge, not the tread. Measured held at the
+landing: the edge reads 0.44–0.6 m at half a metre, and the stairwell is a wall in both
+the map and the costmap. `drop_depth` is a tilt tolerance too: 3.4° of level-frame
+error at 2 m, 7° at 1 m, so the IMU has to be up (`imu:=true`) for it to be honest.
 
 **The explorer** takes free cells with an unknown neighbour, clusters them, and walks to
 the cluster that scores best on distance minus half its length — a long edge across the
@@ -567,8 +576,12 @@ LAN on domain 0 and was the robot's first goal once. Give the robot its own
 
 The launch file carries the gait fitted to the servo (`robot/README.md`, "The gait is
 fitted to the servo"), not the sim's numbers: period 1.35 s, `stride_max` raised to
-admit it, and the heading hold capped at `yaw_max` 0.2 rad/s. Measured on the floor,
-2026-09-15, 2.5 kg, 10.7 V:
+admit it, `period_min` pinned to the same period, and the heading hold capped at
+`yaw_max` 0.2 rad/s. The pin matters for turns: `period_for` counts `|wz| · 0.25` as
+speed and cut the cycle to 0.86 s at Nav2's 0.5 rad/s, where the servos lag a foot into
+the wrong half of the stride and the turn's direction is a coin toss (`wz +0.5` read
+−36° and then +30°, `−0.5` read +34°, IMU, 2026-09-16). Pinned at 1.35 s: `+0.5` →
++103° in 5 s, `−0.5` → −101°. Measured on the floor, 2026-09-15, 2.5 kg, 10.7 V:
 
 | | speed | tracking error, peak | |
 |---|---|---|---|
@@ -655,8 +668,9 @@ Foxglove and export it back over the file.
 - `3d/tools/stream_pcd.cpp` reads the L2's IMU and forwards only `linear_acceleration`:
   the sensor's **gyro is read and dropped on the wire**, and so is per-point `time`. Both
   are wanted by anything that deskews or propagates between frames.
-- SLAM and navigation have run in the sim only; nothing under `smalldog_nav` has met the
-  real L2 or the real floor.
+- SLAM and the explorer have run on the robot once (2026-09-16): scans at 12 Hz, the map
+  building and `map → odom` corrected while the explorer drove — until the stairwell.
+  The drop detection above is measured from a held robot, not yet from a walking one.
 - Keys reach the teleop only while the MuJoCo window has focus, on press only (GLFW
   auto-repeat dropped); non-printable keys are not forwarded.
 - `pkill -f robot_state_publisher` before relaunching, or the next `controller_manager`

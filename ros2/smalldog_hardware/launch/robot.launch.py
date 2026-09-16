@@ -75,6 +75,12 @@ def _nodes(context):
                           'imu_topic': '/imu',
                           'period': PERIOD,
                           'stride_max': speed * PERIOD / 2.0,
+                          # and never shorter: `period_for` counts a turn as speed and
+                          # cut the cycle to 0.86 s at Nav2's 0.5 rad/s, where the
+                          # servos lag a foot into the wrong half of the stride and the
+                          # turn's direction is a coin toss (+0.5 read -36 and +30 deg,
+                          # -0.5 read +34, 2026-09-16); 0.3 at 1.35 s reads +46
+                          'period_min': PERIOD,
                           'yaw_max': yaw_max,
                           # the floor veers the blind trot ~7 deg/s; a P hold sat 4 deg
                           # off against that on three straight runs (2026-09-15)

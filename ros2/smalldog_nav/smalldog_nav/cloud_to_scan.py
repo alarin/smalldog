@@ -23,6 +23,15 @@ rocks the body +-3 deg. With the IMU's roll and pitch in the level frame the flo
 stays under `min_height` out to `range_max` at the IMU's residual; without the IMU
 (base_footprint is then base_link lifted, not levelled) the floor at 3 m rises to
 0.16 m at 3 deg, so a scan taken blind wants `min_height` raised or `range_max` cut.
+
+Drops: a stairwell is empty air in the band, i.e. free space, and the explorer walked the
+robot down one (2026-09-16). The L2 looks down as well as out, so the floor's absence is
+in the cloud: returns *below* the floor plane, `drop_depth` under z = 0 within
+`drop_range`. Each such return is put in the scan as an obstacle at the range where its
+ray crossed the floor plane, `r * h / (h - z)` with `h` the sensor's height - that is the
+edge of the drop, not the tread it landed on - so a drop is a wall to SLAM and the
+costmap alike, and Nav2 keeps `robot_radius` + inflation from it. `drop_depth` 0 turns
+it off (a heightfield downhill is a drop too: 0.12 m at 2 m is a 3.4 deg slope).
 """
 import math
 
@@ -69,6 +78,8 @@ class CloudToScan(Node):
         self.declare_parameter('range_min', 0.30)
         self.declare_parameter('range_max', 6.0)
         self.declare_parameter('scan_time', 1.0 / 12.0)
+        self.declare_parameter('drop_depth', 0.12)    # m below the floor plane = a drop; a tread is 0.17
+        self.declare_parameter('drop_range', 2.0)     # m, how far out to look for one: 3.4 deg of tilt there
         g = lambda n: self.get_parameter(n).value
         self.frame = g('target_frame')
         self.zlo, self.zhi = float(g('min_height')), float(g('max_height'))
@@ -77,6 +88,8 @@ class CloudToScan(Node):
         self.nbins = int(round((self.a1 - self.a0) / self.da)) + 1
         self.rmin, self.rmax = float(g('range_min')), float(g('range_max'))
         self.scan_time = float(g('scan_time'))
+        self.drop_depth, self.drop_range = float(g('drop_depth')), float(g('drop_range'))
+        self.drops = 0
 
         self.tf = Buffer()
         self.tf_listener = TransformListener(self.tf, self)
@@ -84,7 +97,8 @@ class CloudToScan(Node):
         self.create_subscription(PointCloud2, 'cloud', self.on_cloud, qos_profile_sensor_data)
         self.n = self.dropped = 0
         self.create_timer(10.0, lambda: self.get_logger().info(
-            f'{self.n} scans, {self.dropped} clouds without TF', throttle_duration_sec=60.0))
+            f'{self.n} scans, {self.dropped} clouds without TF, {self.drops} with a drop in view',
+            throttle_duration_sec=60.0))
 
     def on_cloud(self, msg):
         stamp = Time.from_msg(msg.header.stamp)
@@ -108,9 +122,21 @@ class CloudToScan(Node):
         tr = t.transform.translation
         p = p @ _rot(t.transform.rotation).T + np.array([tr.x, tr.y, tr.z])
         keep = (p[:, 2] >= self.zlo) & (p[:, 2] <= self.zhi)
-        p = p[keep]
-        r = np.hypot(p[:, 0], p[:, 1])
-        a = np.arctan2(p[:, 1], p[:, 0])
+        r = np.hypot(p[keep, 0], p[keep, 1])
+        a = np.arctan2(p[keep, 1], p[keep, 0])
+        if self.drop_depth > 0:
+            h = float(tr.z)                          # the sensor's height over the floor
+            z = p[:, 2]
+            rr = np.hypot(p[:, 0], p[:, 1])
+            hole = (z < -self.drop_depth) & (rr <= self.drop_range) & (rr > 1e-3)
+            if hole.any():
+                self.drops += 1
+                # where each ray crossed z = 0 on its way down: the edge
+                # (an edge under `range_min` - the robot standing at it - is reported at
+                # `range_min`: still a wall in front, not a return the consumers discard)
+                edge = np.maximum(rr[hole] * h / (h - z[hole]), self.rmin)
+                r = np.concatenate([r, edge])
+                a = np.concatenate([a, np.arctan2(p[hole, 1], p[hole, 0])])
         ok = (r >= self.rmin) & (r <= self.rmax) & (a >= self.a0) & (a <= self.a1)
         r, a = r[ok], a[ok]
         ranges = np.full(self.nbins, np.inf)
