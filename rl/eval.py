@@ -113,6 +113,7 @@ does, because the real servo stops at a firmware plateau the law does not carry
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import json
 import os
 import sys
@@ -138,6 +139,15 @@ def parse():
                          "of distance and a fall count. One rollout is a coin: "
                          "the same policy read upright and FELL on consecutive "
                          "days from the one start pose. Implies --terrain.")
+    ap.add_argument("--host-loop", action="store_true",
+                    help="score against the HOST-loop servo (MODE 2: no goal profile, "
+                         "165 Hz held duty, current fold — actuator.Params.host_loop) "
+                         "whatever the run trained on. A run that trained --host-loop "
+                         "is scored that way without this flag; this is for the "
+                         "acceptance test in ideas/TRAIN_HOST_LOOP.md, where s4 "
+                         "(firmware-trained) has to walk at 0.2 in the host-loop model.")
+    ap.add_argument("--cmd", type=float, nargs=3, default=None, metavar=("VX", "VY", "YAW"),
+                    help="the vanilla-MuJoCo pass's command instead of 0.4 0 0")
     ap.add_argument("--shot", default=None, help="write one frame here")
     ap.add_argument("--mem-fraction", type=float, default=0.60)
     ap.add_argument("--json", default=None)
@@ -187,8 +197,11 @@ def main():
         meta = json.load(f)
     targs = meta["args"]
 
-    p = actuator.load()
+    host = bool(a.host_loop or targs.get("host_loop", False))
+    p = dataclasses.replace(actuator.load(), host_loop=host)
     print(f"\nrun         {run_dir}")
+    print(f"servo       {'HOST loop (MODE 2, kp %.0f on the Pi at %.0f Hz, no profile)' % (p.kp * 1000, p.host_hz) if host else 'firmware loop (goal profile %.0f rad/s^2)' % p.goal_acc}"
+          + ("  <- --host-loop, the run trained on the firmware loop" if host and not targs.get("host_loop") else ""))
     # a runs/<name>/ckpt/<step> directory carries the same params + run.json,
     # minus the wall clock: the run is still going when one of these is scored
     trained = (f"{meta['step']/1e6:.1f} of {targs['num_timesteps']/1e6:.1f} M steps"
@@ -199,7 +212,7 @@ def main():
           f"terrain {targs['terrain']}"
           + (f", {meta['wall_clock_min']:.1f} min" if "wall_clock_min" in meta else ""))
 
-    env = Walk(terrain=targs["terrain"], n_boxes=targs["boxes"])
+    env = Walk(terrain=targs["terrain"], n_boxes=targs["boxes"], host_loop=host)
 
     # ---- the policy, deterministic
     networks = ppo_networks.make_ppo_networks(
@@ -327,15 +340,16 @@ def main():
         surfaces.append(("obstacle course", True, True))
 
     sim = {}
+    sim_cmd = tuple(a.cmd) if a.cmd else (0.4, 0.0, 0.0)
     for name, terrain, logs in surfaces:
         mj, notes = model_mod.build(terrain=terrain, n_boxes=0, mjx_safe=not logs)
-        out = rollout_mujoco(mj, policy_jit, env, p, cmd=(0.4, 0.0, 0.0),
+        out = rollout_mujoco(mj, policy_jit, env, p, cmd=sim_cmd,
                              seconds=a.seconds, shot=a.shot if name == "flat" else None)
         sim[name] = out
         print(f"  {name:<16} travelled {out['x_m']*1000:7.1f} mm in {a.seconds:g} s, "
               f"y {out['y_m']*1000:+7.1f} mm, upright {out['upright']:+.3f}, "
               f"{'FELL at %.1f s' % out['fell_at'] if out['fell'] else 'stayed up'}")
-    print(f"  commanded 0.4 m/s forward. The analytic trot's baseline on this box is "
+    print(f"  commanded {sim_cmd}. The analytic trot's baseline on this box is "
           f"{BASELINE_MM['flat']:.1f} mm\n  on flat and {BASELINE_MM['heightfield']:.1f} mm "
           f"on the committed heightfield (ros2/tools/standalone_sim.py),\n"
           f"  both over {BASELINE_SECONDS:g} s.")
@@ -347,7 +361,7 @@ def main():
 
     if a.terrain_seeds:
         mj, _ = model_mod.build(terrain=True, n_boxes=0, mjx_safe=True)
-        runs = [rollout_mujoco(mj, policy_jit, env, p, cmd=(0.4, 0.0, 0.0),
+        runs = [rollout_mujoco(mj, policy_jit, env, p, cmd=sim_cmd,
                                seconds=a.seconds, seed=s) for s in range(a.terrain_seeds)]
         xs = np.array([r["x_m"] for r in runs]) * 1000
         falls = sum(r["fell"] for r in runs)
@@ -440,7 +454,7 @@ def rollout_mujoco(mj, policy_jit, env, p, cmd, seconds, shot=None, seed=None):
     dt_ctrl = float(env.dt)
     n_sub = int(round(dt_ctrl / mj.opt.timestep))
     last_action = np.zeros(12)
-    goal, goal_w = stance_j.copy(), np.zeros(12)   # the firmware's profiled goal
+    loop = actuator.loop_state(stance_j, xp=np)     # the servo loop's state, either mode
     hist = None                       # filled from the first frame, not from zeros
     command = np.array(cmd, float)
     u_bat = 12.0                      # nominal pack; the battery test is elsewhere
@@ -466,18 +480,17 @@ def rollout_mujoco(mj, policy_jit, env, p, cmd, seconds, shot=None, seed=None):
         target = np.clip(stance_j + action * env._action_scale, lo, hi)
 
         for _ in range(n_sub):
-            q = d.qpos[qadr]
-            w = d.qvel[vadr]
             # sag = 0: a nominal pack, deliberately. The battery test is the
             # place the supply is swept; this pass is about the two engines
             # disagreeing, and it can only be that if everything else is held.
             #
             # tau_c_external: the Coulomb floor is MuJoCo's frictionloss on
             # every MuJoCo path (actuator.friction, model.build_spec).
-            goal, goal_w = actuator.profile_goal(p, goal, goal_w, target,
-                                                 float(mj.opt.timestep), xp=np)
-            d.ctrl[act] = actuator.bus_torque(p, goal - q, w, u_bat, 0.0,
-                                              xp=np, tau_c_external=True)
+            # actuator.servo_step is the same function walk.py's scan calls:
+            # the firmware's goal profile, or the Pi's held 165 Hz duty.
+            loop, d.ctrl[act] = actuator.servo_step(
+                p, loop, target, d.qpos[qadr], d.qvel[vadr], float(mj.opt.timestep),
+                u_bat, 0.0, xp=np, tau_c_external=True)
             mujoco.mj_step(mj, d)
 
         if -gravity_b[2] < 0.4 and not fell:

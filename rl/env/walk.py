@@ -319,7 +319,8 @@ class Walk(PipelineEnv):
     def __init__(self, terrain: bool = False, n_boxes: int = 0,
                  weights: rw.Weights | None = None, commands: Commands | None = None,
                  action_scale: float = ACTION_SCALE, ctrl_hz: float = CTRL_HZ,
-                 push: bool = True, obs_noise: float = 0.02, **kw):
+                 push: bool = True, obs_noise: float = 0.02,
+                 host_loop: bool = False, **kw):
         mj_model, self.build_notes = model_mod.build(terrain=terrain, n_boxes=n_boxes, **kw)
         self.mj_model = mj_model
         self.n_boxes = n_boxes
@@ -352,8 +353,12 @@ class Walk(PipelineEnv):
         self._init_q = jnp.array(q0)
         self._stance_j = jnp.array(q0[qadr])
 
-        self._p0 = actuator.load(quiet=True)
-        self._ranges = model_mod.domain_ranges()
+        # host_loop: the servo's loop is the Pi's (MODE 2), not the firmware's —
+        # actuator.Params.host_loop and ideas/TRAIN_HOST_LOOP.md. The same fit,
+        # a different loop around it, and a different bus delay band.
+        self.host_loop = bool(host_loop)
+        self._p0 = dataclasses.replace(actuator.load(quiet=True), host_loop=self.host_loop)
+        self._ranges = model_mod.domain_ranges(host_loop=self.host_loop)
 
         def sensor_adr(name):
             i = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_SENSOR, name)
@@ -475,17 +480,20 @@ class Walk(PipelineEnv):
         `obs_hist` is deliberately NOT here: it needs a frame, a frame needs the
         command, and the command is drawn in this function. The caller stacks it.
         """
-        k_cmd, k_a, k_push = jax.random.split(rng, 3)
+        k_cmd, k_a, k_push, k_sub = jax.random.split(rng, 4)
         gap_lo, gap_hi = self._ranges["push"]["interval_s_abs"]["range"]
+        # the servo loop's state, one per joint (actuator.loop_state): the
+        # firmware's profiled goal starts ON the joint and at rest, which is
+        # what a servo whose torque has just come on does; in host mode the
+        # held duty is zero and the sub-tick phase is drawn, so the 50 Hz tick
+        # and the 165 Hz loop are not locked to each other
+        loop = actuator.loop_state(ps.qpos[self._qadr], xp=jnp)
+        loop["sub_phase"] = jax.random.uniform(k_sub, (), maxval=1.0 / self._p0.host_hz)
         return {
             "command": self._cmd.sample(k_cmd),
             "last_action": jnp.zeros(12),
             "action_buf": jnp.zeros((self._n_delay, 12)),
-            # the firmware's profiled goal, one per joint (actuator.profile_goal):
-            # starts ON the joint and at rest, which is what a servo whose
-            # torque has just come on does
-            "goal": ps.qpos[self._qadr],
-            "goal_w": jnp.zeros(12),
+            **loop,
             "air_time": jnp.zeros(4),
             # leaky integral of (yaw rate - commanded yaw rate): the heading
             # error the last few seconds have accumulated. Reward-side only —
@@ -608,35 +616,34 @@ class Walk(PipelineEnv):
         p = self._params(info)
         u_bat, sag = info["u_bat"], info["sag"]
 
-        # The servo does not chase `target`; its firmware moves an internal goal
-        # toward it under a speed and an acceleration cap, and the P loop chases
-        # THAT. Measured 8 rad/s^2 (actuator.Params.goal_acc): a +-15 deg sine
-        # passes 25 % at 2 Hz and 7 % at 5 Hz. Without this the policy learned
-        # a 5 Hz trot the real servos turned into a rocking on the spot.
+        # The servo does not chase `target`. Firmware loop: its firmware moves an
+        # internal goal toward it under a speed and an acceleration cap, and the
+        # P loop chases THAT. Measured 8 rad/s^2 (actuator.Params.goal_acc): a
+        # +-15 deg sine passes 25 % at 2 Hz and 7 % at 5 Hz. Without this the
+        # policy learned a 5 Hz trot the real servos turned into a rocking on
+        # the spot. Host loop: the Pi recomputes the duty once per 165 Hz bus
+        # round trip and holds it between. actuator.servo_step is both, per
+        # physics step, and eval.py's CPU pass calls the same function.
+        #
+        # One pack and one harness, so the sag is applied to the SUMMED current
+        # of all twelve — stated once in actuator.py and shared with eval.py and
+        # with check_model.py's probe that every drawn parameter is consumed.
+        # tau_c_external: MuJoCo's frictionloss applies the Coulomb floor here,
+        # because tanh(w/v_eps) cannot hold a joint at rest and a stance foot
+        # spends most of its time there (actuator.friction, model.build_spec).
         dt_sub = float(self.sys.opt.timestep)
+        loop_keys = ("goal", "goal_w", "duty", "sub_phase")
 
         def one(carry, _):
-            ps, goal, goal_w = carry
-            q = ps.qpos[self._qadr]
-            w = ps.qvel[self._vadr]
-            goal, goal_w = actuator.profile_goal(p, goal, goal_w, target, dt_sub, xp=jnp)
-            # One pack and one harness, so the sag is applied to the SUMMED
-            # current of all twelve — actuator.bus_torque is that whole chain,
-            # stated once and shared with eval.py's CPU pass and with
-            # check_model.py's probe that every drawn parameter is consumed.
-            #
-            # tau_c_external: MuJoCo's frictionloss applies the Coulomb floor
-            # here, because tanh(w/v_eps) cannot hold a joint at rest and a
-            # stance foot spends most of its time there. Counting it in both
-            # places would double it (actuator.friction, model.build_spec,
-            # PLAN.md 2b).
-            tau = actuator.bus_torque(p, goal - q, w, u_bat, sag, xp=jnp,
-                                      tau_c_external=True)
-            return (self._pipeline.step(self.sys, ps, tau, self._debug), goal, goal_w), tau
+            ps, st = carry
+            st, tau = actuator.servo_step(
+                p, st, target, ps.qpos[self._qadr], ps.qvel[self._vadr], dt_sub,
+                u_bat, sag, xp=jnp, tau_c_external=True)
+            return (self._pipeline.step(self.sys, ps, tau, self._debug), st), tau
 
-        (ps, goal, goal_w), taus = jax.lax.scan(
-            one, (state.pipeline_state, info["goal"], info["goal_w"]), (), self._n_frames)
-        info["goal"], info["goal_w"] = goal, goal_w
+        (ps, st), taus = jax.lax.scan(
+            one, (state.pipeline_state, {k: info[k] for k in loop_keys}), (), self._n_frames)
+        info.update(st)
         tau = taus[-1]
 
         # A shove, on a schedule sampled per episode. Not a model of anything —

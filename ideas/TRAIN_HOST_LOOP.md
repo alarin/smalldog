@@ -149,5 +149,26 @@ in the message, the way `b276193` did.
   step 5 of `FAST_SERVOS.md` exists, and then this number changes in one place.
 - Fit the fold's thresholds. They are the runtime's constants; copy them.
 
+## Status (2026-09-16)
+
+The model change is in: `actuator.Params.host_loop`, `actuator.servo_step` (one per-physics-step
+function both `env/walk.py` and `eval.py` call), `--host-loop` on `train_ppo.py`, `eval.py`,
+`checks/check_model.py`; `model.HOST_DELAY_S` is the 2–8 ms band.
+
+- `_selftest`: on a free servo at 9000/150 the model passes 0.97 / 0.96 / 0.92 / 0.51 of the
+  ±15° sine at 1 / 2 / 3 / 5 Hz (bench 0.99 / 0.98 / 0.96 / 0.63). The bench's 2.9 rad/s
+  step is **kff's**: the feed-forward turned the 0.1 rad step into a saturated duty for the
+  tick, and the model at a saturated duty gives 3.2 rad/s; the P loop alone gives 1.8 (kp 9000)
+  and 1.7 (kp 5220). So the ≥ 2.5 check runs with the duty saturated.
+- Acceptance (mac, 8 rollouts × 4 s): s4 in the host-loop model walks at cmd 0.2 — 0.475 m in
+  4 s in the MJX battery, 603 mm in 4 s in vanilla MuJoCo (≈ 0.15 m/s; the robot does about
+  0.2 under way) — and stands at cmd 0. In the profiled model s4 still rocks: 12 mm at 0.2,
+  187 mm at 0.4. The model is a little slow against the robot, not on the wrong side of it.
+- The fold is written as the runtime has it: the per-joint fold is a **clip** on the duty
+  (`duty_max · f_j`), the bus fold a multiplier after it. The register current the fold reads
+  is the held duty's supply current at the sub-tick, `|duty| · |i_motor|`.
+- 165 Hz is not an integer number of 1 ms steps: a phase accumulator recomputes every 6th or
+  7th step, and the phase is drawn per episode so the 50 Hz tick and the loop are not locked.
+
 ## Questions for review
 

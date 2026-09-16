@@ -103,6 +103,12 @@ def parse():
                     help="curriculum: draw the servo's goal-profile acceleration per "
                          "episode from [LO, HI] rad/s^2 instead of the measured 8. "
                          "A stage, not a model: the last stage must run at 8 8.")
+    ap.add_argument("--host-loop", action="store_true",
+                    help="the servo loop is the Pi's (MODE 2, robot/runtime/mode2.py): "
+                         "no goal profile, the duty recomputed at 165 Hz and held, the "
+                         "current fold, bus delay 2..8 ms. actuator.Params.host_loop; "
+                         "ideas/TRAIN_HOST_LOOP.md. Recorded in run.json; eval.py and "
+                         "replay.py read it back.")
     ap.add_argument("--vx", type=float, nargs=2, default=None, metavar=("LO", "HI"),
                     help="curriculum: the forward-command range instead of Commands.vx. "
                          "A stage from a policy that only walks at 0.4 has to be asked "
@@ -157,7 +163,10 @@ def main():
         for k, v in over.items():
             print(f"reward      {k} = {v:g}")
     kw = dict(terrain=a.terrain, n_boxes=a.boxes, weights=weights,
-              frictionloss=not a.no_frictionloss)
+              frictionloss=not a.no_frictionloss, host_loop=a.host_loop)
+    if a.host_loop:
+        print("servo       HOST LOOP (MODE 2): kp %.0f duty/rad on the Pi at %.0f Hz, no "
+              "profile, current fold on" % (p.kp * 1000, p.host_hz))
     if a.vx is not None:
         from env.walk import Commands
         kw["commands"] = Commands(vx=(float(a.vx[0]), float(a.vx[1])))
@@ -199,7 +208,7 @@ def main():
         ranges = None
         if a.goal_acc is not None or a.box_height is not None:
             import model as model_mod
-            ranges = model_mod.domain_ranges()
+            ranges = model_mod.domain_ranges(host_loop=a.host_loop)
         if a.goal_acc is not None:
             ranges["actuator"]["goal_acc_abs"]["range"] = [float(a.goal_acc[0]), float(a.goal_acc[1])]
             print(f"servo       goal_acc draw {a.goal_acc[0]:g} .. {a.goal_acc[1]:g} rad/s^2 "

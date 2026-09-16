@@ -409,6 +409,88 @@ def _law_moves(base, field, lo, hi, absolute):
     return False
 
 
+def check_host_loop(R):
+    """`--host-loop`: is the MODE 2 model the runtime's loop and not the firmware's.
+
+    Three things that would each silently give the firmware model back
+    (ideas/TRAIN_HOST_LOOP.md): the goal profile must be OFF — a 0.5 rad step's
+    peak speed is not the profile's triangle sqrt(2*8*0.5); the current fold
+    must MOVE across the register range, or it is a constant 1 and the 2 A cut
+    is unmodelled; and the bus delay draw must still land one tick late on some
+    fraction of episodes, or swapping the band deleted the axis the way
+    truncation once did.
+    """
+    R.head("host loop (MODE 2) — is the model the Pi's loop and not the firmware's")
+    import dataclasses
+    import actuator
+    import model as model_mod
+    base = dataclasses.replace(actuator.load(quiet=True), host_loop=True)
+    R.data["host_loop"] = {}
+
+    tri = math.sqrt(2.0 * base.goal_acc * 0.5)
+    fw = actuator.simulate(dataclasses.replace(base, host_loop=False, J_l=1e-4, theta_bl=0.0),
+                           np.full(300, 0.5), 0.004, u_bat=11.3)
+    hl = actuator.simulate(dataclasses.replace(base, J_l=1e-4, theta_bl=0.0),
+                           np.full(300, 0.5), 0.004, u_bat=11.3)
+    pk_fw, pk_hl = float(np.max(fw["w"])), float(np.max(hl["w"]))
+    R.data["host_loop"]["step_peak_rad_s"] = {"firmware": pk_fw, "host": pk_hl}
+    if abs(pk_hl - tri) < 0.15 or pk_hl <= pk_fw:
+        R.say(FAIL, f"goal profile is still on: a 0.5 rad step peaks at {pk_hl:.2f} rad/s "
+                    f"in host mode (the profile's triangle is {tri:.2f}, firmware {pk_fw:.2f})")
+    else:
+        R.say(INFO, f"goal profile off: a 0.5 rad step peaks at {pk_hl:.2f} rad/s in host "
+                    f"mode against the firmware profile's {pk_fw:.2f} (triangle {tri:.2f})")
+    g, _ = actuator.profile_goal(base, 0.0, 0.0, 0.5, 0.001)
+    if float(g) != 0.5:
+        R.say(FAIL, "profile_goal is not the identity in host mode")
+
+    i = np.linspace(0.0, 2.5, 26)
+    f_j = np.array([actuator.fold(base, np.array([x] + [0.0] * 11))[0][0] for x in i])
+    f_bus = np.array([actuator.fold(base, np.full(12, x / 12.0))[1] for x in np.linspace(0, 12, 25)])
+    R.data["host_loop"]["fold_per_joint"] = f_j.tolist()
+    if f_j.max() != 1.0 or f_j.min() != base.fold_floor or len(np.unique(f_j)) < 4:
+        R.say(FAIL, f"the per-joint fold does not move across 0..2.5 A: {f_j.min():.2f}..{f_j.max():.2f}")
+    elif f_bus.max() != 1.0 or f_bus.min() != base.fold_floor:
+        R.say(FAIL, f"the bus fold does not move across 0..12 A: {f_bus.min():.2f}..{f_bus.max():.2f}")
+    else:
+        R.say(INFO, f"current fold: 1 at or below {base.fold_i_soft:g} A, {base.fold_floor:g} at "
+                    f"{base.fold_i_hard:g} A per joint; the bus fold 1 under "
+                    f"{base.fold_i_sum * base.fold_i_soft / base.fold_i_hard:g} A, "
+                    f"{base.fold_floor:g} at {base.fold_i_sum:g} A — the runtime's constants")
+    # the fold reaches the training path: a hot register lowers the torque
+    e12, z12 = np.full(12, 0.3), np.zeros(12)
+    t_cold = float(actuator.bus_torque(base, e12, z12, 11.3, 0.0, xp=np, tau_c_external=True)[0])
+    t_hot = float(actuator.bus_torque(base, e12, z12, 11.3, 0.0, xp=np, tau_c_external=True,
+                                      i_reg=np.array([2.5] + [0.0] * 11))[0])
+    if not t_hot < 0.5 * t_cold:
+        R.say(FAIL, f"the fold does not reach bus_torque: {t_cold:.2f} -> {t_hot:.2f} N*m at 2.5 A")
+    else:
+        R.say(INFO, f"the fold reaches the law: 0.3 rad of error is {t_cold:.2f} N*m cold and "
+                    f"{t_hot:.2f} N*m at 2.5 A on the register")
+
+    ranges = model_mod.domain_ranges(host_loop=True)
+    lo_s, hi_s = ranges["bus"]["delay_s_abs"]["range"]
+    n = 2000
+    g = np.random.default_rng(0)
+    ticks = model_mod.delay_ticks(g.uniform(lo_s, hi_s, n), g.uniform(0, 1, n), 50.0, xp=np)
+    share = float(np.mean(ticks > 0))
+    R.data["host_loop"]["bus_delay"] = {"range_s": [lo_s, hi_s], "share_one_tick_late": share}
+    if not 0.02 < share < 0.98:
+        R.say(FAIL, f"host-loop bus delay {lo_s*1000:.0f}..{hi_s*1000:.0f} ms lands one tick "
+                    f"late on {share*100:.0f} % of draws — the axis is dead")
+    else:
+        R.say(INFO, f"bus delay {lo_s*1000:.0f}..{hi_s*1000:.0f} ms (one sub-tick of pickup "
+                    f"on the tick's own) — {share*100:.0f} % of episodes run one tick late")
+    # the per-episode draw still moves the law in this mode
+    if not _law_moves(base, "kp", 0.85, 1.15, False):
+        R.say(FAIL, "kp's draw does not move the host-loop law")
+    if _law_moves(base, "deadband", 0.0, 0.0061, True) or _law_moves(base, "punch", 0.0, 0.06, True):
+        R.say(FAIL, "deadband/punch move the host-loop law — those registers are the firmware's")
+    else:
+        R.say(INFO, "deadband and punch are inert in host mode (the firmware's registers); "
+                    "kp's +-15 % draw still moves the law")
+
+
 def check_randomisation(R):
     """Every per-unit servo parameter must be drawn per episode AND consumed.
 
@@ -658,6 +740,9 @@ def main():
     ap.add_argument("--view", action="store_true", help="open the passive viewer")
     ap.add_argument("--shot", default=None, help="render one frame to this png")
     ap.add_argument("--json", default=None, help="write the numbers here")
+    ap.add_argument("--host-loop", action="store_true",
+                    help="also audit the MODE 2 (host-loop) servo model: profile off, "
+                         "the current fold alive, the bus delay draw alive")
     a = ap.parse_args()
 
     scene = a.scene or os.path.join(
@@ -679,6 +764,8 @@ def main():
     check_stand(m, d, R, P, a.settle)
     check_sensors(m, R)
     check_randomisation(R)
+    if a.host_loop:
+        check_host_loop(R)
     ledger(R)
 
     print("\n== result " + "=" * 68)

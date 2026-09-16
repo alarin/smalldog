@@ -166,6 +166,28 @@ class Params:
     # the firmware's overload protection is off in that mode (mode2_protect.py).
     goal_acc: float = 8.0     # rad/s^2, the profile's acceleration cap
     goal_vel: float = 3.86    # rad/s, the profile's speed cap (the measured plateau)
+    # --- the host loop: MODE 2, the position loop on the Pi ------------------
+    # ideas/TRAIN_HOST_LOOP.md.  The servo runs open-loop PWM and
+    # robot/runtime/mode2.py closes the loop once per bus round trip, so the
+    # firmware's registers above (dead zone, punch, the goal profile) are GONE
+    # and what a joint sees instead is
+    #     duty = (host_volt_ref / U) * (kp*(target - q) - kd*w),  clipped,
+    # recomputed at host_hz (165 Hz measured on the Pi with twelve servos: one
+    # SyncRead + one SyncWrite, 6.1 ms) and HELD between, then folded on the
+    # servo's current register because the firmware still cuts torque at 2 A
+    # for 2 s in MODE 2: full duty at or below fold_i_soft, linearly down to
+    # fold_floor of it at fold_i_hard, per servo, and the same fold on the sum
+    # over twelve between fold_i_sum*soft/hard and fold_i_sum.  The register is
+    # the SUPPLY current, |duty|*|i_motor|, read one sub-tick late.  The
+    # thresholds are the runtime's constants, copied, not fitted.  `kp` in this
+    # mode is the Pi's number: 5220 duty per rad = 5.22 here.
+    host_loop: bool = False
+    host_hz: float = 165.0
+    host_volt_ref: float = 11.3
+    fold_i_soft: float = 1.4
+    fold_i_hard: float = 2.0
+    fold_floor: float = 0.25
+    fold_i_sum: float = 10.0
     # --- transmission -----------------------------------------------------
     theta_bl: float = math.radians(0.5)   # total backlash, rad at the output
     k_bl: float = 3000.0      # N*m/rad once engaged; stiff, not identified
@@ -233,9 +255,13 @@ try:
         Params,
         data_fields=["R", "k_e", "k_u", "J_m", "J_l", "tau_c", "b_v", "mu_load",
                      "kp", "kd", "deadband", "punch", "duty_max", "loop_hz",
-                     "goal_acc", "goal_vel", "theta_bl", "k_bl", "c_bl", "v_eps"],
-        meta_fields=["enc_after_backlash", "fitted", "source", "servo_ids",
-                     "rms_pos_deg", "rms_current_a"])
+                     "goal_acc", "goal_vel", "theta_bl", "k_bl", "c_bl", "v_eps",
+                     "host_hz", "host_volt_ref", "fold_i_soft", "fold_i_hard",
+                     "fold_floor", "fold_i_sum"],
+        # host_loop is a mode, not a draw: Python control flow in the functions
+        # below, so it has to stay a static bool through a jit
+        meta_fields=["enc_after_backlash", "host_loop", "fitted", "source",
+                     "servo_ids", "rms_pos_deg", "rms_current_a"])
 except ImportError:                       # numpy-only machine; nothing to register
     pass
 
@@ -261,18 +287,29 @@ def _sign(w, v_eps, xp=np):
     return xp.tanh(w / v_eps)
 
 
-def duty(p: Params, err: float, w: float, xp=np) -> float:
-    """The servo's inner loop, on a quantised error, in [-duty_max, duty_max].
+def duty(p: Params, err: float, w: float, xp=np, u_bat=None) -> float:
+    """The position loop, on a quantised error, in [-duty_max, duty_max].
 
-    The dead zone and the punch are real registers (26/27 and 24) and they are
-    what makes a bus servo buzz around its target instead of settling: inside the
-    dead zone there is no drive at all, and the first drive outside it is not
-    infinitesimal but `punch`.
+    Firmware mode: the servo's own loop.  The dead zone and the punch are real
+    registers (26/27 and 24) and they are what makes a bus servo buzz around its
+    target instead of settling: inside the dead zone there is no drive at all,
+    and the first drive outside it is not infinitesimal but `punch`.
+
+    Host mode (`p.host_loop`): the Pi's loop, robot/runtime/mode2.py `_pd`.  No
+    dead zone, no punch; the PD on the encoder count, scaled by
+    host_volt_ref / u_bat so the stiffness in VOLTS is constant as the pack
+    drains (the sim's U = duty*U_bat then makes it voltage-independent until the
+    duty clips).  `u_bat` is required there and ignored otherwise.
     """
     # NOTE: round() has zero gradient almost everywhere. PPO never
     # differentiates through the sim so this costs nothing here, but it does
     # make this law unusable for anything that wants dynamics gradients.
     e = xp.round(err / ENC_STEP_RAD) * ENC_STEP_RAD          # the encoder's view
+    if p.host_loop:
+        if u_bat is None:
+            raise ValueError("host-loop duty needs u_bat: the Pi scales by 11.3 / U")
+        u = (p.kp * e - p.kd * w) * (p.host_volt_ref / u_bat)
+        return xp.clip(u, -p.duty_max, p.duty_max)
     e = xp.where(xp.abs(e) <= p.deadband, 0.0, e)
     u = p.kp * e - p.kd * w
     u = xp.where((u != 0.0) & (xp.abs(u) < p.punch), xp.sign(u) * p.punch, u)
@@ -388,6 +425,11 @@ def profile_goal(p: Params, goal, goal_w, target, dt, xp=np):
     and at the servo's own loop rate in `simulate()`; the profile is a limit
     on a rate, so the step size does not change what it does.
     """
+    if p.host_loop:
+        # MODE 2 has no profile at all: the loop sees the target itself. An
+        # explicit branch rather than goal_acc = 1e6, so check_model.py can see
+        # the mode and so the firmware fit's numbers stay the firmware's.
+        return target, xp.zeros_like(goal_w)
     e = target - goal
     # the speed that still lets the goal stop exactly at the target
     v_stop = xp.sqrt(2.0 * p.goal_acc * xp.abs(e))
@@ -398,7 +440,7 @@ def profile_goal(p: Params, goal, goal_w, target, dt, xp=np):
 
 
 def bus_torque(p: Params, err, w, u_bat, sag, xp=np,
-               tau_c_external: bool = False):
+               tau_c_external: bool = False, i_reg=None):
     """The whole chain a ROBOT joint sees: inner loop, pack sag, motor torque.
 
     One statement of it, because it was written out three times — rl/env/walk.py
@@ -432,10 +474,116 @@ def bus_torque(p: Params, err, w, u_bat, sag, xp=np,
     the bench path reaches the law through `simulate()`, which owns every torque
     as state and applies the Coulomb floor itself with Karnopp. See `friction()`.
     """
-    d = duty(p, err, w, xp=xp)
+    d = duty_cmd(p, err, w, u_bat, i_reg=i_reg, xp=xp)
+    return torque_from_duty(p, d, w, u_bat, sag, xp=xp,
+                            tau_c_external=tau_c_external)[0]
+
+
+def _fold1(p, i, soft, hard, xp=np):
+    """1 at or below `soft`, `fold_floor` at or above `hard`, linear between —
+    mode2.Mode2Runtime._fold, array form."""
+    f = 1.0 - (1.0 - p.fold_floor) * (i - soft) / (hard - soft)
+    return xp.clip(f, p.fold_floor, 1.0)
+
+
+def fold(p: Params, i_reg, xp=np):
+    """The runtime's current fold: (per-joint limit multiplier, bus multiplier).
+
+    `i_reg` is the current register per joint, amps, from the PREVIOUS sub-tick
+    (the SyncRead that opened this one reports the duty written by the last).
+    The per-joint number scales the duty CLIP, `duty_max * f_j` — the runtime
+    clips to it rather than multiplying — and the bus number multiplies every
+    duty after that.  The thresholds are the runtime's constants; the fold
+    exists because the firmware still cuts torque at 2 A for 2 s in MODE 2 and
+    a cut servo is dead until torque is cycled.
+    """
+    f_j = _fold1(p, i_reg, p.fold_i_soft, p.fold_i_hard, xp)
+    soft_sum = p.fold_i_sum * p.fold_i_soft / p.fold_i_hard
+    f_bus = _fold1(p, xp.sum(i_reg), soft_sum, p.fold_i_sum, xp)
+    return f_j, f_bus
+
+
+def duty_cmd(p: Params, err, w, u_bat, i_reg=None, xp=np):
+    """The duty the loop writes: `duty()` in either mode, folded in host mode.
+
+    `i_reg` is the current register the fold reads (host mode; None = cold, no
+    fold).  Firmware mode ignores both it and `u_bat`.
+    """
+    d = duty(p, err, w, xp=xp, u_bat=u_bat)
+    if p.host_loop and i_reg is not None:
+        f_j, f_bus = fold(p, i_reg, xp)
+        lim = p.duty_max * f_j
+        d = xp.clip(d, -lim, lim) * f_bus
+    return d
+
+
+def torque_from_duty(p: Params, d, w, u_bat, sag, xp=np,
+                     tau_c_external: bool = False):
+    """Pack sag and motor torque from a duty already decided: (tau, i_motor).
+
+    The half of `bus_torque` below the loop, split out because in host mode the
+    duty is HELD across ~6 physics steps while this half is evaluated at every
+    one of them (the back-EMF moves with w).
+    """
     i = current(p, d * u_bat, w, xp=xp)
     volt = xp.clip(u_bat - sag * xp.sum(xp.abs(i)), 0.0, u_bat)
-    return motor_torque(p, d * volt, w, xp=xp, tau_c_external=tau_c_external)
+    return motor_torque(p, d * volt, w, xp=xp, tau_c_external=tau_c_external), i
+
+
+def register_current(d, i, xp=np):
+    """What PRESENT_CURRENT reports: the SUPPLY current, |duty| * |i_motor|
+    (robot/runtime/registers.py CURRENT_LSB_A).  This is what the fold reads."""
+    return xp.abs(d) * xp.abs(i)
+
+
+def loop_state(q, xp=np):
+    """The per-joint loop state at torque-on, for `servo_step`: the firmware's
+    goal ON the joint and at rest, no duty held, the host loop's sub-tick phase
+    at zero.  Callers that want the phase random draw it in afterwards."""
+    q = xp.asarray(q)
+    return dict(goal=q, goal_w=xp.zeros_like(q), duty=xp.zeros_like(q),
+                sub_phase=xp.zeros(()))
+
+
+def servo_step(p: Params, st: dict, target, q, w, dt, u_bat, sag, xp=np,
+               tau_c_external: bool = False):
+    """ONE PHYSICS STEP of the whole chain, in either mode: (state, tau).
+
+    The one place the two loops are written for the MuJoCo paths — walk.py's
+    scan and eval.py's vanilla pass both call this and nothing else, so a mode
+    that exists in one exists in the other.  `st` is `loop_state()`'s dict.
+
+    Firmware mode: the goal profile advances one `dt`, the servo's own loop
+    chases the goal, torque from that duty.  Unchanged from before host mode
+    existed — s4 in this mode still has to rock in place.
+
+    Host mode: the target IS the goal.  A sub-tick phase accumulates `dt`; when
+    it crosses 1/host_hz the Pi has done a round trip — it reads q, w and the
+    current register the previous duty produced, computes the folded duty and
+    holds it — so the recompute lands every 6th or 7th 1 ms step (165 Hz is not
+    an integer of them) and a new target is picked up 0..6 ms late on top of the
+    tick's own bus delay draw.  Between sub-ticks the held duty meets the moving
+    back-EMF at every physics step.
+    """
+    if not p.host_loop:
+        goal, goal_w = profile_goal(p, st["goal"], st["goal_w"], target, dt, xp=xp)
+        tau = bus_torque(p, goal - q, w, u_bat, sag, xp=xp,
+                         tau_c_external=tau_c_external)
+        return dict(st, goal=goal, goal_w=goal_w), tau
+    period = 1.0 / p.host_hz
+    phase = st["sub_phase"] + dt
+    due = phase >= period
+    phase = xp.where(due, phase - period, phase)
+    d_held = st["duty"]
+    # the register the SyncRead reports: the held duty's supply current, now
+    i_prev = current(p, d_held * u_bat, w, xp=xp)
+    d_new = duty_cmd(p, target - q, w, u_bat,
+                     i_reg=register_current(d_held, i_prev, xp), xp=xp)
+    d = xp.where(due, d_new, d_held)
+    tau, _ = torque_from_duty(p, d, w, u_bat, sag, xp=xp,
+                              tau_c_external=tau_c_external)
+    return dict(st, goal=target, goal_w=xp.zeros_like(target), duty=d,
+                sub_phase=phase), tau
 
 
 def transmitted(p: Params, delta: float, dw: float, xp=np) -> float:
@@ -503,7 +651,8 @@ def simulate(p: Params, target, dt, q0=0.0, w0=0.0, u_bat=12.0, load_torque=None
 
     sub = max(1, int(round(dt / dt_int)))
     h = dt / sub
-    ctrl_every = max(1, int(round(1.0 / (p.loop_hz * h))))
+    host = p.host_loop
+    ctrl_every = max(1, int(round(1.0 / ((p.host_hz if host else p.loop_hz) * h))))
 
     # hoisted, because they are read once per inner step
     kp, kd, dead, punch, dmax = p.kp, p.kd, p.deadband, p.punch, p.duty_max
@@ -519,6 +668,7 @@ def simulate(p: Params, target, dt, q0=0.0, w0=0.0, u_bat=12.0, load_torque=None
     th_m = th_l = float(q0)
     w_m = w_l = float(w0)
     goal, goal_w = float(q0), 0.0           # the firmware's profiled goal
+    i_reg = 0.0                             # host mode: the current register, one sub-tick late
     q_o = np.empty(n); w_o = np.empty(n); i_o = np.empty(n)
     u_o = np.empty(n); t_o = np.empty(n); m_o = np.empty(n)
 
@@ -531,6 +681,21 @@ def simulate(p: Params, target, dt, q0=0.0, w0=0.0, u_bat=12.0, load_torque=None
                 if not driven:
                     d = 0.0
                     goal, goal_w = (th_l if after else th_m), 0.0   # torque off: the goal follows
+                elif host:
+                    # the Pi's loop (mode2.py _pd), in scalars: no dead zone, no
+                    # punch, no profile; volt scaling; the fold on the register
+                    # the previous sub-tick's duty produced
+                    q_fb = th_l if after else th_m
+                    w_fb = w_l if after else w_m
+                    e = round((tgt - q_fb) / enc) * enc
+                    u = (kp * e - kd * w_fb) * (p.host_volt_ref / volt0)
+                    f_j = float(_fold1(p, i_reg, p.fold_i_soft, p.fold_i_hard))
+                    lim = dmax * f_j
+                    d = lim if u > lim else (-lim if u < -lim else u)
+                    d *= float(_fold1(p, i_reg, p.fold_i_sum * p.fold_i_soft / p.fold_i_hard,
+                                      p.fold_i_sum))
+                    i_reg = abs(d) * abs((d * volt0 - k_e * w_m) / R_)
+                    goal, goal_w = tgt, 0.0
                 else:
                     q_fb = th_l if after else th_m
                     w_fb = w_l if after else w_m
@@ -801,6 +966,70 @@ def _selftest() -> int:
     lo = simulate(Params(J_l=1e-3), np.full(400, 1.0), 0.005, u_bat=9.9,
                   load_torque=lambda q: -1.5)
     check("a flatter pack holds less", float(lo["q"][-1]) < float(hi["q"][-1]) - 1e-3)
+
+    # --- the host loop (MODE 2, ideas/TRAIN_HOST_LOOP.md) --------------------
+    # The fitted servo under the Pi's loop, on a FREE servo as the bench had it
+    # (pwm_loop.py --id 1, horn only).  The bench numbers to reproduce are the
+    # trot gains' (9000/150/200): a +-15 deg sine passes 0.99 / 0.98 / 0.96 /
+    # 0.63 at 1 / 2 / 3 / 5 Hz, and a 0.1 rad step peaks at 2.9 rad/s.  That
+    # step number is kff's: the runtime's feed-forward turns a 0.1 rad step at
+    # 50 Hz into a 1000-duty kick for the tick (TRAIN_HOST_LOOP.md step 3), so
+    # the model is asked for it with a SATURATED duty, and the P loop alone
+    # (what a policy gets: no kff) is printed beside it.  The model gains
+    # 5220/0/0 have no bench table yet; their numbers are printed for the day
+    # the bench measures them.
+    fit = load(quiet=True)
+    free = dict(J_l=1e-4, theta_bl=0.0)
+    hostp = dataclasses.replace(fit, host_loop=True, kp=9.0, kd=0.15)
+    check("host mode ignores the dead zone",
+          float(duty(hostp, 0.5 * fit.deadband, 0.0, u_bat=11.3)) != 0.0)
+    check("host mode scales the duty by 11.3 / U",
+          float(duty(hostp, 0.05, 0.0, u_bat=9.9) / duty(hostp, 0.05, 0.0, u_bat=12.6)),
+          12.6 / 9.9, tol=1e-9)
+    check("host mode has no goal profile",
+          float(profile_goal(hostp, 0.0, 0.0, 0.5, 0.001)[0]), 0.5)
+    f_j, f_bus = fold(hostp, np.array([1.0, 1.7, 2.5] + [0.0] * 9))
+    check("fold is 1 below i_soft, the floor at i_hard, linear between",
+          float(abs(f_j[0] - 1.0) + abs(f_j[2] - 0.25) + abs(f_j[1] - 0.625)), 0.0, tol=1e-9)
+    check("the bus fold is 1 under 7 A", float(f_bus), 1.0)
+    check("the bus fold reaches the floor at 10 A",
+          float(fold(hostp, np.full(12, 1.0))[1]), 0.25, tol=1e-9)
+    def _step_peak(p):
+        return float(np.max(simulate(dataclasses.replace(p, **free),
+                                     np.full(200, 0.1), 0.004, u_bat=11.3)["w"]))
+
+    t = np.arange(0, 3.0, 0.004)
+
+    def _gain(p, hz):
+        r = simulate(dataclasses.replace(p, **free),
+                     np.radians(15.0) * np.sin(2 * np.pi * hz * t), 0.004, u_bat=11.3)
+        return float(np.max(np.abs(r["q"][len(t) // 2:])) / np.radians(15.0))
+
+    # kp 100 saturates the duty for the whole approach: the kick kff gave
+    check("host loop: a saturated 0.1 rad step peaks past 2.5 rad/s (bench 2.9, with kff)",
+          _step_peak(dataclasses.replace(hostp, kp=100.0)) >= 2.5)
+    check("firmware loop: the same step is the profile's ~0.85 rad/s",
+          _step_peak(fit), 0.85, tol=0.15)
+    g = _gain(hostp, 2.0)
+    check("host loop: +-15 deg at 2 Hz passes >= 0.9 (bench 0.98)", g >= 0.9)
+    check("firmware loop: the same sine passes ~0.25 (bench 0.25)", _gain(fit, 2.0), 0.25, tol=0.1)
+    print(f"        host loop 9000/150: step (P loop alone) {_step_peak(hostp):.2f} rad/s, gain at "
+          f"1/2/3/5 Hz {_gain(hostp, 1.0):.2f} / {g:.2f} / {_gain(hostp, 3.0):.2f} / "
+          f"{_gain(hostp, 5.0):.2f}  (bench 0.99 / 0.98 / 0.96 / 0.63)")
+    modelp = dataclasses.replace(fit, host_loop=True)      # 5220 / 0 / 0
+    print(f"        model gains {fit.kp*1000:.0f}/0/0: step {_step_peak(modelp):.2f} rad/s, gain "
+          f"{_gain(modelp, 1.0):.2f} / {_gain(modelp, 2.0):.2f} / {_gain(modelp, 3.0):.2f} / "
+          f"{_gain(modelp, 5.0):.2f}  (no bench number yet: pwm_loop.py --kp 5220 --kd 0 --kff 0)")
+    # servo_step in host mode is the same arithmetic as simulate's inner loop:
+    # from rest, the first sub-tick's duty is duty_cmd's
+    st0 = loop_state(np.zeros(12))
+    st1, _ = servo_step(modelp, st0, np.full(12, 0.1), np.zeros(12), np.zeros(12),
+                        1.0 / modelp.host_hz, 11.3, 0.0, tau_c_external=True)
+    check("servo_step's first host duty is the loop's",
+          float(st1["duty"][0]), float(duty(modelp, 0.1, 0.0, u_bat=11.3)), tol=1e-9)
+    st2, _ = servo_step(modelp, st1, np.full(12, 0.3), np.zeros(12), np.zeros(12),
+                        0.001, 11.3, 0.0, tau_c_external=True)
+    check("and it is HELD between sub-ticks", float(st2["duty"][0]), float(st1["duty"][0]))
 
     print("  " + ("PASS" if ok else "FAIL"))
     return 0 if ok else 1

@@ -144,8 +144,20 @@ def bus_timing(path: str = BUS_TIMING) -> dict:
         return json.load(f)
 
 
-def domain_ranges() -> dict:
+#: The command latency the HOST loop adds, seconds: one sub-tick (0..6 ms at
+#: 165 Hz) of pickup on top of the tick's own scheduling. Replaces the firmware
+#: loop's measured SyncRead+SyncWrite band when `host_loop` is on, because in
+#: MODE 2 that round trip IS the sub-tick and is modelled as one
+#: (actuator.servo_step). ideas/TRAIN_HOST_LOOP.md, env/walk.py.
+HOST_DELAY_S = (0.002, 0.008)
+
+
+def domain_ranges(host_loop: bool = False) -> dict:
     """The randomisation ranges, with the bus delay filled in from the bench.
+
+    `host_loop` swaps the bus delay for HOST_DELAY_S; nothing else moves — the
+    spread on `kp` stays although the Pi's gain is exact, because the encoder,
+    the volt scaling and the bus make it not exact at the joint.
 
     Every range in params/domain_rand.json is a literal EXCEPT the bus delay,
     which is read out of params/bus_timing.json here so that the measurement is
@@ -164,6 +176,9 @@ def domain_ranges() -> dict:
     d["range"] = [(t["sync_read"][q] + t["sync_write"][q]) * 1e-3
                   for q in ("p50_ms", "p95_ms")]
     d["evidence"] = "measured"
+    if host_loop:
+        d["range"] = list(HOST_DELAY_S)
+        d["evidence"] = "measured (host loop: one 165 Hz sub-tick of pickup)"
     return r
 
 

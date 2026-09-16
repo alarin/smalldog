@@ -116,7 +116,8 @@ def record(run_dirs, n_each, seconds, command):
             targs = json.load(f)["args"]
         if env is None:
             surface = (bool(targs["terrain"]), int(targs["boxes"]))
-            env = Walk(terrain=targs["terrain"], n_boxes=targs["boxes"])
+            env = Walk(terrain=targs["terrain"], n_boxes=targs["boxes"],
+                       host_loop=targs.get("host_loop", False))
             reset = jax.jit(jax.vmap(env.reset))
             step = jax.jit(jax.vmap(env.step))
 

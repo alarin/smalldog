@@ -52,7 +52,7 @@ SEEDS = int(os.environ.get("SEEDS", "8"))
 CMD = np.array([float(os.environ.get("CMDV", "0.4")), 0.0, 0.0])
 
 targs = json.load(open(f"{RUN}/run.json"))["args"]
-env = Walk(terrain=targs["terrain"], n_boxes=targs["boxes"])
+env = Walk(terrain=targs["terrain"], n_boxes=targs["boxes"], host_loop=targs.get("host_loop", False))
 nets = ppo_networks.make_ppo_networks(
     observation_size=env.observation_size, action_size=env.action_size,
     preprocess_observations_fn=running_statistics.normalize,

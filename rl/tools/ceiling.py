@@ -30,7 +30,7 @@ from env import Walk, assemble_obs, stack_obs, init_hist
 from env.walk import ACTION_SCALE, CTRL_HZ
 RUN=os.environ["RUN"]; SECONDS=6.0
 targs=json.load(open(f"{RUN}/run.json"))["args"]
-env=Walk(terrain=targs["terrain"],n_boxes=targs["boxes"])
+env=Walk(terrain=targs["terrain"],n_boxes=targs["boxes"],host_loop=targs.get("host_loop",False))
 nets=ppo_networks.make_ppo_networks(observation_size=env.observation_size,
  action_size=env.action_size,preprocess_observations_fn=running_statistics.normalize,
  policy_hidden_layer_sizes=(128,128,128),value_hidden_layer_sizes=(256,256,256))
