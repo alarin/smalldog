@@ -54,9 +54,11 @@ Facts that shape the runtime:
   in position mode is off by exactly `OFFSET`. `calib.json` centres are in the
   position-mode frame.
 - **The duty sign is opposite to the encoder's**: +duty turns q negative.
-- **The overload protection is off in MODE 2**: 5 s at duty 1000, load 100 %,
-  `PROTECTION_TIME` 2 s — nothing tripped. `PROTECTION_CURRENT` (2 A, 2 s) is **not
-  measured** — it needs a stalled horn.
+- **The load-based overload protection is off in MODE 2** (5 s free at duty 1000, load
+  100 %, nothing tripped) **but `PROTECTION_CURRENT` still acts**: stalled against a clamp
+  at duty 1000 the register reads 3.4 → 2.8 A (≈ 2.1 → 1.7 A real) and at 2.0 s the
+  firmware cuts torque (status 32, then 8; torque-off + MODE 0 clears it). A joint pinned
+  for 2 s goes dead mid-gait — `safety.py` has to clamp current before the firmware does.
 - **Current**: the register peaks at 3.8 A (≈ 2.3 A real, the register reads 1.64×
   high) on the 5 Hz sine, 1.2 A rms; a saturated step from rest pulls stall current. Twelve
   servos doing that at once is ~8 A from the pack — `pack_sag.py`'s territory.
@@ -66,9 +68,9 @@ Facts that shape the runtime:
 
 ## Plan
 
-1. **Stall test** — clamp servo 1's horn (a clamp, not fingers: 3 N·m on a 25 mm horn is
-   120 N), `mode2_protect.py --stall`. Decides whether the firmware still guards current in
-   MODE 2 or `safety.py` must. ⏳ needs the bench.
+1. **Stall test** ✅ — the firmware still guards current in MODE 2 (2 A for 2 s, then the
+   servo is dead until torque-off). `safety.py` must act below that: a per-servo current
+   ceiling that folds the duty back, so a pinned joint softens instead of switching off.
 2. **Runtime in MODE 2.** `loop.py` runs the PD at the bus rate on all twelve (kp 9000 /
    kd 150 / kff 200, duty ±1000, a duty slew or a current-derived clamp so twelve joints do
    not draw stall current together); `calib.py` reads centres after the mode switch;

@@ -367,9 +367,13 @@ ceiling (8.2 rad/s asked, 4.7 available), not the loop. A 0.1 rad step reaches 2
 (≈ 80 rad/s² against the profile's 7.7); standing error 0.05°.
 
 What it costs: the register current peaks at 3.8 A (≈ 2.3 A real) on the 5 Hz sine, and
-**the firmware's overload protection is off in MODE 2** — 5 s at duty 1000 with the load
-register at 100 % and `PROTECTION_TIME` 2 s tripped nothing. Whether `PROTECTION_CURRENT`
-still acts is not measured (it needs a stalled horn). Also: **`PRESENT_POSITION` is raw in
+**the load-based overload protection is off in MODE 2** — 5 s at duty 1000 with the load
+register at 100 % and `PROTECTION_TIME` 2 s tripped nothing on a free horn — **but the
+current-based one still acts**: stalled against a clamp at duty 1000 (12.7 V) the register
+reads 3.4 A falling to 2.8 as the winding warms (≈ 2.1 → 1.7 A real), and at 2.0 s —
+`OVERCURRENT_TIME` — status 32 then 8, `TORQUE_ENABLE` cleared, drive off. Torque-off and
+MODE 0 clear it. So a host loop that pins a joint against something gets 2 s at stall
+torque and then a dead servo; the runtime's own current limit has to fire first. Also: **`PRESENT_POSITION` is raw in
 MODE 2** — the `OFFSET` register is not applied, so a centre read in position mode is off by
 exactly `OFFSET`. (`robot/bench/pwm_loop.py`, `mode2_protect.py`, 2026-09-16, one servo,
 11.3 V; the bus from an Orange Pi over a CH340 costs 2.0 ms per transaction whatever its
