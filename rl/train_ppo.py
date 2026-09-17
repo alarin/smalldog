@@ -113,6 +113,9 @@ def parse():
                     help="curriculum: the forward-command range instead of Commands.vx. "
                          "A stage from a policy that only walks at 0.4 has to be asked "
                          "for 0.4 or it never walks in training.")
+    ap.add_argument("--vy", type=float, nargs=2, default=None, metavar=("LO", "HI"),
+                    help="curriculum: the strafe-command range instead of Commands.vy "
+                         "(+-0.1). eval.py asks 0.25; a policy never asked for it falls.")
     ap.add_argument("--name", default=None)
     ap.add_argument("--smoke", action="store_true",
                     help="a two-minute run that proves the loop closes and "
@@ -167,10 +170,14 @@ def main():
     if a.host_loop:
         print("servo       HOST LOOP (MODE 2): kp %.0f duty/rad on the Pi at %.0f Hz, no "
               "profile, current fold on" % (p.kp * 1000, p.host_hz))
-    if a.vx is not None:
+    if a.vx is not None or a.vy is not None:
         from env.walk import Commands
-        kw["commands"] = Commands(vx=(float(a.vx[0]), float(a.vx[1])))
-        print(f"commands    vx {a.vx[0]:g} .. {a.vx[1]:g} m/s (CURRICULUM stage; Commands.vx is the default)")
+        ckw = {}
+        for axis, rng in (("vx", a.vx), ("vy", a.vy)):
+            if rng is not None:
+                ckw[axis] = (float(rng[0]), float(rng[1]))
+                print(f"commands    {axis} {rng[0]:g} .. {rng[1]:g} m/s (CURRICULUM stage; Commands.{axis} is the default)")
+        kw["commands"] = Commands(**ckw)
     env = Walk(**kw)
     eval_env = Walk(**kw)
     for n in env.build_notes:
