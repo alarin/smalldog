@@ -189,6 +189,13 @@ back (cmd −0.3 → −2.10 m) but walks slower forward (cmd 0.2 → 2.07 m, cm
 the same 2 of 16 strafe falls, and the −15° hand-over takes a second longer to level. Not
 shipped; the wider range is the better stage.
 
+A strafe stage on top of stage 2 (`--vy -0.25 0.25` on the 5070, `--vy -0.2 0.2` on the 3070;
+`train_ppo.py --vy` is new) is **not shipped**. Stage 2 draws strafe within ±0.1 and still
+strafes at 0.17 m/s at cmd 0.25 with 63 of 64 up. Asked for 0.25 it tracks (0.27 and 0.22 m/s)
+but pays elsewhere: 7 of 64 down on strafe and 3 of 64 on forward and on reverse (5070), or
+4 of 64 down on reverse and a −15° hand-over that parks at +20° pitch (3070). 0.17 m/s
+sideways is what the servos give without falls; leave strafe at that.
+
 ## On the robot (2026-09-17)
 
 The floor, `runtime/policy.py ../rl/policy`, model gains, heading hold on:
