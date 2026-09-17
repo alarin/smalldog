@@ -183,9 +183,11 @@ Two stages from s4, both on the 5070 Ti (2048 envs, seed 0, 134 min each), rewar
    cmd 0.2 → 2.35 m, cmd 0.4 → 2.72 m, start-up 0.26 s, pitch std 0.34°, stands from ±15°,
    turn 0.8 → 0.90 rad/s. Strafe 0.25 → 0.16 m/s with 2 of 16 down, unchanged from stage 1.
 
-A third variant runs on the 3070 (`20260917-host-rev-s1`: stage 2's recipe with the default
-`Commands` range −0.15..0.25, 20 M steps, 1024 envs) as a check on the range; it ships only
-if it is clearly better in `eval.py`.
+The range check on the 3070 (`20260917-host-rev-s1`: the same recipe from seed 1 with the
+default `Commands` range −0.15..0.25, 20 M steps, 1024 envs, 255 min) also brought reverse
+back (cmd −0.3 → −2.10 m) but walks slower forward (cmd 0.2 → 2.07 m, cmd 0.4 → 2.27 m) with
+the same 2 of 16 strafe falls, and the −15° hand-over takes a second longer to level. Not
+shipped; the wider range is the better stage.
 
 ## On the robot (2026-09-17)
 
