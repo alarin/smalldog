@@ -212,7 +212,17 @@ Two things to know before reading any robot log against this policy:
 
 The table above is stage 1. Stage 2 has not met the floor yet.
 
-**Next:** the floor with `rl/policy/` (stage 2): cmd −0.15 must move the knees; then
+**Stage 2 on the floor (2026-09-17 pm):** reverse is back — cmd −0.15 walks, 0.90 m forward
+in 5 s at cmd 0.2. But its nose sinks under way: pitch +3° → +19° over a 5 s walk and
++13° mean / +20° peak through a 4 s turn, front knees 61° → 75°, until it trips on the
+front legs. Stage 1 on the same pack, the same floor, the same turn: pitch +4.8° ± 1.7.
+So the drift is stage 2's, not the pack's (both sagged to ~9.6 V). Stage 3 (strafe,
+`--vy`, training on both boxes) starts from stage 2 and will inherit it unless checked:
+**eval the pitch under way and through a turn against stage 1 before shipping**, and look
+at what the −0.2..0.4 stage did to the stance bias. The robot runs stage 1
+(`20260916-host-s0`) under ROS meanwhile.
+
+**Next:**
 `straight_test.py` ≥ 0.8 m in 5 s at cmd 0.2 is the distance number the table lacks.
 
 ## Questions for review

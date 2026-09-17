@@ -70,7 +70,7 @@ controller_server:
       rotate_to_heading_min_angle: 0.3
       # the ramp is one controller step (0.1 s) from the odom twist, which is the gait's
       # command times odom_scale (~0.5 in the sim): at 1.5 the turn converged to 0.3
-      max_angular_accel: 3.2
+      max_angular_accel: 1.0      # the RL walker slews at 1 rad/s^2 anyway; 3.2 whipped it
       max_robot_pose_search_dist: 10.0
 
 local_costmap:

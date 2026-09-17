@@ -168,6 +168,12 @@ class ServoNode(Node):
         p('vx_range', [-0.2, 0.4])         # the trained command range, m/s
         p('vy_max', 0.1)
         p('wz_max', 0.5)                   # rad/s; +-0.5 -> +-130 deg in 4 s on the floor, 0.8 untested
+        # Nav2 steps the command: rotate-to-heading at 1.7 rad/s one tick, forward the
+        # next. The policy was trained on commands held for whole episodes; on a step it
+        # rears and hops on the front legs (pitch +16 mean, +32 peak exploring,
+        # 2026-09-17). Slew the command it sees.
+        p('cmd_accel', 0.4)                # m/s^2, vx and vy
+        p('cmd_alpha', 1.0)                # rad/s^2
         p('odom_scale', 1.0)               # commanded -> real distance (the walker's 0.75 was the trot's)
         p('odom_frame', 'odom')
         p('base_frame', 'base_footprint')
@@ -248,6 +254,8 @@ class ServoNode(Node):
             self.cmd_timeout = float(g('cmd_timeout'))
             self.vx_lo, self.vx_hi = (float(v) for v in g('vx_range'))
             self.vy_max, self.wz_max = float(g('vy_max')), float(g('wz_max'))
+            self.cmd_accel, self.cmd_alpha = float(g('cmd_accel')), float(g('cmd_alpha'))
+            self._cmd_now = (0.0, 0.0, 0.0)
             self.odom_scale = float(g('odom_scale'))
             self.odom_frame, self.base_frame, self.body_frame = g('odom_frame'), g('base_frame'), g('body_frame')
             self.body_z = gait.body_height + gait.foot_r          # as walker_node lifts base_link
@@ -330,6 +338,12 @@ class ServoNode(Node):
         if stale != self._cmd_zeroed:
             self._cmd_zeroed = stale
             self.get_logger().info('no /cmd_vel: standing' if stale else 'walking on /cmd_vel')
+        # slew towards the operator's command
+        px, py, pz = self._cmd_now
+        dv, dw = self.cmd_accel * dt, self.cmd_alpha * dt
+        cmd = (px + max(-dv, min(dv, cmd[0] - px)),
+               py + max(-dv, min(dv, cmd[1] - py)),
+               pz + max(-dw, min(dw, cmd[2] - pz)))
         self.src.set_command(*cmd)
         self._cmd_now = cmd
         return self.src(dt, fb)
