@@ -154,7 +154,8 @@ def _extras(speed, TURN):
              output='screen', condition=IfCondition(LaunchConfiguration('lidar')),
              parameters=[{'source': LaunchConfiguration('lidar_source'),
                           'yaw_offset': 2.382,
-                          'idle_stop': LaunchConfiguration('lidar_idle_stop')}]),
+                          'idle_stop': ParameterValue(LaunchConfiguration('lidar_idle_stop'),
+                                                      value_type=float)}]),
 
         # the IMX415, the UVC module's own MJPEG frames passed through (camera_node.py)
         Node(package='smalldog_hardware', executable='camera', name='smalldog_camera',

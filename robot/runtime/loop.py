@@ -95,6 +95,8 @@ class Runtime:
         self.torque_on = False
         self.ticks = self.overruns = self.bus_errors = 0
         self._late = []
+        #: max seconds each stage of a tick took: where a late tick went
+        self._stage_max = {"read": 0.0, "source": 0.0, "send": 0.0, "on_tick": 0.0}
 
     # ------------------------------------------------------------- lifecycle
     def __enter__(self):
@@ -320,15 +322,20 @@ class Runtime:
             dt = min(2.0 * self.dt, max(0.5 * self.dt, now - prev))
             prev = now
 
+            sm = self._stage_max
             fb = self.read()
+            t1 = time.perf_counter(); sm["read"] = max(sm["read"], t1 - now)
             self.guard.update(dt, fb, self.goal)
             try:
                 q = source(dt, fb)
             except StopIteration:
                 break
+            t2 = time.perf_counter(); sm["source"] = max(sm["source"], t2 - t1)
             self.send(q)
+            t3 = time.perf_counter(); sm["send"] = max(sm["send"], t3 - t2)
             if on_tick:
                 on_tick(k, dt, fb)
+                sm["on_tick"] = max(sm["on_tick"], time.perf_counter() - t3)
 
             self.ticks = k = k + 1
             # A late tick costs a TICK, not a burst. Anchored on a fixed `t0`, every
@@ -362,6 +369,7 @@ class Runtime:
         if late:
             out["late_p50_ms"] = 1e3 * late[len(late) // 2]
             out["late_max_ms"] = 1e3 * late[-1]
+            out["stage_max_ms"] = {k: 1e3 * v for k, v in self._stage_max.items()}
         out["bus"] = self.bus.stats()
         return out
 
@@ -370,7 +378,8 @@ class Runtime:
         pct = 100.0 * r["overruns"] / max(1, r["ticks"])
         s = [f"{r['ticks']} ticks at {r['hz']:.0f} Hz, {r['overruns']} late ({pct:.1f} %)"]
         if "late_max_ms" in r:
-            s.append(f"  late by p50 {r['late_p50_ms']:.1f} ms, max {r['late_max_ms']:.1f} ms")
+            s.append(f"  late by p50 {r['late_p50_ms']:.1f} ms, max {r['late_max_ms']:.1f} ms; "
+                     "stage max ms: " + ", ".join(f"{k} {v:.1f}" for k, v in r["stage_max_ms"].items()))
         b = r["bus"]
         if b.get("n"):
             s.append(f"  bus p50 {b['p50_ms']:.2f} ms, p99 {b['p99_ms']:.2f} ms, "

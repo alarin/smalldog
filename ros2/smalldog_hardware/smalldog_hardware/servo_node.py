@@ -245,6 +245,7 @@ class ServoNode(Node):
         self.src = None                    # PolicySource, made in run() once the IMU is up
         self._cmd = (0.0, 0.0, 0.0)
         self._cmd_t = None
+        self._cmd_gap_max = 0.0       # longest wait between two /cmd_vel callbacks
         self._cmd_zeroed = True
         if self.policy_dir:
             if self.pub_imu is None:
@@ -274,9 +275,12 @@ class ServoNode(Node):
         vx = max(self.vx_lo, min(self.vx_hi, float(msg.linear.x)))
         vy = max(-self.vy_max, min(self.vy_max, float(msg.linear.y)))
         wz = max(-self.wz_max, min(self.wz_max, float(msg.angular.z)))
+        now = time.perf_counter()
         with self._lock:
+            if self._cmd_t is not None:
+                self._cmd_gap_max = max(self._cmd_gap_max, now - self._cmd_t)
             self._cmd = (vx, vy, wz)
-            self._cmd_t = time.perf_counter()
+            self._cmd_t = now
 
     # ------------------------------------------------------------- subscriptions
     def on_trajectory(self, msg):
@@ -631,6 +635,8 @@ class ServoNode(Node):
             for line in self.rt.report_lines().split('\n'):
                 log.info(line)
             log.info('policy ' + self.src.report())
+            log.info(f'/cmd_vel: longest gap between messages {self._cmd_gap_max:.2f} s '
+                     f'(zeroed after {self.cmd_timeout:.1f})')
             if hold is not None:
                 log.info(hold.report())
         return code
