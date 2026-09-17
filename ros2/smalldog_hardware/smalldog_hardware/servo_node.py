@@ -82,6 +82,7 @@ from feetech.bus import Bus, BusError                                # noqa: E40
 from runtime.calib import CALIB, Calibration, load_params            # noqa: E402
 from runtime.loop import CTRL_HZ, FollowingLoopback, Runtime         # noqa: E402
 from runtime.mode2 import DutyLoopback, KD, KFF, KP, Mode2Runtime    # noqa: E402
+from runtime.policy import sit_pose                                  # noqa: E402
 from runtime.safety import Limits, Tripped                           # noqa: E402
 from smalldog_walker.gait import TrotGait                            # noqa: E402
 
@@ -190,16 +191,14 @@ class ServoNode(Node):
         else:
             self.rt = Runtime(self.bus, self.calib, hz=self.hz, limits=limits, log=log)
 
-        # the gait's lowest stance, to sit down into — walk.py's `--no-sit` inverse
         gait = TrotGait(self.params)
         if list(gait.joint_names) != self.joints:
             raise SystemExit(f'the gait and the calibration disagree about joint order:\n'
                              f'  gait  {gait.joint_names}\n  calib {self.joints}')
-        gait.body_height = 0.0             # the setter clamps to the lowest reachable
-        q = None
-        for _ in range(int(1.5 * self.hz)):
-            q = gait.joint_targets(1.0 / self.hz, 0.0, 0.0, 0.0)
-        self.q_sit = q
+        # The fold (runtime/policy.py): knee at the soft limit, foot under the hip. Sit
+        # down into it and stand up THROUGH it — a relaxed robot kneels, and a straight
+        # ramp from a kneel pivots it onto its face (2026-09-17, four times).
+        self.q_sit = sit_pose(self.calib) or [0.0, -0.96, 1.73] * 4
 
         self.get_logger().info(
             f'servos up: {len(self.joints)} joints on '
@@ -422,7 +421,8 @@ class ServoNode(Node):
         code = 0
         try:
             with self.rt:
-                self.rt.engage(q0, ramp_s=self.ramp)
+                self.rt.engage(self.q_sit, ramp_s=self.ramp)      # feet under the hips first
+                self.rt.engage_ramp_to(q0, ramp_s=self.ramp)
                 log.info('standing; streaming the walker\'s goals')
                 self.rt.run(self.source, on_tick=self.on_tick)
                 log.info('sitting down')

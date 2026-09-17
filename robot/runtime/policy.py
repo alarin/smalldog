@@ -63,7 +63,54 @@ sys.path.insert(0, os.path.dirname(HERE))
 from feetech.bus import Bus                                          # noqa: E402
 from runtime.calib import CALIB, Calibration                          # noqa: E402
 from runtime.loop import CTRL_HZ, FollowingLoopback, Runtime         # noqa: E402
+from runtime.mode2 import KP, KD, KFF                                 # noqa: E402
 from runtime.safety import Limits, Tripped                           # noqa: E402
+
+
+def pose_line(rt, imu, calib):
+    """One line of where the body and the joints are right now (a fresh IMU read)."""
+    if hasattr(imu, "reset"):
+        imu.reset()
+    g, _, _ = imu.update(1.0 / CTRL_HZ)
+    fb = rt.read()
+    return (f"pitch {math.degrees(math.asin(max(-1.0, min(1.0, g[0])))):+.0f} roll "
+            f"{math.degrees(math.atan2(-g[1], -g[2])):+.0f} deg; q/goal deg: " + "  ".join(
+            f"{n} {math.degrees(fb[n]['q']):+.0f}/{math.degrees(rt.goal[n]):+.0f}" if fb[n] else f"{n} ?"
+            for n in calib.joints))
+
+
+def sit_pose(calib: Calibration):
+    """The fold: knee at its soft limit, hip pitch putting the foot straight under the
+    hip (the IK trot's LegKinematics, foot at x = 0 and the shortest leg) — 98 mm from
+    the pitch axis against 158 at stance; the knee's hard stop is 110 deg, so a relaxed
+    robot cannot sink much further. The pose to sit down into and stand up from.
+
+    Standing up from anywhere else is not safe: torque cut AT STANCE lets the front
+    collapse onto its knees (the relaxed IMU read 13-29 deg nose-down), and a straight
+    ramp from that kneel — to stance, or through the gait's 15 cm "sit" — pushes off the
+    knees and pivots the nose-heavy robot onto its face (2026-09-17, four times, under
+    either gain set, joints exactly on target the whole way). Feet under the hips first.
+    None if the walker package is not beside this tree."""
+    import os as _os
+    repo = _os.path.dirname(_os.path.dirname(HERE))
+    sys.path.insert(0, _os.path.join(repo, "ros2", "smalldog_walker"))
+    try:
+        from runtime.calib import load_params
+        from smalldog_walker.gait import TrotGait
+    except ImportError:
+        return None
+    gait = TrotGait(load_params())
+    if list(gait.joint_names) != list(calib.joints):
+        return None
+    knee = gait.limits["knee"]
+    q = []
+    for l in gait.legs:
+        kin = gait.kin[l]
+        # foot under the pitch axis at the knee limit: fk's u = -l1 sin h - l2 sin(h + k) = 0
+        h = min((math.radians(d / 2) for d in range(-180, 1)),
+                key=lambda h: abs(kin.l1 * math.sin(h) + kin.l2 * math.sin(h + knee)))
+        q += [0.0, h, knee]
+    return [float(v) for v in calib.clamp(q)]
 
 
 class StillIMU:
@@ -87,6 +134,10 @@ class LiveIMU:
         out = self.att.update(accel, gyro, dt)
         self.gravity = out[0]
         return out
+
+    def reset(self):
+        """Forget the filtered gravity: the next update snaps to the accelerometer."""
+        self.att.g = None
 
     def roll_pitch(self):
         """(roll, pitch) rad from the last gravity read: x forward, y left, z up."""
@@ -283,6 +334,12 @@ def main():
     ap.add_argument("--volt-min", type=float, default=9.9)
     ap.add_argument("--track-rad", type=float, default=0.6)
     ap.add_argument("--log", metavar="FILE.npz", help="record every tick's frame, action, target")
+    ap.add_argument("--ramp-model-gains", action="store_true",
+                    help="stand up under the policy's gains too (default: the trot's stiffer, "
+                         "damped loop for the ramp and the settle, the model's from the hand-over)")
+    ap.add_argument("--settle", type=float, default=1.5, metavar="S",
+                    help="after the engage ramp, hold the stance (no policy) for S s while the IMU "
+                         "filter re-converges on the STANDING robot; 0 to hand over at once")
     ap.add_argument("--stand-before", type=float, default=0.0, metavar="S",
                     help="hold the stance under the policy at command 0 for S s before the walk")
     ap.add_argument("--stand-after", type=float, default=0.0, metavar="S",
@@ -332,8 +389,10 @@ def main():
         imu = LiveIMU(chip, bias)
         g, _, acc = imu.update(1.0 / CTRL_HZ)
         print(f"gravity now {g[0]:+.2f} {g[1]:+.2f} {g[2]:+.2f} (level reads 0 0 -1)")
-        if g[2] > -0.9:
-            print("!! the IMU does not read level; check imu/bmi088.py AXES before walking")
+        # relaxed, the robot sags up to ~30 deg nose-down; only a robot on its side is
+        # wrong here. The standing check is after the settle.
+        if g[2] > -0.5:
+            print("!! the IMU reads more than 60 deg off level; robot over, or imu/bmi088.py AXES")
             return 1
 
     cmd = (0.0, 0.0, 0.0) if a.stand else (a.vx, a.vy, a.wz)
@@ -349,7 +408,47 @@ def main():
     code = 0
     try:
         with rt:
-            rt.engage([float(v) for v in src.stance], ramp_s=a.ramp)
+            # Standing up is not what the model's gains are for: kp 5220 with no damping
+            # lifting 12 loaded servos from a sagging pose ended nose-down and over
+            # twice (2026-09-17: relaxed 13-16 deg nose-down -> fell during the settle;
+            # from straight legs the same ramp was fine). Ramp and settle under the
+            # IK trot's loop, then hand the policy the PD it was trained against.
+            if not a.mode0 and not a.ramp_model_gains:
+                rt.kp, rt.kd, rt.kff, rt.smooth = KP, KD, KFF, True
+            stance = [float(v) for v in src.stance]
+            sit = sit_pose(calib)
+            fb0 = rt.read()
+            print("measured, deg: " + "  ".join(f"{n} {math.degrees(fb0[n]['q']):+.0f}" if fb0[n] else f"{n} ?"
+                                               for n in calib.joints))
+            if sit is None:
+                print("!! no sit pose (smalldog_walker not found): standing up straight from here")
+                rt.engage(stance, ramp_s=a.ramp)
+            else:
+                print("fold, deg: " + "  ".join(f"{n} {math.degrees(v):+.0f}" for n, v in zip(calib.joints, sit)))
+                rt.engage(sit, ramp_s=a.ramp)          # feet under the hips first
+                print("after the fold ramp: " + pose_line(rt, imu, calib), flush=True)
+                rt.engage_ramp_to(stance, ramp_s=a.ramp)
+                print("after the stance ramp: " + pose_line(rt, imu, calib), flush=True)
+            if a.settle > 0:
+                # The filter was initialised at bias time, in the RELAXED pose (a sagging
+                # robot reads 6-16 deg nose-down), and nothing ticked it through the
+                # ramp. Handed over stale, the policy's first frames saw a nose-down
+                # robot that was standing level, reacted, and the shaking never let
+                # the filter settle (2026-09-17: two dives, one fall). Snap to the
+                # accelerometer on the standing robot and give it a time constant.
+                if hasattr(imu, "reset"):
+                    imu.reset()
+                rt.run(lambda dt, fb: (imu.update(dt), stance)[1], seconds=a.settle, on_tick=tilt)
+                g = imu.gravity if hasattr(imu, "gravity") else (0.0, 0.0, -1.0)
+                pitch_deg = math.degrees(math.asin(max(-1.0, min(1.0, g[0]))))
+                print(f"settled {a.settle:g} s: gravity {g[0]:+.2f} {g[1]:+.2f} {g[2]:+.2f} "
+                      f"(pitch {pitch_deg:+.1f} deg)", flush=True)
+                if g[2] > -0.9:
+                    raise Tripped(f"standing at stance the IMU is {math.degrees(math.acos(-g[2])):.0f} deg "
+                                  "off level; not handing that to the policy")
+            if not a.mode0 and not a.ramp_model_gains:
+                rt.kp, rt.kd, rt.kff, rt.smooth = gains["kp"], gains["kd"], gains["kff"], False
+                print(f"hand-over: host loop kp {rt.kp:g} kd {rt.kd:g} kff {rt.kff:g}, no smoothing", flush=True)
             if a.stand_before > 0:
                 src.set_command(0.0, 0.0, 0.0)
                 rt.run(src, seconds=a.stand_before, on_tick=tilt)
@@ -359,13 +458,26 @@ def main():
             if a.stand_after > 0:
                 src.set_command(0.0, 0.0, 0.0)
                 rt.run(src, seconds=a.stand_after, on_tick=tilt)
-            rt.relax([float(v) for v in src.stance], ramp_s=1.0)
+            if not a.mode0 and not a.ramp_model_gains:
+                rt.kp, rt.kd, rt.kff, rt.smooth = KP, KD, KFF, True
+            rt.relax(sit if sit is not None else stance, ramp_s=1.5)
     except KeyboardInterrupt:
         print("\ninterrupted")
     except Tripped as e:
         print(f"\n!! TRIPPED: {e}")
         code = 1
+        try:                                   # where the joints actually are, for the read-back
+            fb = rt.read()
+            print("at the trip, deg q/goal: " + "  ".join(
+                f"{n} {math.degrees(fb[n]['q']):+.0f}/{math.degrees(rt.goal[n]):+.0f}" if fb[n] else f"{n} ?"
+                for n in calib.joints))
+            if hasattr(imu, "gravity"):
+                g = imu.gravity
+                print(f"gravity {g[0]:+.2f} {g[1]:+.2f} {g[2]:+.2f}")
+        except Exception as ex:                # noqa: BLE001 — a read-back must not mask the trip
+            print(f"(no read-back: {ex})")
     finally:
+        print(rt.report_lines())
         print("policy", src.report())
         if hold is not None:
             print(hold.report())

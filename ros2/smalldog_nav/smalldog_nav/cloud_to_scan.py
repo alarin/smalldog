@@ -80,6 +80,14 @@ class CloudToScan(Node):
         self.declare_parameter('scan_time', 1.0 / 12.0)
         self.declare_parameter('drop_depth', 0.12)    # m below the floor plane = a drop; a tread is 0.17
         self.declare_parameter('drop_range', 2.0)     # m, how far out to look for one: 3.4 deg of tilt there
+        # The floor as the sensor sees it, not as TF says. On the real robot the L2's floor
+        # returns at 0.3-1.5 m sat 8 cm BELOW z = 0 at every bearing while the ceiling read
+        # its true 2.50 m (2026-09-17): a bias on grazing floor returns, not geometry, and
+        # 8 cm of noise under a 12 cm drop threshold flagged a drop in every scan. Each
+        # frame the median z of the near, low returns is taken as the floor, and the band
+        # and the drop depth are measured from it. 0 turns the fit off (z = 0 is the floor).
+        self.declare_parameter('floor_fit_range', 1.5)   # m, the near returns the floor is read from
+        self.declare_parameter('floor_fit_min_pts', 50)
         g = lambda n: self.get_parameter(n).value
         self.frame = g('target_frame')
         self.zlo, self.zhi = float(g('min_height')), float(g('max_height'))
@@ -90,15 +98,22 @@ class CloudToScan(Node):
         self.scan_time = float(g('scan_time'))
         self.drop_depth, self.drop_range = float(g('drop_depth')), float(g('drop_range'))
         self.drops = 0
+        self.floor_range, self.floor_min_pts = float(g('floor_fit_range')), int(g('floor_fit_min_pts'))
+        self.floor_z = 0.0                               # the last fit, carried when a frame has too few
+        self.floor_hist = []
 
         self.tf = Buffer()
         self.tf_listener = TransformListener(self.tf, self)
         self.pub = self.create_publisher(LaserScan, '/scan', qos_profile_sensor_data)
         self.create_subscription(PointCloud2, 'cloud', self.on_cloud, qos_profile_sensor_data)
         self.n = self.dropped = 0
-        self.create_timer(10.0, lambda: self.get_logger().info(
-            f'{self.n} scans, {self.dropped} clouds without TF, {self.drops} with a drop in view',
-            throttle_duration_sec=60.0))
+        self.create_timer(10.0, self.report)
+
+    def report(self):
+        fz = np.median(self.floor_hist) if self.floor_hist else float('nan')
+        self.get_logger().info(f'{self.n} scans, {self.dropped} clouds without TF, {self.drops} with a '
+                               f'drop in view, floor at z {fz:+.3f} m (fit on {len(self.floor_hist)} frames)')
+        self.floor_hist.clear()
 
     def on_cloud(self, msg):
         stamp = Time.from_msg(msg.header.stamp)
@@ -121,11 +136,18 @@ class CloudToScan(Node):
             return
         tr = t.transform.translation
         p = p @ _rot(t.transform.rotation).T + np.array([tr.x, tr.y, tr.z])
+        if self.floor_range > 0:
+            rr0 = np.hypot(p[:, 0], p[:, 1])
+            near = (rr0 >= self.rmin) & (rr0 <= self.floor_range) & (p[:, 2] > -0.25) & (p[:, 2] < 0.05)
+            if near.sum() >= self.floor_min_pts:
+                self.floor_z = float(np.median(p[near, 2]))
+                self.floor_hist.append(self.floor_z)
+            p = p - np.array([0.0, 0.0, self.floor_z])   # heights from the floor the sensor sees
         keep = (p[:, 2] >= self.zlo) & (p[:, 2] <= self.zhi)
         r = np.hypot(p[keep, 0], p[keep, 1])
         a = np.arctan2(p[keep, 1], p[keep, 0])
         if self.drop_depth > 0:
-            h = float(tr.z)                          # the sensor's height over the floor
+            h = float(tr.z) - self.floor_z           # the sensor's height over the floor
             z = p[:, 2]
             rr = np.hypot(p[:, 0], p[:, 1])
             hole = (z < -self.drop_depth) & (rr <= self.drop_range) & (rr > 1e-3)

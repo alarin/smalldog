@@ -176,8 +176,32 @@ function both `env/walk.py` and `eval.py` call), `--host-loop` on `train_ppo.py`
 Sim acceptance met: cmd 0.2 → 2.19 m in 10 s with no falls (s4 0.75 m, 6 of 64 down), cmd
 0.4 → 2.27 m (s4 1.27), start-up 0.26 s (s4 0.80), pitch std under way 0.28° (s4 0.31), stands
 from a ±15° hand-over. Lost reverse: the `--vx 0 0.4` stage never asks for it. Seed 1 on the 3070
-(`20260916-host-s1`, 1024 envs) is the second seed. **Robot acceptance is the open item:**
-the bench's 40 cm twice, then `straight_test.py` ≥ 0.8 m in 5 s.
+(`20260916-host-s1`, 1024 envs) is the second seed.
+
+## On the robot (2026-09-17)
+
+The floor, `runtime/policy.py ../rl/policy`, model gains, heading hold on:
+
+| command | result |
+|---|---|
+| stand, cmd 0 | quiet: \|a\| p50 0.04, pitch +4–5° (the mount), gyro std 0.01 rad/s |
+| vx 0.2, 5 s | walks; pitch std 2.9°, roll std 2.8°, heading −1°; distance not measured yet |
+| vx −0.15, 3 s | **stands still** — the knees do not move; reverse is gone |
+| wz ±0.5, 4 s | +130° / −127° (≈ 30°/s against 29° commanded) |
+
+Two things to know before reading any robot log against this policy:
+
+- Every "the policy dives" of that morning was the **stand-up**, not the policy: torque cut
+  at stance drops the front onto its knees (knee hard stop 110°), and any straight ramp
+  from a kneel pivots the robot onto its face with the joints exactly on target. `policy.py`
+  now stands up fold (−55°/99°) → stance under the trot's loop, re-converges the IMU filter
+  on the standing robot (`--settle`), then hands the model's gains to the policy.
+- Body rates under way are 0.7–0.9 rad/s std against the sim's 0.1–0.3: the robot still
+  rocks more than the model says. Pitch std 2.9° meets the ±5° goal.
+
+**Next stage:** fine-tune from `runs/20260916-host-s0` with the default `Commands` range to
+get reverse (and strafe) back; do not change the reward in the same run. Then
+`straight_test.py` ≥ 0.8 m in 5 s is the distance number this table lacks.
 
 ## Questions for review
 
