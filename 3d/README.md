@@ -158,7 +158,7 @@ prints the head's air and the tip's distance to the case.
 | hip-roll axis | X ±90, Y ±36, Z 0 (axis along X) |
 | hip-pitch axis | X ±90, Y ±76, Z −30 (axis along Y) |
 | thigh / shin | 75 / 82 |
-| foot | ⌀26 TPU dome |
+| foot | ⌀26 TPU dome, siped 1 × 1.2 mm on a 4 mm grid over the sole |
 | joint width (over fork arms) | 46.2 |
 | shin section, boss / shaft / ankle | 27.6×45.8 / 24×30 / 19.5×20.5 |
 
@@ -417,7 +417,7 @@ Still open: the model puts the two roll servos' port ends 1.8 mm apart at |y| = 
 | `hip_bracket_A` / `_B` | 2 + 2 | PETG/ASA/PA-CF, 5 walls, 40 % |
 | `thigh_A` / `_B` | 2 + 2 | PETG/ASA/PA-CF, 5 walls, 40 % |
 | `shin_A` / `_B` | 2 + 2 | PETG/ASA/PA-CF, 5 walls, 40 % |
-| `foot` | 4 | TPU 95A, 3 walls, 25 % |
+| `foot` | 4 | TPU 95A, 2 walls, 10 % gyroid — soft on purpose, so the dome flattens |
 | `servo_gauge` | 1 | **print this first** |
 
 `_A` = FL + RR, `_B` = FR + RL (the two chiralities; front/rear are the same part rotated).
@@ -434,7 +434,7 @@ Support mass is set by the parts' own internal ceilings, not the threshold angle
 Sliced in OrcaSlicer for a 0.4 nozzle at 0.2 mm (`out/gcode/summary.json`): body plate
 ~476 g / 14.6 h, legs 604 g / 21.2 h, feet 28 g / 2 h — **~1.1 kg and 38 h** for the
 robot. The parts are thin-walled, so the walls set the mass: measured fill factors run
-0.78–0.97 of solid (0.65 for the TPU feet), and that is `PRINT_FILL` in `mini_dog.py`
+0.78–0.97 of solid (0.45 for the TPU feet, **verify** — the 2-wall print is not weighed yet), and that is `PRINT_FILL` in `mini_dog.py`
 section 4. Re-slice and re-measure after any wall-count or line-width change. Splitting the
 tray to print it flat was measured and does not pay.
 

@@ -220,6 +220,25 @@ FOOT_CB_Z  = 8.0                      # pocket ceiling this far BELOW FOOT_Z.  T
                                       # under it recesses the head ~2 mm above the sole so
                                       # the metal never reaches the ground.
 FOOT_BOLT_L = 30.0                    # M3 x 30, the next standard length over the span
+# Tread.  The dome stays a sphere: the shin stands 24 deg off vertical (STAND_PITCH +
+# STAND_KNEE) and sweeps ~0..45 through a stride, so the contact point wanders up to
+# 9 mm off the pole and a flat or flatter sole would ride on its edge.  Grip comes from
+# the sole instead: sipes cut NORMAL to the dome (a spherical skin FOOT_TREAD_D thick,
+# intersected with a grid of slots), leaving 3 mm square nubs that flex and wipe on a
+# smooth floor, and a soft print (2 walls, 10 % - the PARTS note) so the dome flattens
+# under the ~25 N it carries.  A 3 mm nub is the smallest that prints cleanly in TPU with
+# a 0.4 nozzle; a 1 mm slot is the narrowest that stays open.  The grooves stop
+# FOOT_TREAD_Z0 above the equator so none of them opens into the cylinder above it.
+# The contact travels along foot-local x through the stride (the shin tilts about the
+# pitch axis) and stays at y ~ 0, so the x slots are on the pole (the contact crosses
+# them in turn - that is the wiping edge) and the y slots are staggered half a pitch: a
+# slot on y = 0 would run under the contact for the whole stride.  At stance the centre
+# sits 5.3 mm off the pole, mid-nub either way.
+FOOT_TREAD_W  = 1.0                   # slot width
+FOOT_TREAD_D  = 1.2                   # slot depth, normal to the dome
+FOOT_TREAD_P  = 4.0                   # grid pitch -> 3 mm nubs
+FOOT_TREAD_N  = 2                     # slots at k*P, k = -N..N, both ways: +-8 mm
+FOOT_TREAD_Z0 = 3.0                   # the skin stops this far below the equator
 # Shin profile, after the Waveshare DOG PRO lower leg in ref/ROBOTIC_DOG_-STEP - the one
 # real quadruped link this repo actually owns.  Measured by tools/ref_ws_shin.py:
 # 101.8 mm between joint centres, a CONSTANT 12 mm plate thickness, an in-plane depth that
@@ -1162,7 +1181,8 @@ PRINT_FILL        = {"chassis_bottom": 0.93, "chassis_top": 0.80, "lidar_mount":
                      "hip_bracket_A":  0.95, "hip_bracket_B": 0.95,
                      "thigh_A":        0.97, "thigh_B":       0.97,
                      "shin_A":         0.92, "shin_B":        0.92,
-                     "servo_gauge":    0.94, "foot":          0.65}
+                     "servo_gauge":    0.94, "foot":          0.45}   # foot: **verify** - an estimate for the
+                                                             # 2-wall / 10 % print; slice and weigh
 # gps_mount, cradle_front, cradle_rear, battery_case, battery_lid, camera_mount and
 # cell_holder are deliberately absent: none has been sliced
 # yet, so part_rho() gives them PRINT_FILL_MEAN.  Slice them and put the measured factor
@@ -2791,7 +2811,23 @@ def foot():
     # straight through.  Bearing on TPU is soft by nature: this is a retention bolt, snug,
     # not a preloaded joint.
     s = s.cut(cyl(FOOT_CB_R, (zf-FOOT_CB_Z) - (sole-1.0), (PITCH_X, LEG_Y, sole-1.0)))
-    return s
+    # Tread (FOOT_TREAD_*): the outer FOOT_TREAD_D of the dome, clipped below the
+    # equator, intersected with a grid of vertical slots.  Cut last: it is a through-path
+    # into the surface and the pocket above has already been taken out.
+    r, w = FOOT_D/2, FOOT_TREAD_W
+    skin = (cq.Workplane("XY").sphere(r).cut(cq.Workplane("XY").sphere(r-FOOT_TREAD_D))
+            .translate((PITCH_X, LEG_Y, zf))
+            .intersect(bxc(PITCH_X-20, PITCH_X+20, LEG_Y-20, LEG_Y+20,
+                           sole-1.0, zf-FOOT_TREAD_Z0)))
+    grid = None
+    for k in range(-FOOT_TREAD_N, FOOT_TREAD_N+1):
+        o = k*FOOT_TREAD_P
+        grid = (grid.union if grid else (lambda b: b))(
+            bxc(PITCH_X+o-w/2, PITCH_X+o+w/2, LEG_Y-20, LEG_Y+20, sole-1.0, zf))
+    for k in range(-FOOT_TREAD_N, FOOT_TREAD_N):      # staggered: no slot on y = 0
+        o = (k+0.5)*FOOT_TREAD_P
+        grid = grid.union(bxc(PITCH_X-20, PITCH_X+20, LEG_Y+o-w/2, LEG_Y+o+w/2, sole-1.0, zf))
+    return s.cut(skin.intersect(grid))
 
 def servo_gauge():
     g = sleeve(length=18.0, window=False)
@@ -3252,7 +3288,7 @@ def build():
     PARTS["thigh_B"]        = (mirY(th), 2, "PETG/ASA/PA-CF, 5 walls, 40% - FR+RL")
     PARTS["shin_A"]         = (sh,       2, "PETG/ASA/PA-CF, 5 walls, 40% - FL+RR")
     PARTS["shin_B"]         = (mirY(sh), 2, "PETG/ASA/PA-CF, 5 walls, 40% - FR+RL")
-    PARTS["foot"]           = (ft,       4, "TPU 95A, 3 walls, 25%")
+    PARTS["foot"]           = (ft,       4, "TPU 95A, 2 walls, 10% gyroid - soft on purpose")
     PARTS["servo_gauge"]    = (servo_gauge(), 1, "TEST PRINT FIRST - checks the ST3215 fit")
     return hb, th, sh, ft
 
