@@ -23,6 +23,23 @@ Publishes   /joint_states                    sensor_msgs/JointState (position, v
             way out). Foxglove's Diagnostics panels read it as is — README, "Watching
             the robot".
 
+The RL walker (`policy:=<dir>`)
+--------------------------------
+With `policy` set to an exported policy directory (`rl/policy/`, as `rl/export_onnx.py`
+writes it) there is no walker node and no trajectory topic: this node runs
+`runtime.policy.PolicySource` itself, on the loop's own thread, because the policy's
+observation is the bus feedback and the IMU of the same tick. `/cmd_vel` is the command
+(vx, vy, wz clamped to the trained range, zero after `cmd_timeout`), `policy.py`'s heading
+hold steers wz when the operator asks for none, and `/odom` plus the TF pair odom ->
+base_footprint -> base_link come from here (the command times `odom_scale`, rotated by the
+IMU yaw; the body lifted by the standing height and tilted as the IMU says) exactly as the
+walker publishes them, so `nav.launch.py` sees the same robot. Stand-up is the fold, then
+the policy's stance, under the trot's loop; then `settle` seconds of stance while the IMU
+filter re-converges on the standing robot; then the model's gains (kp 5220, no kd, no
+feed-forward, no smoothing — the PD the policy was trained against) and the policy.
+The IK trot slid in place on the glossy laminate at any speed on 2026-09-17; the RL
+policy walked it at 0.18 m/s. That is why this mode exists.
+
 No ros2_control, no hardware_interface plugin. `robot/runtime` already is the hardware
 interface — the bus driver, the calibration, the safety guard and the 50 Hz tick that
 `walk.py` and `policy.py` run on — and it is pure Python. Rewriting it as a C++ plugin so
@@ -66,8 +83,11 @@ import time
 import rclpy
 import rclpy.executors
 from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus, KeyValue
+from geometry_msgs.msg import TransformStamped, Twist
+from nav_msgs.msg import Odometry
 from rclpy.node import Node
 from sensor_msgs.msg import Imu, JointState
+from tf2_ros import TransformBroadcaster
 from trajectory_msgs.msg import JointTrajectory
 
 # `robot/` is found the way `robot/runtime/walk.py` finds `ros2/smalldog_walker`: by
@@ -82,7 +102,7 @@ from feetech.bus import Bus, BusError                                # noqa: E40
 from runtime.calib import CALIB, Calibration, load_params            # noqa: E402
 from runtime.loop import CTRL_HZ, FollowingLoopback, Runtime         # noqa: E402
 from runtime.mode2 import DutyLoopback, KD, KFF, KP, Mode2Runtime    # noqa: E402
-from runtime.policy import sit_pose                                  # noqa: E402
+from runtime.policy import HeadingHold, PolicySource, sit_pose       # noqa: E402
 from runtime.safety import Limits, Tripped                           # noqa: E402
 from smalldog_walker.gait import TrotGait                            # noqa: E402
 
@@ -137,6 +157,21 @@ class ServoNode(Node):
         p('kp', KP)
         p('kd', KD)
         p('kff', KFF)
+        # the RL walker (docstring): '' is the trajectory topic, a path is the policy
+        p('policy', '')
+        p('cmd_timeout', 0.5)              # s without /cmd_vel before the command is zero
+        p('policy_kp', 5220.0)             # the model's PD, runtime/policy.py's defaults
+        p('policy_kd', 0.0)
+        p('policy_kff', 0.0)
+        p('policy_settle', 1.5)            # s of stance for the IMU filter before the hand-over
+        p('heading_hold', True)
+        p('vx_range', [-0.2, 0.4])         # the trained command range, m/s
+        p('vy_max', 0.1)
+        p('wz_max', 0.5)                   # rad/s; +-0.5 -> +-130 deg in 4 s on the floor, 0.8 untested
+        p('odom_scale', 1.0)               # commanded -> real distance (the walker's 0.75 was the trot's)
+        p('odom_frame', 'odom')
+        p('base_frame', 'base_footprint')
+        p('body_frame', 'base_link')
         g = lambda k: self.get_parameter(k).value    # noqa: E731
 
         self.params = load_params()
@@ -200,10 +235,40 @@ class ServoNode(Node):
         # ramp from a kneel pivots it onto its face (2026-09-17, four times).
         self.q_sit = sit_pose(self.calib) or [0.0, -0.96, 1.73] * 4
 
-        self.get_logger().info(
-            f'servos up: {len(self.joints)} joints on '
-            f'{"a loopback bus" if self.dry else g("port")} at {self.hz:.0f} Hz, '
-            f'listening on /{ctrl}/joint_trajectory')
+        self.policy_dir = str(g('policy'))
+        self.src = None                    # PolicySource, made in run() once the IMU is up
+        self._cmd = (0.0, 0.0, 0.0)
+        self._cmd_t = None
+        self._cmd_zeroed = True
+        if self.policy_dir:
+            if self.pub_imu is None:
+                raise SystemExit('the policy needs the IMU: imu:=true')
+            if not self.mode2:
+                raise SystemExit('the policy needs the host loop: mode2:=true')
+            self.cmd_timeout = float(g('cmd_timeout'))
+            self.vx_lo, self.vx_hi = (float(v) for v in g('vx_range'))
+            self.vy_max, self.wz_max = float(g('vy_max')), float(g('wz_max'))
+            self.odom_scale = float(g('odom_scale'))
+            self.odom_frame, self.base_frame, self.body_frame = g('odom_frame'), g('base_frame'), g('body_frame')
+            self.body_z = gait.body_height + gait.foot_r          # as walker_node lifts base_link
+            self._ox = self._oy = 0.0
+            self.create_subscription(Twist, '/cmd_vel', self.on_cmd_vel, 10)
+            self.pub_odom = self.create_publisher(Odometry, '/odom', 10)
+            self.tf = TransformBroadcaster(self)
+            self.get_logger().info(f'RL walker: {self.policy_dir}, /cmd_vel in, /odom and TF out')
+        else:
+            self.get_logger().info(
+                f'servos up: {len(self.joints)} joints on '
+                f'{"a loopback bus" if self.dry else g("port")} at {self.hz:.0f} Hz, '
+                f'listening on /{ctrl}/joint_trajectory')
+
+    def on_cmd_vel(self, msg):
+        vx = max(self.vx_lo, min(self.vx_hi, float(msg.linear.x)))
+        vy = max(-self.vy_max, min(self.vy_max, float(msg.linear.y)))
+        wz = max(-self.wz_max, min(self.wz_max, float(msg.angular.z)))
+        with self._lock:
+            self._cmd = (vx, vy, wz)
+            self._cmd_t = time.perf_counter()
 
     # ------------------------------------------------------------- subscriptions
     def on_trajectory(self, msg):
@@ -253,6 +318,61 @@ class ServoNode(Node):
             self._stale_said = False
         return q
 
+    def policy_source(self, dt, fb):
+        """`Runtime.run`'s source in policy mode: /cmd_vel to the policy, zero when stale."""
+        if self.stop or not rclpy.ok():
+            raise StopIteration
+        with self._lock:
+            cmd, t = self._cmd, self._cmd_t
+        stale = t is None or time.perf_counter() - t > self.cmd_timeout
+        if stale:
+            cmd = (0.0, 0.0, 0.0)
+        if stale != self._cmd_zeroed:
+            self._cmd_zeroed = stale
+            self.get_logger().info('no /cmd_vel: standing' if stale else 'walking on /cmd_vel')
+        self.src.set_command(*cmd)
+        self._cmd_now = cmd
+        return self.src(dt, fb)
+
+    def publish_odom(self, dt, now, roll, pitch, wz):
+        """Dead reckoning from the command, as walker_node does: honest about slip."""
+        vx, vy, _ = self._cmd_now
+        c, s_ = math.cos(self._yaw), math.sin(self._yaw)
+        self._ox += (vx * c - vy * s_) * self.odom_scale * dt
+        self._oy += (vx * s_ + vy * c) * self.odom_scale * dt
+        od = Odometry()
+        od.header.stamp = now
+        od.header.frame_id = self.odom_frame
+        od.child_frame_id = self.base_frame
+        od.pose.pose.position.x, od.pose.pose.position.y = self._ox, self._oy
+        qw, qx, qy, qz = quat_zyx(0.0, 0.0, self._yaw)
+        od.pose.pose.orientation.w, od.pose.pose.orientation.x = qw, qx
+        od.pose.pose.orientation.y, od.pose.pose.orientation.z = qy, qz
+        od.twist.twist.linear.x, od.twist.twist.linear.y = vx * self.odom_scale, vy * self.odom_scale
+        od.twist.twist.angular.z = wz
+        od.pose.covariance[0] = od.pose.covariance[7] = 0.05
+        od.pose.covariance[35] = 0.02
+        od.twist.covariance[0] = od.twist.covariance[7] = 0.02
+        od.twist.covariance[35] = 0.01
+        self.pub_odom.publish(od)
+
+        t_ob = TransformStamped()
+        t_ob.header.stamp = now
+        t_ob.header.frame_id = self.odom_frame
+        t_ob.child_frame_id = self.base_frame
+        t_ob.transform.translation.x, t_ob.transform.translation.y = self._ox, self._oy
+        t_ob.transform.rotation.w, t_ob.transform.rotation.x = qw, qx
+        t_ob.transform.rotation.y, t_ob.transform.rotation.z = qy, qz
+        t_bb = TransformStamped()
+        t_bb.header.stamp = now
+        t_bb.header.frame_id = self.base_frame
+        t_bb.child_frame_id = self.body_frame
+        t_bb.transform.translation.z = self.body_z
+        qw, qx, qy, qz = quat_zyx(roll, pitch, 0.0)
+        t_bb.transform.rotation.w, t_bb.transform.rotation.x = qw, qx
+        t_bb.transform.rotation.y, t_bb.transform.rotation.z = qy, qz
+        self.tf.sendTransform([t_ob, t_bb])
+
     def on_tick(self, k, dt, fb):
         now = self.get_clock().now().to_msg()
         js = JointState()
@@ -264,7 +384,8 @@ class ServoNode(Node):
         self.pub_js.publish(js)
 
         if self.imu is not None:
-            g, w, acc = self.imu.update(dt)
+            # in policy mode the source read the chip this tick already (LiveIMU.last)
+            g, w, acc = self.imu.last if self.src is not None else self.imu.update(dt)
             roll, pitch = attitude_from_gravity(g)
             self.rt.guard.attitude(dt, roll, pitch)     # raises Tripped: the robot is over
             self._yaw += w[2] * dt
@@ -279,6 +400,8 @@ class ServoNode(Node):
             # roll/pitch from a complementary filter, yaw integrated: the covariances say so
             m.orientation_covariance = [0.01, 0.0, 0.0, 0.0, 0.01, 0.0, 0.0, 0.0, 1.0]
             self.pub_imu.publish(m)
+            if self.src is not None:
+                self.publish_odom(dt, now, roll, pitch, w[2])
 
         if self.diag_every and k % self.diag_every == 0:
             self.pub_diag.publish(self.diagnostics(fb, now))
@@ -391,6 +514,8 @@ class ServoNode(Node):
             log.error('not every servo answered; refusing to move')
             return 1
         self.start_imu()
+        if self.policy_dir:
+            return self.run_policy()
 
         t0 = time.perf_counter()
         while not self.stop and rclpy.ok() and self.latest_goal()[0] is None:
@@ -440,6 +565,60 @@ class ServoNode(Node):
             for line in self.rt.report_lines().split('\n'):
                 log.info(line)
             log.info(f'{self._msgs} trajectory messages, {self._reordered} reordered')
+        return code
+
+
+    def run_policy(self) -> int:
+        """Policy mode: fold -> stance under the trot's loop, settle, the model's gains, walk."""
+        log = self.get_logger()
+        g = lambda k: self.get_parameter(k).value    # noqa: E731
+        hold = HeadingHold() if bool(g('heading_hold')) else None
+        self.src = PolicySource(self.policy_dir, self.calib, self.imu, hold=hold)
+        self._cmd_now = (0.0, 0.0, 0.0)
+        stance = [float(v) for v in self.src.stance]
+        log.info(f'policy {self.src.meta["run"]} @ {self.src.meta["commit"]}, obs '
+                 f'{self.src.hist_n}x{self.src.frame_n}; heading hold {"on" if hold else "off"}')
+        trot_gains = (self.rt.kp, self.rt.kd, self.rt.kff, self.rt.smooth)
+        code = 0
+        try:
+            with self.rt:
+                # kp only for the ramps: kd on the speed register rang rr_roll (policy.py)
+                self.rt.kd, self.rt.kff = 0.0, 0.0
+                self.rt.engage(self.q_sit, ramp_s=self.ramp)
+                self.rt.engage_ramp_to(stance, ramp_s=self.ramp)
+                settle = float(g('policy_settle'))
+                if settle > 0:
+                    self.imu.reset()
+                    self.rt.run(lambda dt, fb: (self.imu.update(dt), stance)[1], seconds=settle)
+                    gr = self.imu.gravity
+                    log.info(f'settled {settle:g} s: pitch '
+                             f'{math.degrees(math.asin(max(-1.0, min(1.0, gr[0])))):+.1f} deg')
+                    if gr[2] > -0.9:
+                        raise Tripped('standing at stance the IMU is off level; not handing '
+                                      'that to the policy', 'imu', -gr[2], 0.9)
+                self.rt.kp, self.rt.kd, self.rt.kff = (float(g('policy_kp')), float(g('policy_kd')),
+                                                       float(g('policy_kff')))
+                self.rt.smooth = False
+                log.info(f'hand-over: kp {self.rt.kp:g} kd {self.rt.kd:g} kff {self.rt.kff:g}; '
+                         f'walking on /cmd_vel')
+                self.rt.run(self.policy_source, on_tick=self.on_tick)
+                log.info('sitting down')
+                self.rt.kp, self.rt.smooth = trot_gains[0], trot_gains[3]
+                self.rt.relax(self.q_sit, ramp_s=1.5)
+        except Tripped as e:
+            log.error(f'TRIPPED: {e}')
+            self.pub_diag.publish(self.diagnostics(
+                {n: None for n in self.joints}, self.get_clock().now().to_msg(), trip=e))
+            code = 1
+        except BusError as e:
+            log.error(f'bus: {e}')
+            code = 1
+        finally:
+            for line in self.rt.report_lines().split('\n'):
+                log.info(line)
+            log.info('policy ' + self.src.report())
+            if hold is not None:
+                log.info(hold.report())
         return code
 
 

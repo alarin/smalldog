@@ -551,7 +551,14 @@ ros2 launch smalldog_hardware robot.launch.py mode2:=false ...        # the serv
 ros2 launch smalldog_hardware robot.launch.py imu:=true lidar:=true  # + the L2 on /lidar/points, for smalldog_nav
 ros2 run smalldog_teleop keyboard --ros-args -p speed:=0.12 -p turn:=0.9   # or a keyboard, second terminal (MODE 2 fit)
 tools/robot_go.sh 5 0.08                                   # or: walk straight 5 s, hands off
+ros2 launch smalldog_hardware robot.launch.py policy:=rl/policy lidar:=true   # the RL policy as the walker
 ```
+
+`policy:=<dir>` replaces the IK trot with the RL policy (`rl/policy/`): the servo node runs
+`runtime.policy.PolicySource` itself at 50 Hz, takes `/cmd_vel` (vx −0.2..0.4, vy ±0.1,
+wz ±0.5, zero after 0.5 s), publishes `/odom` and the TF pair like the walker, and stands up
+fold → stance before handing over (servo_node.py, "The RL walker"). The trot slid in place
+on the glossy laminate at any speed (2026-09-17); the policy walks it at ~0.18 m/s at cmd 0.2.
 
 `mode2:=true` (the default since 2026-09-16) runs the servos in MODE 2 with the position
 loop on the Pi — `robot/runtime/mode2.py`, `ideas/FAST_SERVOS.md` — and hands the walker

@@ -40,6 +40,11 @@ from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 
+#: the checkout (this file is a symlink under install/ with --symlink-install): for a
+#: relative `policy:=rl/policy`
+REPO = os.environ.get('SMALLDOG_REPO') or os.path.dirname(os.path.dirname(os.path.dirname(
+    os.path.dirname(os.path.realpath(__file__)))))
+
 #: robot/runtime/walk.py MODE2_RATE_LIMIT — the bridge at full duty at the pack's 11.3 V
 MODE2_RATE_CEILING = 4.7
 #: The gait's operating point per servo loop: (period s, turn rad/s, default speed m/s).
@@ -55,11 +60,14 @@ def _nodes(context):
     speed = LaunchConfiguration('speed').perform(context)
     speed = float(speed) if speed else speed_default
     yaw_max = float(LaunchConfiguration('yaw_max').perform(context))
+    policy = LaunchConfiguration('policy').perform(context)
+    if policy and not os.path.isabs(policy):
+        policy = os.path.normpath(os.path.join(REPO, policy))
     urdf = os.path.join(get_package_share_directory('smalldog_description'), 'urdf',
                         'smalldog.urdf')
     with open(urdf) as f:
         robot_description = f.read()
-    return [
+    nodes = [
         # TF for the body: base_link -> the legs (from the servo node's /joint_states) and
         # the fixed sensor frames. smalldog_nav needs lidar_link; without this node it
         # does not exist on the robot and the scan cannot be built.
@@ -71,11 +79,21 @@ def _nodes(context):
         Node(package='smalldog_hardware', executable='servos', name='smalldog_servos',
              output='screen',
              parameters=[{'port': LaunchConfiguration('port'),
-                          'imu': LaunchConfiguration('imu'),
+                          # the RL walker needs the IMU in the same process (servo_node.py)
+                          'imu': True if policy else LaunchConfiguration('imu'),
                           'dry_run': LaunchConfiguration('dry_run'),
-                          'mode2': mode2}]),
+                          'mode2': mode2,
+                          'policy': policy,
+                          # 0.18 m/s real at cmd 0.2 on the laminate (2026-09-17, 0.90 m in 5 s)
+                          'odom_scale': 0.9}]),
+    ]
+    if not policy:
+        nodes.append(_walker(mode2, PERIOD, speed, yaw_max))
+    return nodes + _extras(speed, TURN)
 
-        Node(package='smalldog_walker', executable='walker', name='smalldog_walker',
+
+def _walker(mode2, PERIOD, speed, yaw_max):
+    return Node(package='smalldog_walker', executable='walker', name='smalldog_walker',
              output='screen',
              parameters=[{'use_sim_time': False,
                           'rate': 50.0,
@@ -109,7 +127,11 @@ def _nodes(context):
                           # real against 0.55 / 0.55 / 0.55 m of stance-foot travel
                           # -> 0.68-0.75 with the P hold, 0.78-0.82 once the
                           # integral term stopped it turning; the map-based 0.5 was one walk
-                          'odom_scale': 0.75}]),
+                          'odom_scale': 0.75}])
+
+
+def _extras(speed, TURN):
+    return [
 
         Node(package='smalldog_teleop', executable='keyboard', name='smalldog_keyboard_teleop',
              output='screen', condition=IfCondition(LaunchConfiguration('teleop')),
@@ -164,6 +186,10 @@ def generate_launch_description():
         DeclareLaunchArgument('speed', default_value='',
                               description='m/s; empty = the fit for the servo loop (0.12 in '
                                           'MODE 2, 0.08 under the firmware loop)'),
+        DeclareLaunchArgument('policy', default_value='',
+                              description='an exported policy dir (rl/policy, relative to the '
+                                          'repo): the RL walker in the servo node instead of '
+                                          'the IK trot; implies imu:=true'),
         DeclareLaunchArgument('yaw_max', default_value='0.2',
                               description='rad/s the heading hold may add; 0 = the gait\'s own 0.5'),
         # off by default: the teleop reads keys from a TTY it does not have under launch

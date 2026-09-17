@@ -63,7 +63,7 @@ sys.path.insert(0, os.path.dirname(HERE))
 from feetech.bus import Bus                                          # noqa: E402
 from runtime.calib import CALIB, Calibration                          # noqa: E402
 from runtime.loop import CTRL_HZ, FollowingLoopback, Runtime         # noqa: E402
-from runtime.mode2 import KP, KD, KFF                                 # noqa: E402
+from runtime.mode2 import KP                                          # noqa: E402
 from runtime.safety import Limits, Tripped                           # noqa: E402
 
 
@@ -128,11 +128,13 @@ class LiveIMU:
         self.chip = chip
         self.att = Attitude(bias=bias)
         self.gravity = (0.0, 0.0, -1.0)     # the last read, for the guard's tilt check
+        self.last = ((0.0, 0.0, -1.0), (0.0, 0.0, 0.0), (0.0, 0.0, 9.80665))   # (g, w, acc)
 
     def update(self, dt):
         accel, gyro = self.chip.read()
         out = self.att.update(accel, gyro, dt)
         self.gravity = out[0]
+        self.last = out                     # for a second reader on the same tick (servo_node)
         return out
 
     def reset(self):
@@ -412,9 +414,12 @@ def main():
             # lifting 12 loaded servos from a sagging pose ended nose-down and over
             # twice (2026-09-17: relaxed 13-16 deg nose-down -> fell during the settle;
             # from straight legs the same ramp was fine). Ramp and settle under the
-            # IK trot's loop, then hand the policy the PD it was trained against.
+            # IK trot's kp, then hand the policy the PD it was trained against. kp only:
+            # kd on the servo's speed register rang rr_roll at 14 Hz to the full duty in
+            # the ramps (2026-09-17, the joint that ran away that morning); without kd
+            # and kff the same ramp stands up just as well.
             if not a.mode0 and not a.ramp_model_gains:
-                rt.kp, rt.kd, rt.kff, rt.smooth = KP, KD, KFF, True
+                rt.kp, rt.kd, rt.kff, rt.smooth = KP, 0.0, 0.0, True
             stance = [float(v) for v in src.stance]
             sit = sit_pose(calib)
             fb0 = rt.read()
@@ -459,7 +464,7 @@ def main():
                 src.set_command(0.0, 0.0, 0.0)
                 rt.run(src, seconds=a.stand_after, on_tick=tilt)
             if not a.mode0 and not a.ramp_model_gains:
-                rt.kp, rt.kd, rt.kff, rt.smooth = KP, KD, KFF, True
+                rt.kp, rt.kd, rt.kff, rt.smooth = KP, 0.0, 0.0, True
             rt.relax(sit if sit is not None else stance, ramp_s=1.5)
     except KeyboardInterrupt:
         print("\ninterrupted")
