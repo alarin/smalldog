@@ -172,11 +172,20 @@ function both `env/walk.py` and `eval.py` call), `--host-loop` on `train_ppo.py`
 
 ## The run (2026-09-17)
 
-`20260916-host-s0` on the 5070 Ti (2048 envs, seed 0, 134 min) is in `rl/policy/` (cb643a8).
-Sim acceptance met: cmd 0.2 → 2.19 m in 10 s with no falls (s4 0.75 m, 6 of 64 down), cmd
-0.4 → 2.27 m (s4 1.27), start-up 0.26 s (s4 0.80), pitch std under way 0.28° (s4 0.31), stands
-from a ±15° hand-over. Lost reverse: the `--vx 0 0.4` stage never asks for it. Seed 1 on the 3070
-(`20260916-host-s1`, 1024 envs) is the second seed.
+Two stages from s4, both on the 5070 Ti (2048 envs, seed 0, 134 min each), reward unchanged:
+
+1. `20260916-host-s0`, `--vx 0 0.4`: the gait under the host loop. Sim acceptance met: cmd
+   0.2 → 2.19 m in 10 s with no falls (s4 0.75 m, 6 of 64 down), start-up 0.26 s (s4 0.80),
+   pitch std under way 0.28° (s4 0.31), stands from a ±15° hand-over. **Lost reverse**: the
+   stage never asks for it, and seed 1 on the 3070 (`20260916-host-s1`) lost it the same way.
+2. `20260917-host-rev-s0`, `--vx -0.2 0.4` from stage 1 — **in `rl/policy/` now** (1167565).
+   Reverse is back: cmd −0.3 → −2.46 m in 10 s, none down (stage 1: 0.00 m). Forward kept:
+   cmd 0.2 → 2.35 m, cmd 0.4 → 2.72 m, start-up 0.26 s, pitch std 0.34°, stands from ±15°,
+   turn 0.8 → 0.90 rad/s. Strafe 0.25 → 0.16 m/s with 2 of 16 down, unchanged from stage 1.
+
+A third variant runs on the 3070 (`20260917-host-rev-s1`: stage 2's recipe with the default
+`Commands` range −0.15..0.25, 20 M steps, 1024 envs) as a check on the range; it ships only
+if it is clearly better in `eval.py`.
 
 ## On the robot (2026-09-17)
 
@@ -199,9 +208,10 @@ Two things to know before reading any robot log against this policy:
 - Body rates under way are 0.7–0.9 rad/s std against the sim's 0.1–0.3: the robot still
   rocks more than the model says. Pitch std 2.9° meets the ±5° goal.
 
-**Next stage:** fine-tune from `runs/20260916-host-s0` with the default `Commands` range to
-get reverse (and strafe) back; do not change the reward in the same run. Then
-`straight_test.py` ≥ 0.8 m in 5 s is the distance number this table lacks.
+The table above is stage 1. Stage 2 has not met the floor yet.
+
+**Next:** the floor with `rl/policy/` (stage 2): cmd −0.15 must move the knees; then
+`straight_test.py` ≥ 0.8 m in 5 s at cmd 0.2 is the distance number the table lacks.
 
 ## Questions for review
 
