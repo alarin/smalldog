@@ -1,9 +1,9 @@
 {
-  "run": "20260916-host-s0",
-  "commit": "24630d4",
+  "run": "20260917-host-rev-s0",
+  "commit": "2f66195",
   "trained_steps": 30000000,
   "onnx": "policy.onnx",
-  "verify_max_abs_diff": 3.427267074584961e-07,
+  "verify_max_abs_diff": 4.246830940246582e-07,
   "ctrl_hz": 50.0,
   "obs_hist": 5,
   "obs_frame": 48,
