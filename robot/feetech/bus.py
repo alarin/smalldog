@@ -80,6 +80,10 @@ class Bus:
         # The whole point of counting: one connector looks like a bad bus otherwise.
         self.bad_by_id: dict[int, int] = {}
         self.missing_by_id: dict[int, int] = {}
+        # how the checksum byte was wrong (got XOR expected), per pattern: 0xc0 is the
+        # slot defect (a talker releasing the half-duplex line a bit-time early);
+        # anything else is the payload itself being corrupted on the wire.
+        self.bad_xor: dict[int, int] = {}
         self._times: list[float] = []
         self._sync_read_ok: bool | None = None
 
@@ -337,6 +341,8 @@ class Bus:
             if checksum(f[2:5 + n]) != f[5 + n]:
                 self.n_checksum += 1
                 self.bad_by_id[i] = self.bad_by_id.get(i, 0) + 1
+                x = checksum(f[2:5 + n]) ^ f[5 + n]
+                self.bad_xor[x] = self.bad_xor.get(x, 0) + 1
                 bad.append(i)
                 continue
             out[i] = f[5:5 + n]
@@ -361,7 +367,8 @@ class Bus:
                 "p99_ms": 1e3 * q(0.99), "max_ms": 1e3 * t[-1],
                 "timeouts": self.n_timeout, "checksum_errors": self.n_checksum,
                 "repaired": self.n_repaired, "sync_read": self._sync_read_ok,
-                "bad_by_id": dict(self.bad_by_id), "missing_by_id": dict(self.missing_by_id)}
+                "bad_by_id": dict(self.bad_by_id), "missing_by_id": dict(self.missing_by_id),
+                "bad_xor": dict(self.bad_xor)}
 
     def reset_stats(self):
         self._times.clear()

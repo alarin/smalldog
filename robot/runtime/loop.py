@@ -393,6 +393,12 @@ class Runtime:
                 if d:
                     s.append(f"  {what}: " + ", ".join(
                         f"{name.get(i, i)} {c}" for i, c in sorted(d.items(), key=lambda kv: -kv[1])))
+            x = b.get("bad_xor") or {}
+            if x:
+                top = sorted(x.items(), key=lambda kv: -kv[1])[:6]
+                s.append("  checksum byte off by (xor): " + ", ".join(f"0x{k:02x} {c}" for k, c in top)
+                         + (f", {len(x) - 6} more" if len(x) > 6 else "")
+                         + "  (0xc0 = the slot defect; anything else is the wire)")
         s.append("  " + self.guard.report())
         return "\n".join(s)
 
