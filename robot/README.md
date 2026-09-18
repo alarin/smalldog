@@ -76,6 +76,20 @@ Two things the bus does, understood and not:
   `--profile` prints `N checksum (M re-read)`; M rising with N is this defect behaving.
 - **A rare ~24 ms transport stall**, 0–3 missed deadlines per 500 ticks, almost certainly
   host-side on the mac. The number to trust is the one measured **on the Orange Pi**.
+- **The rear legs corrupt their replies under torque** (measured standing, 2026-09-18):
+  `rl_knee` ~40 % of its frames, `rr_pitch` ~20 %, the other ten clean, and limp the whole
+  bus is at the slot defect's 8 %. The checksum byte is mostly off by `0x80` — the last
+  bit cut — but any byte can be hit, so ~3 % of `rl_knee`'s frames pass the one-byte
+  checksum with a wrong temperature. Not the L2 (identical with it off), not RETURN_DELAY
+  (50 µs changed nothing), not CPU load: the rear signal path, `rl_knee` being the end of
+  the rear-left chain. **Reseat or replace the 3-pin leads 42→43 and 31→32** and read the
+  exit report's `bad checksums:` line. Until then the driver carries it: a lost or
+  header-hit frame is a gap the burst resyncs over and one id re-read alone (a lost reply
+  used to cost two port timeouts and twelve sequential reads — the 47 ms read stage that
+  was blamed on SLAM), and `Runtime.read` drops a frame whose position, temperature or
+  voltage jumps further than a servo can move in a tick, patching a lying temperature and
+  keeping the position (a phantom radian at kp 9000 is a full-duty kick). The report says
+  which servo, which byte, and how many transactions ran over 8 ms.
 
 ## The runtime, in order
 
@@ -124,7 +138,11 @@ rates while walking are still 0.5–0.6 rad/s std against the sim's 0.1–0.3. B
    `GOAL_POSITION` on the present position first, verify by reading back (the write gets
    no reply), then `--capture` records the residual. The soft clamp is ±1.45 rad of roll
    now (it was 0.78), so a joint near the wrap is twice as easy to hit — re-run `--capture`
-   before trusting an old `calib.json`.
+   before trusting an old `calib.json`. **After a re-assembly, believe the hub, not the
+   hand:** the hub goes onto the output in 90° steps, so a centre either moves by a
+   multiple of 1024 counts or it did not move. A capture that differs from the old value by
+   11° is the held pose, not the servo — that one (2026-09-18, `fl_pitch`) made the RL
+   walker rear and hop on the front feet until it was put back.
 4. **`python runtime/calib.py --sign all`** moves each joint 8.6° and asks a human which way
    it went — the bus cannot tell which way the fork went on. Prompts are in the robot's
    frame (+X forward, +Y left, +Z up; positive roll swings the foot left, positive pitch
