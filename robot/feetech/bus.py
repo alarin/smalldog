@@ -76,6 +76,10 @@ class Bus:
         # n_repaired: frames dropped for a bad checksum and re-read on their own.
         # Not an error count — see sync_read for what it means when it rises.
         self.n_tx = self.n_timeout = self.n_checksum = self.n_repaired = 0
+        # per id: replies that failed their checksum, and replies that never came.
+        # The whole point of counting: one connector looks like a bad bus otherwise.
+        self.bad_by_id: dict[int, int] = {}
+        self.missing_by_id: dict[int, int] = {}
         self._times: list[float] = []
         self._sync_read_ok: bool | None = None
 
@@ -125,10 +129,11 @@ class Bus:
             need += len(packet)
         buf = b""
         while len(buf) < need:
-            chunk = self.io.read(need - len(buf))
-            if not chunk:
-                break
+            want = need - len(buf)
+            chunk = self.io.read(want)
             buf += chunk
+            if len(chunk) < want:              # the port timed out once: enough
+                break
         dt = time.perf_counter() - t0
         self.n_tx += 1
         self._times.append(dt)
@@ -279,10 +284,14 @@ class Bus:
             need += len(packet)
         buf = b""
         while len(buf) < need:
-            chunk = self.io.read(need - len(buf))
-            if not chunk:
-                break
+            want = need - len(buf)
+            chunk = self.io.read(want)
             buf += chunk
+            if len(chunk) < want:
+                # the port's timeout has already expired once: whoever has not
+                # answered by now is not going to, and a second wait for the same
+                # silence used to double the cost of every lost reply.
+                break
         self._times.append(time.perf_counter() - t0)
         self.n_tx += 1
         if buf.startswith(packet):
@@ -296,27 +305,49 @@ class Bus:
             if self.discard_echo is None:
                 self.discard_echo = False
             need -= len(packet)
-        if len(buf) < need:
+        if not buf:
             self.n_timeout += 1
-            raise Timeout(f"sync_read: {len(buf)} of {need} bytes")
-        out, bad = {}, []
-        for k, i in enumerate(ids):
-            f = buf[k * (6 + n):(k + 1) * (6 + n)]
-            body = f[2:5 + n]
-            if f[:2] != b"\xff\xff" or f[2] != i:
+            for i in ids:
+                self.missing_by_id[i] = self.missing_by_id.get(i, 0) + 1
+            raise Timeout(f"sync_read: 0 of {need} bytes")
+        # A servo that does not answer leaves a GAP, not a shift: the others still
+        # reply in id order, each frame a fixed 6 + n bytes. So the stream is walked
+        # frame by frame against the ids still expected, a frame whose id is further
+        # down the list means the ones before it are missing, and the missing ids
+        # are re-read on their own like a bad checksum is. Measured standing under
+        # torque (2026-09-18): ~2 replies lost a second, and a lost reply used to
+        # cost two port timeouts plus twelve sequential reads — a 47 ms read stage.
+        out, bad, missing = {}, [], []
+        pending = list(ids)
+        pos, size = 0, 6 + n
+        while pending and pos + size <= len(buf):
+            f = buf[pos:pos + size]
+            if f[:2] != b"\xff\xff" or f[2] not in pending:
                 # the header or the id is not where it must be, so the stream has
                 # shifted and every frame after this one is garbage too. Nothing
                 # here is salvageable.
                 self.n_checksum += 1
-                raise Checksum(f"sync_read frame {k}: expected id {i}, stream misaligned")
-            if checksum(body) != f[5 + n]:
+                raise Checksum(f"sync_read at byte {pos}: expected one of {pending}, "
+                               "stream misaligned")
+            i = f[2]
+            while pending[0] != i:             # ids skipped over never answered
+                missing.append(pending.pop(0))
+            pending.pop(0)
+            pos += size
+            if checksum(f[2:5 + n]) != f[5 + n]:
                 self.n_checksum += 1
+                self.bad_by_id[i] = self.bad_by_id.get(i, 0) + 1
                 bad.append(i)
                 continue
             out[i] = f[5:5 + n]
-        if bad and not out:
-            raise Checksum(f"sync_read: all {len(ids)} frames malformed")
-        return out, bad
+        missing += pending                     # the tail that never came
+        if missing:
+            self.n_timeout += 1
+            for i in missing:
+                self.missing_by_id[i] = self.missing_by_id.get(i, 0) + 1
+        if not out:
+            raise Checksum(f"sync_read: all {len(ids)} frames malformed or missing")
+        return out, bad + missing
 
     # ---------------------------------------------------------------- stats
     def stats(self) -> dict:
@@ -329,7 +360,8 @@ class Bus:
                 "p50_ms": 1e3 * q(0.50), "p95_ms": 1e3 * q(0.95),
                 "p99_ms": 1e3 * q(0.99), "max_ms": 1e3 * t[-1],
                 "timeouts": self.n_timeout, "checksum_errors": self.n_checksum,
-                "repaired": self.n_repaired, "sync_read": self._sync_read_ok}
+                "repaired": self.n_repaired, "sync_read": self._sync_read_ok,
+                "bad_by_id": dict(self.bad_by_id), "missing_by_id": dict(self.missing_by_id)}
 
     def reset_stats(self):
         self._times.clear()
@@ -486,6 +518,26 @@ def _selftest() -> int:
     check("... on every frame, not just the first",
           echo.value(R.PRESENT_POSITION, got[2]), 1234)
     check("... so SYNC_READ is not latched off", echo.stats()["sync_read"], True)
+
+    # A servo that does not answer the broadcast at all leaves a gap in the burst.
+    # Measured standing under torque (2026-09-18): about two lost replies a second.
+    # The frames that did arrive are kept, the silent id is re-read on its own and
+    # counted against ITS id, so a bad connector reads as one joint, not a dead bus.
+    gap = Bus(transport=LoopbackBus({1: {}, 3: {}}), discard_echo=False)
+    gap.io.set(1, R.PRESENT_POSITION, 2148)
+    gap.io.set(3, R.PRESENT_POSITION, 1234)
+    got = gap.sync_read(R.PRESENT_POSITION, 2, [1, 2, 3])
+    check("a silent id in the middle keeps the frames around it",
+          (gap.value(R.PRESENT_POSITION, got[1]), gap.value(R.PRESENT_POSITION, got[3])),
+          (2148, 1234))
+    check("... and is absent, not invented", 2 in got, False)
+    check("... and is counted against its own id", gap.stats()["missing_by_id"], {2: 1})
+    check("... and SYNC_READ stays on", gap.stats()["sync_read"], True)
+    got = gap.sync_read(R.PRESENT_POSITION, 2, [1, 2, 3])
+    check("... twice", gap.stats()["missing_by_id"], {2: 2})
+    got = gap.sync_read(R.PRESENT_POSITION, 2, [3, 1, 2])
+    check("a silent id at the tail is the same", (sorted(got), gap.stats()["missing_by_id"]),
+          ([1, 3], {2: 3}))
 
     # Firmware with no SYNC_READ at all: the broadcast is never answered. Two
     # tries, then the sequential path — and that path keeps the ids that DO

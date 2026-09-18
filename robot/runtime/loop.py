@@ -385,6 +385,14 @@ class Runtime:
             s.append(f"  bus p50 {b['p50_ms']:.2f} ms, p99 {b['p99_ms']:.2f} ms, "
                      f"{b['timeouts']} timeouts, {b['checksum_errors']} checksum "
                      f"({b.get('repaired', 0)} re-read), sync_read={b['sync_read']}")
+            by = self.calib.id
+            name = {i: n for n, i in by.items()}
+            for key, what in (("missing_by_id", "replies never came"),
+                              ("bad_by_id", "bad checksums")):
+                d = b.get(key) or {}
+                if d:
+                    s.append(f"  {what}: " + ", ".join(
+                        f"{name.get(i, i)} {c}" for i, c in sorted(d.items(), key=lambda kv: -kv[1])))
         s.append("  " + self.guard.report())
         return "\n".join(s)
 
