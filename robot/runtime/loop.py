@@ -143,6 +143,24 @@ class Runtime:
         silent — so counting only the exception undercounted a servo that has
         stopped answering, which is precisely the thing this number is read for.
         """
+        t_in, n_in = time.perf_counter(), len(self.bus._times)
+        try:
+            raw = self._read_raw()
+        finally:
+            # wall time of the read that was NOT spent on the wire: another thread
+            # holding the GIL (the ROS executor), or a garbage-collection pass
+            stolen = (time.perf_counter() - t_in) - sum(self.bus._times[n_in:])
+            self.stolen_max = max(getattr(self, "stolen_max", 0.0), stolen)
+        if len(raw) < len(self.calib.ids):
+            self.bus_errors += 1
+        out = {}
+        for n in self.calib.joints:
+            r = raw.get(self.calib.id[n])
+            f = self.servos[n].decode(r) if r and len(r) >= R.FEEDBACK_LEN else None
+            out[n] = self._plausible(n, f)
+        return out
+
+    def _read_raw(self) -> dict:
         try:
             raw = self.bus.sync_read(R.FEEDBACK_START, R.FEEDBACK_LEN, self.calib.ids)
         except BusError:
@@ -153,14 +171,7 @@ class Runtime:
                         self.calib.id[n], R.FEEDBACK_START, R.FEEDBACK_LEN)
                 except BusError:
                     pass
-        if len(raw) < len(self.calib.ids):
-            self.bus_errors += 1
-        out = {}
-        for n in self.calib.joints:
-            r = raw.get(self.calib.id[n])
-            f = self.servos[n].decode(r) if r and len(r) >= R.FEEDBACK_LEN else None
-            out[n] = self._plausible(n, f)
-        return out
+        return raw
 
     #: a frame is garbage if, against the last accepted one, the joint moved this
     #: far (rad) — 25 rad/s over a tick, three times the servo's no-load speed —
@@ -427,6 +438,7 @@ class Runtime:
             out["late_p50_ms"] = 1e3 * late[len(late) // 2]
             out["late_max_ms"] = 1e3 * late[-1]
             out["stage_max_ms"] = {k: 1e3 * v for k, v in self._stage_max.items()}
+            out["read_stolen_max_ms"] = 1e3 * getattr(self, "stolen_max", 0.0)
         out["bus"] = self.bus.stats()
         return out
 
@@ -436,7 +448,8 @@ class Runtime:
         s = [f"{r['ticks']} ticks at {r['hz']:.0f} Hz, {r['overruns']} late ({pct:.1f} %)"]
         if "late_max_ms" in r:
             s.append(f"  late by p50 {r['late_p50_ms']:.1f} ms, max {r['late_max_ms']:.1f} ms; "
-                     "stage max ms: " + ", ".join(f"{k} {v:.1f}" for k, v in r["stage_max_ms"].items()))
+                     "stage max ms: " + ", ".join(f"{k} {v:.1f}" for k, v in r["stage_max_ms"].items())
+                     + f"; of the read, off the wire (GIL/GC) max {r['read_stolen_max_ms']:.1f}")
         b = r["bus"]
         if b.get("n"):
             s.append(f"  bus p50 {b['p50_ms']:.2f} ms, p99 {b['p99_ms']:.2f} ms, "
