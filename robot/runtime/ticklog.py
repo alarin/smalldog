@@ -78,7 +78,10 @@ class TickLog:
         import numpy as np
         if not self.rows:
             return None
-        if path.endswith(os.sep) or os.path.isdir(path):
+        # a name without .npz is a directory, whether or not it exists yet: the
+        # first run on a fresh Pi wrote ~/smalldog_logs.npz and every run after it
+        # overwrote that one file.
+        if path.endswith(os.sep) or os.path.isdir(path) or not path.endswith(".npz"):
             os.makedirs(path, exist_ok=True)
             path = os.path.join(path, time.strftime("tick_%Y%m%d_%H%M%S.npz"))
         else:
