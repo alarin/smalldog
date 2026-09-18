@@ -84,6 +84,10 @@ class Bus:
         # slot defect (a talker releasing the half-duplex line a bit-time early);
         # anything else is the payload itself being corrupted on the wire.
         self.bad_xor: dict[int, int] = {}
+        #: transactions over 8 ms, by kind, and the longest of each: where a late
+        #: tick's read stage actually went
+        self.slow: dict[str, int] = {}
+        self.slow_max: dict[str, float] = {}
         self._times: list[float] = []
         self._sync_read_ok: bool | None = None
 
@@ -141,6 +145,7 @@ class Bus:
         dt = time.perf_counter() - t0
         self.n_tx += 1
         self._times.append(dt)
+        self._slow("read" if expect else "write", dt)
 
         if self.discard_echo is None and buf.startswith(packet):
             self.discard_echo = True
@@ -297,6 +302,7 @@ class Bus:
                 # silence used to double the cost of every lost reply.
                 break
         self._times.append(time.perf_counter() - t0)
+        self._slow("sync_read", time.perf_counter() - t0)
         self.n_tx += 1
         if buf.startswith(packet):
             if self.discard_echo is None:
@@ -356,6 +362,11 @@ class Bus:
         return out, bad + missing
 
     # ---------------------------------------------------------------- stats
+    def _slow(self, kind: str, dt: float):
+        if dt > 0.008:
+            self.slow[kind] = self.slow.get(kind, 0) + 1
+        self.slow_max[kind] = max(self.slow_max.get(kind, 0.0), dt)
+
     def stats(self) -> dict:
         import statistics
         t = sorted(self._times)
@@ -368,7 +379,8 @@ class Bus:
                 "timeouts": self.n_timeout, "checksum_errors": self.n_checksum,
                 "repaired": self.n_repaired, "sync_read": self._sync_read_ok,
                 "bad_by_id": dict(self.bad_by_id), "missing_by_id": dict(self.missing_by_id),
-                "bad_xor": dict(self.bad_xor)}
+                "bad_xor": dict(self.bad_xor), "slow": dict(self.slow),
+                "slow_max_ms": {k: 1e3 * v for k, v in self.slow_max.items()}}
 
     def reset_stats(self):
         self._times.clear()

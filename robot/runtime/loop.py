@@ -453,6 +453,9 @@ class Runtime:
             if r.get("implausible"):
                 s.append("  passed the checksum but were garbage: " + ", ".join(
                     f"{n} {c}" for n, c in sorted(r["implausible"].items(), key=lambda kv: -kv[1])))
+            if b.get("slow"):
+                s.append("  transactions over 8 ms: " + ", ".join(
+                    f"{k} {c} (max {b['slow_max_ms'][k]:.1f} ms)" for k, c in b["slow"].items()))
             x = b.get("bad_xor") or {}
             if x:
                 top = sorted(x.items(), key=lambda kv: -kv[1])[:6]
