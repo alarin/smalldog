@@ -189,7 +189,15 @@ class Runtime:
             why = ("q" if abs(f["q"] - last["q"]) > self.JUMP_Q else
                    "temp" if abs(f["temp"] - last["temp"]) > self.JUMP_T else
                    "volt" if abs(f["volt"] - last["volt"]) > self.JUMP_V else "")
-            if why:
+            if why == "temp":
+                # the position is what the loop drives on and it is fine: keep the
+                # frame, carry the last believable temperature, count the lie.
+                # Standing under torque (2026-09-18) this was ~3 % of rl_knee's
+                # frames, and every one of them dropped was a sub-tick of no drive.
+                f = dict(f, temp=last["temp"])
+                k = f"{n}/temp"
+                self.implausible[k] = self.implausible.get(k, 0) + 1
+            elif why:
                 rej = self._last_rej.get(n)
                 agrees = (rej is not None
                           and abs(f["q"] - rej["q"]) <= 0.1
@@ -577,11 +585,12 @@ def _selftest(seconds=2.0) -> int:
     chk("a first frame is taken on trust", fb["rl_knee"] is not None)
     rt5.bus.io.set(calib.id["rl_knee"], R.PRESENT_TEMPERATURE, 150)
     fb = rt5.read()
-    chk("a 150 C byte on a 30 C joint is garbage, not news", fb["rl_knee"] is None)
+    chk("a 150 C byte on a 30 C joint is garbage, not news", fb["rl_knee"]["temp"] == 30.0)
+    chk("... the position beside it is kept", fb["rl_knee"]["q"] is not None)
     chk("... and is counted against the joint and the byte", rt5.implausible == {"rl_knee/temp": 1})
     rt5.bus.io.set(calib.id["rl_knee"], R.PRESENT_TEMPERATURE, 30)
     fb = rt5.read()
-    chk("... and the next sane frame is accepted", fb["rl_knee"] is not None)
+    chk("... and the next sane frame is taken as is", fb["rl_knee"]["temp"] == 30.0)
     q = [0.0] * 12
     q[calib.joints.index("fl_knee")] = 1.2       # the loopback follows its goal at once
     rt5.send(q)
