@@ -186,10 +186,10 @@ class Runtime:
             return None
         last = self._last_ok.get(n)
         if last is not None:
-            jump = (abs(f["q"] - last["q"]) > self.JUMP_Q
-                    or abs(f["temp"] - last["temp"]) > self.JUMP_T
-                    or abs(f["volt"] - last["volt"]) > self.JUMP_V)
-            if jump:
+            why = ("q" if abs(f["q"] - last["q"]) > self.JUMP_Q else
+                   "temp" if abs(f["temp"] - last["temp"]) > self.JUMP_T else
+                   "volt" if abs(f["volt"] - last["volt"]) > self.JUMP_V else "")
+            if why:
                 rej = self._last_rej.get(n)
                 agrees = (rej is not None
                           and abs(f["q"] - rej["q"]) <= 0.1
@@ -197,7 +197,8 @@ class Runtime:
                           and abs(f["volt"] - rej["volt"]) <= 0.5)
                 if not agrees:
                     self._last_rej[n] = f
-                    self.implausible[n] = self.implausible.get(n, 0) + 1
+                    k = f"{n}/{why}"                 # which byte lied, per joint
+                    self.implausible[k] = self.implausible.get(k, 0) + 1
                     return None
         self._last_ok[n] = f
         self._last_rej.pop(n, None)
@@ -577,7 +578,7 @@ def _selftest(seconds=2.0) -> int:
     rt5.bus.io.set(calib.id["rl_knee"], R.PRESENT_TEMPERATURE, 150)
     fb = rt5.read()
     chk("a 150 C byte on a 30 C joint is garbage, not news", fb["rl_knee"] is None)
-    chk("... and is counted against the joint", rt5.implausible == {"rl_knee": 1})
+    chk("... and is counted against the joint and the byte", rt5.implausible == {"rl_knee/temp": 1})
     rt5.bus.io.set(calib.id["rl_knee"], R.PRESENT_TEMPERATURE, 30)
     fb = rt5.read()
     chk("... and the next sane frame is accepted", fb["rl_knee"] is not None)
@@ -589,7 +590,7 @@ def _selftest(seconds=2.0) -> int:
     fb = rt5.read()
     chk("... until a second frame agrees: the world moved", fb["fl_knee"] is not None
         and abs(fb["fl_knee"]["q"] - 1.2) < 0.01)
-    chk("... one rejection, not two", rt5.implausible.get("fl_knee") == 1)
+    chk("... one rejection, not two", rt5.implausible.get("fl_knee/q") == 1)
 
     # one servo off the bus: the read localises it instead of going blind, and
     # engage refuses rather than ramping twelve joints from an eleven-joint guess
