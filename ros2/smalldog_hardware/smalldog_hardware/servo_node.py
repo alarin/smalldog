@@ -444,7 +444,13 @@ class ServoNode(Node):
             m.orientation_covariance = [0.01, 0.0, 0.0, 0.0, 0.01, 0.0, 0.0, 0.0, 1.0]
             self.pub_imu.publish(m)
             if self.src is not None:
-                self.publish_odom(dt, now, roll, pitch, w[2])
+                # the twist's yaw rate is the COMMAND, like its linear part, not the
+                # gyro: Nav2's rotate-to-heading ramps its turn up from this twist at
+                # max_angular_accel, and the RL walker does not answer the first step
+                # (0.1 rad/s) at all - so the gyro read 0, the ramp never climbed and
+                # the explorer stood still for 50 s asking for 0.1 (2026-09-18). The
+                # measured rate is on /imu.
+                self.publish_odom(dt, now, roll, pitch, self._cmd_now[2])
 
         if self.diag_every and k % self.diag_every == 0:
             self.pub_diag.publish(self.diagnostics(fb, now))
