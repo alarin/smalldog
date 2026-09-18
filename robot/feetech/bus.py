@@ -333,12 +333,28 @@ class Bus:
         while pending and pos + size <= len(buf):
             f = buf[pos:pos + size]
             if f[:2] != b"\xff\xff" or f[2] not in pending:
-                # the header or the id is not where it must be, so the stream has
-                # shifted and every frame after this one is garbage too. Nothing
-                # here is salvageable.
+                # The header or the id is not where it must be: a corrupted byte
+                # landed on THIS frame's header. Raising here threw the whole burst
+                # away and the runtime then read all twelve one by one — 12 x 2.5 ms,
+                # the 35 ms read stage measured standing under torque 2026-09-18,
+                # with no single transaction over 8 ms. Instead: find the next frame
+                # that does start where a frame can start, and re-read on their own
+                # the ids the skip stepped over.
                 self.n_checksum += 1
-                raise Checksum(f"sync_read at byte {pos}: expected one of {pending}, "
-                               "stream misaligned")
+                nxt = -1
+                for p in range(pos + 1, len(buf) - 2):
+                    if buf[p] == 0xFF and buf[p + 1] == 0xFF and buf[p + 2] in pending:
+                        nxt = p
+                        break
+                if nxt < 0:
+                    break                          # the rest is unreadable
+                i = buf[nxt + 2]
+                while pending[0] != i:
+                    j = pending.pop(0)
+                    self.bad_by_id[j] = self.bad_by_id.get(j, 0) + 1
+                    bad.append(j)
+                pos = nxt
+                continue
             i = f[2]
             while pending[0] != i:             # ids skipped over never answered
                 missing.append(pending.pop(0))
@@ -352,7 +368,16 @@ class Bus:
                 bad.append(i)
                 continue
             out[i] = f[5:5 + n]
-        missing += pending                     # the tail that never came
+        # what is left of `pending` never came, or came unreadable: the tail after a
+        # lost header counts as bad (a corrupt stream) only if bytes were there for it
+        tail_bad = pos < len(buf) and len(buf) - pos >= size // 2
+        for j in pending:
+            if tail_bad:
+                self.bad_by_id[j] = self.bad_by_id.get(j, 0) + 1
+                bad.append(j)
+            else:
+                missing.append(j)
+        pending = []
         if missing:
             self.n_timeout += 1
             for i in missing:
@@ -557,6 +582,28 @@ def _selftest() -> int:
     got = gap.sync_read(R.PRESENT_POSITION, 2, [3, 1, 2])
     check("a silent id at the tail is the same", (sorted(got), gap.stats()["missing_by_id"]),
           ([1, 3], {2: 3}))
+
+    # A corrupted byte on a frame's HEADER: the stream resyncs on the next frame
+    # and the one that lost its header is re-read alone, not all twelve.
+    class HeaderHit(LoopbackBus):
+        hit = False
+        def read(self, n):
+            out = super().read(n)
+            if self.hit and len(out) >= 8:
+                self.hit = False
+                out = out[:8] + b"\x00" + out[9:]     # the second frame's first 0xff
+            return out
+    hh = Bus(transport=HeaderHit({1: {}, 2: {}, 3: {}}), discard_echo=False)
+    for i, v in ((1, 100), (2, 200), (3, 300)):
+        hh.io.set(i, R.PRESENT_POSITION, v)
+    hh.sync_read(R.PRESENT_POSITION, 2, [1, 2, 3])
+    hh.io.hit = True
+    n_before = hh.n_tx
+    got = hh.sync_read(R.PRESENT_POSITION, 2, [1, 2, 3])
+    check("a hit header keeps the frames around it and re-reads the one",
+          [hh.value(R.PRESENT_POSITION, got[i]) for i in (1, 2, 3)], [100, 200, 300])
+    check("... in two transactions, not four", hh.n_tx - n_before, 2)
+    check("... counted against the id that lost its header", hh.bad_by_id, {2: 1})
 
     # Firmware with no SYNC_READ at all: the broadcast is never answered. Two
     # tries, then the sequential path — and that path keeps the ids that DO
