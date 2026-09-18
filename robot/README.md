@@ -24,6 +24,8 @@ because `robot/bench` had to run before there was a robot.
 | `runtime/loop.py` | the 50 Hz tick, controller-agnostic |
 | `runtime/mode2.py` | the same tick with the servo's position loop replaced by a PD on the host (MODE 2, open-loop PWM) — `--mode2` on `walk.py` and `policy.py`; `--sine` runs one free servo through it |
 | `runtime/walk.py` | the CLI that runs the trot on the robot; `--go S` walks straight for S seconds, `--log FILE.npz` records every tick, `--imu` adds the BMI088 to it |
+| `runtime/ticklog.py` | the black box: every tick's feedback, goal, duty, IMU and command into one `.npz` — `walk.py --log`, and the ROS servo node's `log:=` (on by default, a ring of the last 30 min, written on a trip) |
+| `bench/incident.py` | that recording after something broke: how it ended, each joint's peak duty / current / error and when, the body's peaks, and the last seconds tick by tick |
 | `slam/slam.py` | LiDAR odometry and a voxel map from the L2. **Not the robot's mapping stack** — `ros2/smalldog_nav` is. Read "SLAM" below before relying on a pose it prints |
 
 Nothing here needs hardware to be exercised:
@@ -36,9 +38,12 @@ python bench/fit_bam.py --selftest    # generate a known servo, then find it aga
 python bench/torque_limit.py --selftest
 python bench/pack_sag.py --selftest
 python bench/trot_report.py --selftest
+python bench/incident.py --selftest   # a synthetic hop and trip, read back
 python runtime/calib.py --selftest    # ids, centres, signs, the clamp, the round trip
 python runtime/safety.py --selftest   # every limit trips, and only when it should
 python runtime/loop.py --selftest     # 2 s of the real loop against a loopback bus
+python runtime/mode2.py --selftest    # the host loop, the fold, the runaway, the duty cap
+python runtime/policy.py --selftest   # the heading hold against a body that turns late
 python runtime/walk.py --dry-run --profile   # ... and the whole trot on top of it
 ```
 
@@ -180,7 +185,11 @@ PLAN.md step 5 is the measurement that decides whether that matters.
 
 ### The guard
 
-`safety.Limits`: 65 °C, 2.0 A held 0.3 s, 9.5 V, 0.70 rad of tracking error.
+`safety.Limits`: 65 °C, 2.0 A held 0.3 s, 9.5 V, 0.70 rad of tracking error, 40° of
+body tilt held 0.3 s (`--tilt-deg`; **25° for the RL walker**, `policy.py`'s default and
+what `robot.launch.py policy:=` passes — the RL gait's own pitch is under 5° and it is
+trained to stand from a 15° hand-over, while the hops under Nav2 that broke the front hip
+brackets peaked at +32° and never tripped the 40; **verify** 25 on the floor).
 
 - **Every current limit is in supply amps, and the motor's is higher.** `PRESENT_CURRENT`
   reports the supply current behind the bridge, `d²·U/R`, while the motor carries `d·U/R`;
@@ -243,6 +252,22 @@ is cycled, so the duty is folded back on the current register before that (`i_so
 `i_hard` 2.0 A per servo, `i_sum` 10 A on the bus); and a bench supply cannot sink the
 regen of a hard stop — one servo braking at 3 Hz pushed 12.7 V to 15.2 V, which the pack
 absorbs and the guard now holds for 0.1 s rather than tripping on the spike.
+
+**And a fourth: MODE 2 has no torque ceiling unless it is given one.** The firmware never
+let a position-mode joint hold full duty (`OVERLOAD_TORQUE` 80 → 20 % after 2 s,
+`PROTECTION_CURRENT` bounding a held stall to ~2.3 N·m, "The stall torque"); in MODE 2
+only the current fold is left, and it acts after the register has climbed. With the
+policy's kp 5220 and no kd, 11° of error is full duty — ~3.3 N·m cold on a fresh pack,
+against the `stall` case `3d/fea.py` gives `hip_bracket_A` an interlayer SF of **2.2** at
+3.2 N·m. That case became real the day the feet gripped: a sliding dome capped the hip
+pitch torque at μ·N, a siped sole caps it at the servo, and the front brackets broke under
+the explorer's hops (2026-09-17, robot at its 2.5 kg design mass; the FEA's ground cases
+are at that mass and were fine, the stall case does not scale with mass). `--duty-cap
+pitch=600` (`walk.py`, `policy.py`; `duty_cap:=` on the launch) is the per-joint
+ceiling that stands in for the firmware's: 600 at 12 V is 7 V of drive, which the rig
+read as 2.3 N·m. The cost is that joint's no-load speed, which scales with drive. **Which
+joints and how much is verify** — the first run after a re-print is the test, and the
+exit report prints the peak duty each capped joint reached.
 
 The sim does not have this bug — MuJoCo's feet grip at μ ≈ 1.2 — so `gait.py` is untouched;
 fixing it there would move every tuned number in `ros2/` to cure something only the

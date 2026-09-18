@@ -51,6 +51,21 @@ full duty in a few counts, and the guard's tracking check needs 0.3 s — 1.4 ra
 of leg at 4.7 rad/s. So the host loop has its own: an error past `runaway_rad`
 on any sub-tick zeroes every duty and trips at once.
 
+**A torque ceiling.** In position mode the firmware never let a joint hold full
+duty: `OVERLOAD_TORQUE` 80 cut anything above 80 % to 20 % after 2 s, and
+`PROTECTION_CURRENT` bounded a held stall to ~2.3 N·m. In MODE 2 both are ours to
+provide, and the fold above only sees a stall once the current register has
+climbed. `duty_cap` is the per-joint ceiling that stands in for them: a joint
+capped at 600 gets 7 V of drive at the pack's 12 V, which the torque rig read as
+2.3 N·m — the firmware's own sustained bound — against ~3.3 N·m at full duty on a
+fresh pack. It exists because the front hip brackets broke under the pitch
+servos' full duty on the first day the feet gripped (siped soles, 2026-09-17):
+`3d/fea.py`'s `stall` case reads SF 2.2 for `hip_bracket_A` at 3.2 N·m, and a
+hop's landing is on top of that. The cost is speed: no-load speed scales with
+drive, so a capped joint is slower than the 4.7 rad/s ceiling the gait is fitted
+to. Which joints, and how much, is **verify** — `--duty-cap pitch=600` on
+`walk.py` / `policy.py`, `duty_cap:=` on `robot.launch.py`.
+
 MODE is EEPROM and `cut()` puts 0 back, duty 0 and torque off first. A process
 killed with SIGKILL cannot: the servos keep their last duty until power is cycled
 or the next run's preflight finds MODE 2 and restores it.
@@ -81,6 +96,30 @@ VOLT_REF = 11.3
 DUTY_MAX = 1000
 
 
+def parse_duty_caps(spec, joints) -> dict:
+    """`"pitch=600,fl_roll=800"` -> {joint: cap}. A key is a joint name or a joint
+    kind (`roll`, `pitch`, `knee`: every joint whose name ends in it); an empty
+    spec is no caps. Unknown keys and caps outside 1..DUTY_MAX are errors, not
+    silence — a typo here is a bracket."""
+    caps = {}
+    for item in (spec or "").replace(";", ",").split(","):
+        item = item.strip()
+        if not item:
+            continue
+        if "=" not in item:
+            raise ValueError(f"duty cap {item!r}: want NAME=DUTY")
+        key, val = (x.strip() for x in item.split("=", 1))
+        cap = int(val)
+        if not 1 <= cap <= DUTY_MAX:
+            raise ValueError(f"duty cap {item!r}: {cap} is outside 1..{DUTY_MAX}")
+        hit = [n for n in joints if n == key or n.endswith("_" + key)]
+        if not hit:
+            raise ValueError(f"duty cap {item!r}: no joint called or ending in {key!r}")
+        for n in hit:
+            caps[n] = min(cap, caps.get(n, DUTY_MAX))
+    return caps
+
+
 def duty_word(d: int) -> int:
     """Register 44 in MODE 2: magnitude in the low bits, direction in bit 10."""
     d = int(max(-DUTY_MAX, min(DUTY_MAX, d)))
@@ -107,8 +146,13 @@ class Mode2Runtime(Runtime):
                  limits: Limits | None = None, log=print,
                  kp=KP, kd=KD, kff=KFF, duty_max=DUTY_MAX,
                  i_soft=1.4, i_hard=2.0, i_floor=0.25, i_sum=10.0,
-                 runaway_rad=1.2, sub_hz=0.0, smooth=True):
+                 runaway_rad=1.2, sub_hz=0.0, smooth=True, duty_cap=None):
         super().__init__(bus, calib, hz, limits, log)
+        #: {joint: duty}, the per-joint ceiling under `duty_max` (the docstring, "A
+        #: torque ceiling"). `parse_duty_caps` turns the CLI's "pitch=600" into it.
+        self.duty_cap = {n: int(c) for n, c in (duty_cap or {}).items()
+                         if n in calib.joints and c < duty_max}
+        self.peak_duty_joint = {n: 0 for n in calib.joints}
         #: The source hands over a target every tick, so the host loop sees a 50 Hz
         #: staircase — and at kp 9000 each 20 ms step is a ~600-duty kick that the
         #: joint answers and overshoots (the load flapped ±500 tick to tick in stance
@@ -280,7 +324,7 @@ class Mode2Runtime(Runtime):
             # the bridge's sign is opposite to the encoder's: +duty turns the count down
             d = -self.calib.sign[n] * d
             fold = self._fold(f["current"], self.i_soft, self.i_hard)
-            lim = self.duty_max * fold
+            lim = self.duty_cap.get(n, self.duty_max) * fold
             if fold < 1.0 and abs(d) > lim:
                 folded = True
             duties[n] = max(-lim, min(lim, d))
@@ -295,6 +339,7 @@ class Mode2Runtime(Runtime):
             d = int(round(duties[n] * total))
             self.duty[n] = d
             self.peak_duty = max(self.peak_duty, abs(d))
+            self.peak_duty_joint[n] = max(self.peak_duty_joint[n], abs(d))
             words[self.calib.id[n]] = duty_word(d)
             f = fb.get(n)
             if f is not None and abs(self.goal[n] - f["q"]) > 0.5 * self.runaway_rad:
@@ -355,6 +400,8 @@ class Mode2Runtime(Runtime):
         out["sub_hz"] = self.sub_ticks / self.sub_time if self.sub_time else 0.0
         out["folds"] = self.folds
         out["peak_duty"] = self.peak_duty
+        out["peak_duty_joint"] = dict(self.peak_duty_joint)
+        out["duty_cap"] = dict(self.duty_cap)
         return out
 
     def report_lines(self) -> str:
@@ -363,7 +410,10 @@ class Mode2Runtime(Runtime):
                 + f"\n  host loop: {r['sub_hz']:.0f} Hz over the bus (kp {self.kp:.0f} kd "
                   f"{self.kd:.0f} kff {self.kff:.0f}), peak duty "
                   f"{r['peak_duty']} of {self.duty_max}, current fold on {r['folds']} "
-                  f"of {r['sub_ticks']} sub-ticks")
+                  f"of {r['sub_ticks']} sub-ticks"
+                + (("\n  duty caps (peak/cap): " + ", ".join(
+                    f"{n} {r['peak_duty_joint'][n]}/{c}" for n, c in r["duty_cap"].items()))
+                   if r["duty_cap"] else ""))
 
 
 # ------------------------------------------------------- a bus for the self-test
@@ -494,6 +544,35 @@ def _selftest(seconds=1.0) -> int:
     chk("... in well under the guard's hold", rt3.ticks < 0.3 * CTRL_HZ, f" ({rt3.ticks} ticks)")
     chk("... and everything is off afterwards",
         all(io3.get(i, R.TORQUE_ENABLE) == 0 and io3.get(i, R.MODE) == 0 for i in calib3.ids))
+
+    # the per-joint duty cap: a capped joint never exceeds it, an uncapped one still
+    # reaches full duty on the same step, and the fold still applies under the cap
+    joints = list(calib.joints)
+    caps = parse_duty_caps("pitch=600,fl_roll=300", joints)
+    chk("cap spec: a kind names every joint of that kind",
+        all(caps[n] == 600 for n in joints if n.endswith("_pitch")) and len(caps) == 5)
+    chk("... and a joint name names one", caps["fl_roll"] == 300)
+    chk("... the tighter of two wins", parse_duty_caps("roll=500,fl_roll=800", joints)["fl_roll"] == 500)
+    for bad in ("pitch", "hip=600", "pitch=0", "pitch=1001"):
+        try:
+            parse_duty_caps(bad, joints)
+            chk(f"cap spec {bad!r} is refused", False)
+        except ValueError:
+            chk(f"cap spec {bad!r} is refused", True)
+    chk("an empty spec is no caps", parse_duty_caps("", joints) == {})
+    io5 = DutyLoopback(calib.ids)
+    rt5 = Mode2Runtime(Bus(transport=io5, discard_echo=False), calib, log=lambda *_: None,
+                       sub_hz=400, duty_cap=caps)
+    with rt5:
+        rt5.engage([0.0] * 12, ramp_s=0.05)
+        rt5.run(lambda dt, fb: [0.5] * 12, seconds=0.3)       # a 0.5 rad step: full duty asked
+    pk = rt5.peak_duty_joint
+    chk("a capped joint never exceeds its cap", pk["fl_pitch"] <= 600 and pk["fl_roll"] <= 300,
+        f" (fl_pitch {pk['fl_pitch']}, fl_roll {pk['fl_roll']})")
+    chk("... and reaches it", pk["fl_pitch"] == 600 and pk["fl_roll"] == 300)
+    chk("an uncapped joint still reaches full duty", pk["fl_knee"] == DUTY_MAX, f" ({pk['fl_knee']})")
+    chk("the report names the caps", "duty caps" in rt5.report_lines() and "fl_pitch 600/600" in rt5.report_lines())
+    chk("no caps, no line", "duty caps" not in rt.report_lines())
 
     print("mode2:", "ok" if ok else "FAILED")
     return 0 if ok else 1

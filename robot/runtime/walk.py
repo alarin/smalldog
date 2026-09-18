@@ -62,7 +62,8 @@ sys.path.insert(0, os.path.join(REPO, "ros2", "smalldog_walker"))
 from feetech.bus import Bus                                          # noqa: E402
 from runtime.calib import CALIB, Calibration, load_params            # noqa: E402
 from runtime.loop import CTRL_HZ, FollowingLoopback, Runtime         # noqa: E402
-from runtime.mode2 import DutyLoopback, Mode2Runtime                 # noqa: E402
+from runtime.mode2 import DutyLoopback, Mode2Runtime, parse_duty_caps  # noqa: E402
+from runtime.ticklog import TickLog                                   # noqa: E402
 from runtime.safety import Limits, Tripped                           # noqa: E402
 from smalldog_walker.contact import Baseline, ServoContact           # noqa: E402
 from smalldog_walker.gait import TrotGait                            # noqa: E402
@@ -397,53 +398,6 @@ def record_baseline(rt, gait, args, out_path):
     print("saved:", b.save(out_path))
 
 
-class TickLog:
-    """Every tick's feedback, goal and gait phase -> one .npz (`--log`).
-
-    This is the recording `POWER.md` asks for and the bench cannot make: the pack's
-    terminal sag and the whole-bus current during a trot at the design mass, which
-    only exists untethered. The servo's own registers are the meter — volt and
-    supply current arrive in the same 15-byte read the loop already does — so it
-    costs nothing on the tick. `bench/pack_sag.py` reads the file.
-    """
-    FIELDS = ("q", "w", "load", "volt", "temp", "current")
-
-    def __init__(self, rt, gait, cmd=None, imu=None):
-        self.rt, self.gait, self.cmd, self.imu = rt, gait, cmd, imu
-        self.t = 0.0
-        self.rows = []
-
-    def __call__(self, k, dt, fb):
-        import numpy as np
-        self.t += dt
-        fbv = [[fb[n][f] if fb[n] else math.nan for f in self.FIELDS]
-               for n in self.rt.calib.joints]
-        goal = [self.rt.goal[n] for n in self.rt.calib.joints]
-        phase = [self.gait.leg_phase(l) for l in self.gait.legs]
-        cmd = list(self.cmd()) if self.cmd else [math.nan] * 3
-        # gravity_b (3), gyro rad/s (3), accel m/s^2 (3): the same triple policy.py feeds
-        # the network, so a walk.py log and a policy.py log are read the same way
-        imu = [*sum(self.imu.update(dt), ())] if self.imu else [math.nan] * 9
-        if self.imu is not None:
-            self.rt.guard.attitude(dt, *self.imu.roll_pitch())   # Tripped: the robot is over
-        self.rows.append((self.t, dt, np.array(fbv, np.float32), np.array(goal, np.float32),
-                          np.array(phase, np.float32), np.array(cmd, np.float32),
-                          np.array(imu, np.float32)))
-
-    def save(self, path, args):
-        import numpy as np
-        if not self.rows:
-            return
-        t, dt, fb, goal, phase, cmd, imu = (np.array(x) for x in zip(*self.rows))
-        np.savez(path, t=t, dt=dt, fb=fb, goal=goal, phase=phase, cmd=cmd, imu=imu,
-                 fields=np.array(self.FIELDS), joints=np.array(self.rt.calib.joints),
-                 legs=np.array(self.gait.legs),
-                 gait=np.array(dict(period=self.gait.period, speed=args.speed,
-                                    swing_height=self.gait.swing_height,
-                                    body_height=self.gait.body_height, hz=args.hz)))
-        print(f"log: {len(self.rows)} ticks -> {path}")
-
-
 # --------------------------------------------------------------------- main
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
@@ -462,6 +416,10 @@ def main():
     ap.add_argument("--kp", type=float, default=None, help="--mode2: duty per rad")
     ap.add_argument("--kd", type=float, default=None, help="--mode2: duty per rad/s")
     ap.add_argument("--kff", type=float, default=None, help="--mode2: duty per rad/s of target")
+    ap.add_argument("--duty-cap", default="", metavar="SPEC",
+                    help="--mode2: per-joint duty ceiling, e.g. pitch=600,fl_roll=800 (a joint "
+                         "name or a kind: roll/pitch/knee). 600 at 12 V is the ~2.3 N*m the "
+                         "firmware's own protection allowed; mode2.py, 'A torque ceiling'")
 
     ap.add_argument("--preflight", action="store_true", help="check everything, no motion")
     ap.add_argument("--stand", action="store_true", help="stand up and hold, no gait")
@@ -509,6 +467,8 @@ def main():
     # number can be found on the ground, which is the only place it exists.
     ap.add_argument("--track-rad", type=float, default=Limits.q_err_rad,
                     help="tracking-error trip, rad (default %(default)s)")
+    ap.add_argument("--tilt-deg", type=float, default=math.degrees(Limits.tilt_rad),
+                    help="--imu: body roll or pitch that trips, deg (default %(default).0f)")
     a = ap.parse_args()
     a.mode2 = not a.mode0                  # MODE 2 is the runtime (ideas/FAST_SERVOS.md)
 
@@ -575,10 +535,15 @@ def main():
         bus = Bus(a.port, a.baud)
 
     limits = Limits(temp_c=a.temp_c, current_a=a.current_a, volt_min=a.volt_min,
-                    q_err_rad=a.track_rad)
+                    q_err_rad=a.track_rad, tilt_rad=math.radians(a.tilt_deg))
     if a.mode2:
         gains = {k: v for k, v in dict(kp=a.kp, kd=a.kd, kff=a.kff).items() if v is not None}
-        rt = Mode2Runtime(bus, calib, hz=a.hz, limits=limits, sub_hz=a.sub_hz, **gains)
+        try:
+            caps = parse_duty_caps(a.duty_cap, calib.joints)
+        except ValueError as e:
+            sys.exit(f"--duty-cap: {e}")
+        rt = Mode2Runtime(bus, calib, hz=a.hz, limits=limits, sub_hz=a.sub_hz,
+                          duty_cap=caps, **gains)
     else:
         rt = Runtime(bus, calib, hz=a.hz, limits=limits)
 
@@ -714,7 +679,8 @@ def main():
     finally:
         print(rt.report_lines())
         if a.log and tick is not None:
-            tick.save(a.log, a)
+            tick.save(a.log, dict(period=gait.period, speed=a.speed, swing_height=gait.swing_height,
+                                  body_height=gait.body_height, hz=a.hz, mode2=a.mode2))
     return code
 
 

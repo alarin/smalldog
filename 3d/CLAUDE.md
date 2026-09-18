@@ -247,6 +247,15 @@ columns with `fea.robot_mass()`. Read `--orient` for `thigh_A` and `cradle_front
 (`--orient` is the `<- current` row. The tie slots cost `hip_bracket_A` 7.83 → 7.79 and
 `thigh_A` 2.83 → 2.82 on the same run.)
 
+**The `stall` column is the live one now, not a bound.** Under the servo firmware a joint
+could not hold full duty; in MODE 2 (`robot/runtime/mode2.py`) it can, and a foot that
+grips (the siped sole) hands the servo's whole torque to the bracket where a sliding dome
+handed it μ·N. Both front `hip_bracket`s broke that way on 2026-09-17, at the 2.5 kg this
+table is computed for. Read `hip_bracket_A` 2.2 and `thigh_A` 1.1 against ~3.3 N·m cold
+at a fresh pack's 12.6 V (`SERVO_STALL_NM` is the 12 V figure), and re-run `fea.py --all`
+with that torque before the next print of either. The runtime's `duty_cap` (600 ≈ 2.3 N·m)
+is the stop-gap, not a fix for the part.
+
 `export_sim.py --check`: `4 feet down, upright +1.00`, base z 187 mm, camera axis
 (+0.99 0 +0.10), ROM ±90 / ±90 / ±110 (±90 is the scan window, not a stop). Probes:
 `imu clear +1.20` (to the case's corner spacer, inside the case), `opi clear +1.15` (case front to the LiDAR

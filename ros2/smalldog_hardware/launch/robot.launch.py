@@ -30,7 +30,9 @@ holds one point per loop:
 `speed` here sets the teleop's speed and the gait's `stride_max` (so `period_for` admits
 the period); it does not cap `/cmd_vel` from elsewhere — publish the same number.
 """
+import math
 import os
+import sys
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
@@ -44,6 +46,9 @@ from launch_ros.parameter_descriptions import ParameterValue
 #: relative `policy:=rl/policy`
 REPO = os.environ.get('SMALLDOG_REPO') or os.path.dirname(os.path.dirname(os.path.dirname(
     os.path.dirname(os.path.realpath(__file__)))))
+
+sys.path.insert(0, os.path.join(REPO, 'robot'))
+from runtime.safety import Limits                                    # noqa: E402
 
 #: robot/runtime/walk.py MODE2_RATE_LIMIT — the bridge at full duty at the pack's 11.3 V
 MODE2_RATE_CEILING = 4.7
@@ -63,6 +68,12 @@ def _nodes(context):
     policy = LaunchConfiguration('policy').perform(context)
     if policy and not os.path.isabs(policy):
         policy = os.path.normpath(os.path.join(REPO, policy))
+    tilt = LaunchConfiguration('tilt_deg').perform(context)
+    # the RL gait's own pitch is under 5 deg and it stands from a 15 deg hand-over; the
+    # hops under Nav2 peaked at +32 deg and the trot's 40 let every one of them land on
+    # the front hips (2026-09-17). **verify** 25 on the floor.
+    tilt = float(tilt) if tilt else (25.0 if policy else math.degrees(Limits.tilt_rad))
+    reverse = LaunchConfiguration('reverse').perform(context).lower() in ('true', '1', 'yes')
     urdf = os.path.join(get_package_share_directory('smalldog_description'), 'urdf',
                         'smalldog.urdf')
     with open(urdf) as f:
@@ -84,6 +95,17 @@ def _nodes(context):
                           'dry_run': LaunchConfiguration('dry_run'),
                           'mode2': mode2,
                           'policy': policy,
+                          'tilt_deg': tilt,
+                          # the black box (runtime/ticklog.py); bench/incident.py reads it
+                          'log': LaunchConfiguration('log'),
+                          # mode2.py "A torque ceiling": the front hip brackets broke under
+                          # the pitch servos' full duty the day the feet gripped
+                          'duty_cap': LaunchConfiguration('duty_cap'),
+                          # Nav2 never asks the RL walker to reverse (RPP allow_reversing
+                          # false) except through the BackUp recovery, which the shipped
+                          # stage 2 policy answers nose-down until it trips on the front
+                          # legs; stage 1 stands still. Off unless asked.
+                          'vx_range': [-0.2 if reverse else 0.0, 0.4],
                           # 0.18 m/s real at cmd 0.2 on the laminate (2026-09-17, 0.90 m in 5 s)
                           'odom_scale': 0.9}]),
     ]
@@ -191,6 +213,20 @@ def generate_launch_description():
                               description='an exported policy dir (rl/policy, relative to the '
                                           'repo): the RL walker in the servo node instead of '
                                           'the IK trot; implies imu:=true'),
+        DeclareLaunchArgument('log', default_value='~/smalldog_logs',
+                              description='every tick into a timestamped .npz here (a ring of '
+                                          'the last 30 min, written on exit and on a trip; '
+                                          'bench/incident.py reads it). \'\' records nothing'),
+        DeclareLaunchArgument('duty_cap', default_value='',
+                              description='MODE 2 per-joint duty ceiling, e.g. pitch=600 (a joint '
+                                          'name or roll/pitch/knee); 600 at 12 V is the ~2.3 N*m '
+                                          'the firmware\'s own protection allowed. Empty = none'),
+        DeclareLaunchArgument('tilt_deg', default_value='',
+                              description='body roll or pitch that sits the robot down; empty = '
+                                          '25 with a policy, 40 for the trot'),
+        DeclareLaunchArgument('reverse', default_value='false',
+                              description='let the RL walker take vx < 0 (to -0.2) from /cmd_vel; '
+                                          'off, a BackUp recovery or a stick back stands it still'),
         DeclareLaunchArgument('yaw_max', default_value='0.2',
                               description='rad/s the heading hold may add; 0 = the gait\'s own 0.5'),
         # off by default: the teleop reads keys from a TTY it does not have under launch

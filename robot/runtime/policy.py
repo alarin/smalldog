@@ -252,26 +252,57 @@ class HeadingHold:
 
     Heading is the integrated gyro after `measure_bias` — no magnetometer, so it drifts
     at the residual bias (~0.01 deg/s standing) and is a line-holder, not a compass.
+
+    Two rules for the end of a commanded turn, both from the explorer runs of 2026-09-17,
+    where Nav2 steps wz between rotate-to-heading and forward every few seconds:
+
+    - **Re-latch only once the body has stopped turning.** The policy lags its command,
+      so when wz returns to 0 the body is still rotating; a reference taken on that tick
+      is a heading the robot is already past, and the hold then drives it back to it —
+      an overshoot-and-return after every turn that Nav2 reads as heading error and
+      re-commands. Until the low-passed yaw rate is under `settle_rate` the hold hands
+      the policy 0 and takes no reference. (Bare `policy.py` at wz 0 starts from a
+      standing robot and latches on the first tick as before.)
+    - **The hold's own wz is rate-limited** at `slew` rad/s², the same figure
+      `servo_node` slews the operator's command with — the policy was trained on
+      commands held for whole episodes and rears on a step, whoever makes it.
     """
 
-    def __init__(self, kp=3.0, kd=0.05, wz_max=0.5, cmd_eps=0.02):
+    def __init__(self, kp=3.0, kd=0.05, wz_max=0.5, cmd_eps=0.02, settle_rate=0.15,
+                 settle_tau=0.2, slew=1.0):
         self.kp, self.kd, self.wz_max, self.cmd_eps = kp, kd, wz_max, cmd_eps
+        self.settle_rate, self.settle_tau, self.slew = settle_rate, settle_tau, slew
         self.yaw = 0.0
         self.ref = None
+        self.rate_lp = 0.0                    # low-passed |yaw rate|, the settle test
+        self.out = 0.0                        # last wz handed over, the slew's state
         self.applied = []
+        self.waited = 0                       # ticks spent waiting to re-latch
 
     def __call__(self, dt, gyro, wz_cmd):
         """(wz to hand the policy) given this tick's gyro (rad/s) and the operator's wz."""
         self.yaw += gyro[2] * dt
+        a = dt / max(self.settle_tau, dt)
+        self.rate_lp += a * (abs(gyro[2]) - self.rate_lp)
         if abs(wz_cmd) > self.cmd_eps:
             self.ref = None                   # a commanded turn: let go, re-latch after
+            self.out = wz_cmd
             return wz_cmd
         if self.ref is None:
+            if self.rate_lp > self.settle_rate:
+                self.waited += 1              # still turning: no reference yet
+                self.out = self._slew(0.0, dt)
+                return self.out
             self.ref = self.yaw
         e = (self.ref - self.yaw + math.pi) % (2 * math.pi) - math.pi
         wz = max(-self.wz_max, min(self.wz_max, self.kp * e - self.kd * gyro[2]))
-        self.applied.append(wz)
-        return wz
+        self.out = self._slew(wz, dt)
+        self.applied.append(self.out)
+        return self.out
+
+    def _slew(self, want, dt):
+        step = self.slew * dt
+        return self.out + max(-step, min(step, want - self.out))
 
     def report(self):
         if not self.applied:
@@ -279,10 +310,72 @@ class HeadingHold:
         a = np.array(self.applied)
         return (f"heading hold: yaw now {math.degrees(self.yaw):+.1f} deg from start, "
                 f"wz applied mean {a.mean():+.3f} max {np.abs(a).max():.2f} rad/s, "
-                f"{100 * np.mean(np.abs(a) >= self.wz_max - 1e-6):.0f} % of ticks at the clamp")
+                f"{100 * np.mean(np.abs(a) >= self.wz_max - 1e-6):.0f} % of ticks at the clamp, "
+                f"{self.waited} ticks waiting for the body to stop turning before a re-latch")
+
+
+def hold_selftest() -> bool:
+    """`HeadingHold` against a body that answers a turn late — no policy, no bus."""
+    ok = True
+
+    def chk(name, cond, extra=""):
+        nonlocal ok
+        ok &= bool(cond)
+        print(f"  {'ok  ' if cond else 'FAIL'} {name}{extra}")
+
+    dt = 1.0 / CTRL_HZ
+    h = HeadingHold()
+    out = [h(dt, (0.0, 0.0, 0.0), 0.0) for _ in range(10)]
+    chk("standing still, the hold latches on the first tick", h.ref == 0.0 and max(map(abs, out)) < 1e-9)
+
+    # a commanded turn at 0.5 rad/s for 2 s, the body following; then the command drops to 0
+    # while the body is still turning for another 0.4 s (the policy's lag)
+    h = HeadingHold()
+    for _ in range(100):
+        w = h(dt, (0.0, 0.0, 0.5), 0.5)
+    chk("a commanded turn passes through untouched", abs(w - 0.5) < 1e-9 and h.ref is None)
+    tail = [h(dt, (0.0, 0.0, 0.5), 0.0) for _ in range(20)]     # still turning, cmd 0
+    chk("... after it, no reference while the body still turns", h.ref is None and h.waited == 20)
+    chk("... and the policy is handed a wz ramping down at the slew, not a counter-turn",
+        all(x >= -1e-9 for x in tail) and all(b <= a for a, b in zip(tail, tail[1:]))
+        and abs(tail[-1] - (0.5 - h.slew * 20 * dt)) < 1e-9,
+        f" (first {tail[0]:.2f}, last {tail[-1]:.2f})")
+    yaw_stop = None
+    for k in range(40):                                          # the body stops
+        h(dt, (0.0, 0.0, 0.0), 0.0)
+        if h.ref is not None and yaw_stop is None:
+            yaw_stop = h.yaw
+    chk("... the reference is latched once it has stopped", h.ref is not None)
+    chk("... at the heading it stopped on, not the one the command ended on",
+        yaw_stop is not None and abs(h.ref - h.yaw) < 1e-9 and h.ref > 0.5 * 2 + 0.4 * 0.5 - 1e-6,
+        f" (ref {math.degrees(h.ref):.1f} deg, command ended at {math.degrees(1.0):.1f})")
+    chk("... and holds it with no output", abs(h.out) < 1e-9)
+
+    # the old behaviour, for the record: a reference taken while turning drives it back
+    h2 = HeadingHold(settle_rate=1e9, slew=1e9)                   # re-latch at once, as before
+    for _ in range(100):
+        h2(dt, (0.0, 0.0, 0.5), 0.5)
+    back = [h2(dt, (0.0, 0.0, 0.5), 0.0) for _ in range(20)]
+    chk("(an immediate re-latch would have commanded a counter-turn)", back[-1] < -0.1,
+        f" ({back[-1]:+.2f} rad/s after 0.4 s)")
+
+    # the output is rate-limited: a 30 deg heading error asks for the clamp at once and gets a ramp
+    h = HeadingHold()
+    h(dt, (0.0, 0.0, 0.0), 0.0)
+    h.yaw -= math.radians(30)
+    first = h(dt, (0.0, 0.0, 0.0), 0.0)
+    chk("a step in heading error is answered with a ramp, not the clamp",
+        abs(first - 1.0 * dt) < 1e-9, f" ({first:.3f} rad/s on the first tick)")
+    for _ in range(50):
+        last = h(dt, (0.0, 0.0, 0.0), 0.0)
+    chk("... that reaches the clamp", abs(last - h.wz_max) < 1e-9)
+    print("heading hold:", "ok" if ok else "FAILED")
+    return ok
 
 
 def selftest(policy_dir, seconds=5.0):
+    if not hold_selftest():
+        return 1
     calib = Calibration.load(CALIB)
     bus = Bus(transport=FollowingLoopback(calib.ids), discard_echo=False)
     rt = Runtime(bus, calib, hz=CTRL_HZ)
@@ -303,8 +396,9 @@ def selftest(policy_dir, seconds=5.0):
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("policy_dir")
-    ap.add_argument("--selftest", action="store_true")
+    ap.add_argument("policy_dir", nargs="?", default=None)
+    ap.add_argument("--selftest", action="store_true",
+                    help="the heading hold alone, or with POLICY_DIR the policy on a loopback bus")
     ap.add_argument("--port", default=None)
     ap.add_argument("--baud", type=int, default=1_000_000)
     ap.add_argument("--preflight", action="store_true")
@@ -320,6 +414,10 @@ def main():
     ap.add_argument("--kp", type=float, default=5220.0, help="host loop, duty per rad")
     ap.add_argument("--kd", type=float, default=0.0, help="host loop, duty per rad/s")
     ap.add_argument("--kff", type=float, default=0.0, help="host loop, duty per rad/s of target")
+    ap.add_argument("--duty-cap", default="", metavar="SPEC",
+                    help="host loop: per-joint duty ceiling, e.g. pitch=600 (mode2.py, 'A torque "
+                         "ceiling'). Slower joints, but the front hip brackets broke under the "
+                         "pitch servos' full duty the day the feet gripped (2026-09-17)")
     ap.add_argument("--stand", action="store_true", help="hold the stance under the policy at command 0")
     ap.add_argument("--vx", type=float, default=0.0)
     ap.add_argument("--vy", type=float, default=0.0)
@@ -335,6 +433,11 @@ def main():
     ap.add_argument("--current-a", type=float, default=2.5)
     ap.add_argument("--volt-min", type=float, default=9.9)
     ap.add_argument("--track-rad", type=float, default=0.6)
+    # The RL gait's own pitch is under 5 deg (std 2.9 on the floor) and a -15 deg hand-over
+    # is the perturbation it was trained to stand from; the hops under Nav2 peaked at
+    # +32 and the guard's 40 let every one of them land. 25 sits between. **verify**.
+    ap.add_argument("--tilt-deg", type=float, default=25.0,
+                    help="body roll or pitch that trips, deg (the trot's guard uses 40)")
     ap.add_argument("--log", metavar="FILE.npz", help="record every tick's frame, action, target")
     ap.add_argument("--ramp-model-gains", action="store_true",
                     help="stand up under the policy's gains too (default: the trot's stiffer, "
@@ -354,21 +457,28 @@ def main():
     a = ap.parse_args()
 
     if a.selftest:
+        if a.policy_dir is None:
+            return 0 if hold_selftest() else 1
         return selftest(a.policy_dir, a.seconds)
-    if not a.port:
-        sys.exit("--port or --selftest")
+    if a.policy_dir is None or not a.port:
+        sys.exit("POLICY_DIR and --port, or --selftest")
 
     calib = Calibration.load(CALIB)
     bus = Bus(a.port, a.baud)
     limits = Limits(temp_c=a.temp_c, current_a=a.current_a, volt_min=a.volt_min,
-                    q_err_rad=a.track_rad)
+                    q_err_rad=a.track_rad, tilt_rad=math.radians(a.tilt_deg))
     if not a.mode0:
-        from runtime.mode2 import Mode2Runtime
+        from runtime.mode2 import Mode2Runtime, parse_duty_caps
         gains = dict(kp=a.kp, kd=a.kd, kff=a.kff)
+        try:
+            caps = parse_duty_caps(a.duty_cap, calib.joints)
+        except ValueError as e:
+            sys.exit(f"--duty-cap: {e}")
         # smooth=False: the policy was trained against a PD that saw its target at once
         rt = Mode2Runtime(bus, calib, hz=CTRL_HZ, limits=limits, sub_hz=a.sub_hz,
-                          smooth=False, **gains)
-        print("MODE 2: host position loop (runtime/mode2.py)")
+                          smooth=False, duty_cap=caps, **gains)
+        print("MODE 2: host position loop (runtime/mode2.py)"
+              + (", duty caps " + ", ".join(f"{n} {c}" for n, c in caps.items()) if caps else ""))
     else:
         rt = Runtime(bus, calib, hz=CTRL_HZ, limits=limits)
     pre = rt.preflight(a.port)

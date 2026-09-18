@@ -101,7 +101,7 @@ sys.path.insert(0, os.path.join(REPO, 'robot'))
 from feetech.bus import Bus, BusError                                # noqa: E402
 from runtime.calib import CALIB, Calibration, load_params            # noqa: E402
 from runtime.loop import CTRL_HZ, FollowingLoopback, Runtime         # noqa: E402
-from runtime.mode2 import DutyLoopback, KD, KFF, KP, Mode2Runtime    # noqa: E402
+from runtime.mode2 import DutyLoopback, KD, KFF, KP, Mode2Runtime, parse_duty_caps  # noqa: E402
 from runtime.policy import HeadingHold, PolicySource, sit_pose       # noqa: E402
 from runtime.safety import Limits, Tripped                           # noqa: E402
 from smalldog_walker.gait import TrotGait                            # noqa: E402
@@ -148,7 +148,17 @@ class ServoNode(Node):
         p('current_a', Limits.current_a)
         p('volt_min', Limits.volt_min)
         p('track_rad', Limits.q_err_rad)
+        # body roll or pitch that sits the robot down. The trot's guard is 40; the RL
+        # walker's launch passes 25 (its own pitch is under 5, the hops under Nav2 that
+        # broke the front hip brackets peaked at +32 and never tripped, 2026-09-17)
+        p('tilt_deg', math.degrees(Limits.tilt_rad))
         p('diag_hz', 5.0)                  # /diagnostics rate; 0 turns it off
+        # The black box (runtime/ticklog.py): every tick — feedback, goal, duty, IMU,
+        # command — into a ring of the last log_minutes, written on every exit, a trip
+        # included. A directory gets a timestamped file; '' records nothing. The
+        # explorer run that broke the front hip brackets left no recording (2026-09-17).
+        p('log', '')
+        p('log_minutes', 30.0)
         # MODE 2, the position loop on the host (robot/runtime/mode2.py): the firmware's
         # own loop cannot follow the trot (ideas/FAST_SERVOS.md). The walker's rate
         # budget has to agree — robot.launch.py hands it joint_rate_ceiling 4.7.
@@ -157,6 +167,10 @@ class ServoNode(Node):
         p('kp', KP)
         p('kd', KD)
         p('kff', KFF)
+        # per-joint duty ceiling in MODE 2, "pitch=600,fl_roll=800" (a joint name or a
+        # kind): the torque bound the firmware's protection used to impose and MODE 2
+        # does not — mode2.py, "A torque ceiling". 600 at 12 V is ~2.3 N·m; empty = none
+        p('duty_cap', '')
         # the RL walker (docstring): '' is the trajectory topic, a path is the policy
         p('policy', '')
         p('cmd_timeout', 0.5)              # s without /cmd_vel before the command is zero
@@ -165,7 +179,8 @@ class ServoNode(Node):
         p('policy_kff', 0.0)
         p('policy_settle', 1.5)            # s of stance for the IMU filter before the hand-over
         p('heading_hold', True)
-        p('vx_range', [-0.2, 0.4])         # the trained command range, m/s
+        p('vx_range', [-0.2, 0.4])         # the trained command range, m/s (the launch
+                                           # pins the floor to 0 unless reverse:=true)
         p('vy_max', 0.1)
         p('wz_max', 0.5)                   # rad/s; +-0.5 -> +-130 deg in 4 s on the floor, 0.8 untested
         # Nav2 steps the command: rotate-to-heading at 1.7 rad/s one tick, forward the
@@ -223,14 +238,24 @@ class ServoNode(Node):
         else:
             self.bus = Bus(g('port'), int(g('baud')))
         limits = Limits(temp_c=g('temp_c'), current_a=g('current_a'),
-                        volt_min=g('volt_min'), q_err_rad=g('track_rad'))
+                        volt_min=g('volt_min'), q_err_rad=g('track_rad'),
+                        tilt_rad=math.radians(float(g('tilt_deg'))))
         log = lambda s: self.get_logger().info(str(s))    # noqa: E731
         if self.mode2:
+            try:
+                caps = parse_duty_caps(str(g('duty_cap')), self.joints)
+            except ValueError as e:
+                raise SystemExit(f'duty_cap: {e}')
             self.rt = Mode2Runtime(self.bus, self.calib, hz=self.hz, limits=limits, log=log,
                                    kp=float(g('kp')), kd=float(g('kd')), kff=float(g('kff')),
-                                   sub_hz=float(g('sub_hz')))
+                                   sub_hz=float(g('sub_hz')), duty_cap=caps)
+            if caps:
+                self.get_logger().info('duty caps: ' + ', '.join(f'{n} {c}' for n, c in caps.items()))
         else:
             self.rt = Runtime(self.bus, self.calib, hz=self.hz, limits=limits, log=log)
+
+        self.tick = None                   # TickLog, made in start_log()
+        self.log_path = os.path.expanduser(str(g('log')))
 
         gait = TrotGait(self.params)
         if list(gait.joint_names) != self.joints:
@@ -423,6 +448,39 @@ class ServoNode(Node):
 
         if self.diag_every and k % self.diag_every == 0:
             self.pub_diag.publish(self.diagnostics(fb, now))
+        if self.tick is not None:
+            self.tick(k, dt, fb)
+
+    # ------------------------------------------------------------ the black box
+    def start_log(self):
+        if not self.log_path:
+            return None
+        from runtime.ticklog import TickLog
+        self.tick = TickLog(self.rt, gait=None, cmd=(lambda: self._cmd_now) if self.policy_dir else None,
+                            imu=self.imu, imu_read=False,
+                            minutes=float(self.get_parameter('log_minutes').value))
+        self.get_logger().info(f'logging every tick to {self.log_path} '
+                               f'(last {self.get_parameter("log_minutes").value:g} min)')
+        return self.tick
+
+    def save_log(self, trip=None):
+        if self.tick is None:
+            return
+        g = lambda k: self.get_parameter(k).value    # noqa: E731
+        meta = dict(node='smalldog_servos', mode2=self.mode2, policy=self.policy_dir, hz=self.hz,
+                    tilt_deg=float(g('tilt_deg')), duty_cap=str(g('duty_cap')),
+                    trip='' if trip is None else str(trip),
+                    cmd_gap_max_s=self._cmd_gap_max, stamp=time.strftime('%Y-%m-%dT%H:%M:%S'))
+        if self.mode2:
+            meta.update(kp=self.rt.kp, kd=self.rt.kd, kff=self.rt.kff)
+        try:
+            meta['report'] = self.rt.report()
+        except Exception as e:                       # noqa: BLE001 — a report must not lose the log
+            meta['report'] = f'unavailable: {e}'
+        try:
+            self.tick.save(self.log_path, meta, log=lambda s: self.get_logger().info(str(s)))
+        except Exception as e:                       # noqa: BLE001
+            self.get_logger().error(f'could not write the tick log: {e}')
 
     # ------------------------------------------------------------ diagnostics
     def diagnostics(self, fb, stamp, trip=None) -> DiagnosticArray:
@@ -561,9 +619,10 @@ class ServoNode(Node):
             f'{self.joints[i][:2]} ' + '/'.join(f'{math.degrees(q0[i + j]):+.0f}' for j in range(3))
             for i in range(0, len(self.joints), 3)))
 
-        code = 0
+        code, trip = 0, None
         try:
             with self.rt:
+                self.start_log()
                 self.rt.engage(self.q_sit, ramp_s=self.ramp)      # feet under the hips first
                 self.rt.engage_ramp_to(q0, ramp_s=self.ramp)
                 log.info('standing; streaming the walker\'s goals')
@@ -572,17 +631,20 @@ class ServoNode(Node):
                 self.rt.relax(self.q_sit, ramp_s=1.5)
         except Tripped as e:
             log.error(f'TRIPPED: {e}')
+            trip = e
             # one last word on /diagnostics, so the panel says why the robot sat down
             self.pub_diag.publish(self.diagnostics(
                 {n: None for n in self.joints}, self.get_clock().now().to_msg(), trip=e))
             code = 1
         except BusError as e:
             log.error(f'bus: {e}')
+            trip = e
             code = 1
         finally:
             for line in self.rt.report_lines().split('\n'):
                 log.info(line)
             log.info(f'{self._msgs} trajectory messages, {self._reordered} reordered')
+            self.save_log(trip)
         return code
 
 
@@ -597,9 +659,10 @@ class ServoNode(Node):
         log.info(f'policy {self.src.meta["run"]} @ {self.src.meta["commit"]}, obs '
                  f'{self.src.hist_n}x{self.src.frame_n}; heading hold {"on" if hold else "off"}')
         trot_gains = (self.rt.kp, self.rt.kd, self.rt.kff, self.rt.smooth)
-        code = 0
+        code, trip = 0, None
         try:
             with self.rt:
+                self.start_log()
                 # kp only for the ramps: kd on the speed register rang rr_roll (policy.py)
                 self.rt.kd, self.rt.kff = 0.0, 0.0
                 self.rt.engage(self.q_sit, ramp_s=self.ramp)
@@ -607,7 +670,8 @@ class ServoNode(Node):
                 settle = float(g('policy_settle'))
                 if settle > 0:
                     self.imu.reset()
-                    self.rt.run(lambda dt, fb: (self.imu.update(dt), stance)[1], seconds=settle)
+                    self.rt.run(lambda dt, fb: (self.imu.update(dt), stance)[1], seconds=settle,
+                                on_tick=self.tick)                # recorded, not published
                     gr = self.imu.gravity
                     log.info(f'settled {settle:g} s: pitch '
                              f'{math.degrees(math.asin(max(-1.0, min(1.0, gr[0])))):+.1f} deg')
@@ -625,11 +689,13 @@ class ServoNode(Node):
                 self.rt.relax(self.q_sit, ramp_s=1.5)
         except Tripped as e:
             log.error(f'TRIPPED: {e}')
+            trip = e
             self.pub_diag.publish(self.diagnostics(
                 {n: None for n in self.joints}, self.get_clock().now().to_msg(), trip=e))
             code = 1
         except BusError as e:
             log.error(f'bus: {e}')
+            trip = e
             code = 1
         finally:
             for line in self.rt.report_lines().split('\n'):
@@ -639,6 +705,7 @@ class ServoNode(Node):
                      f'(zeroed after {self.cmd_timeout:.1f})')
             if hold is not None:
                 log.info(hold.report())
+            self.save_log(trip)
         return code
 
 

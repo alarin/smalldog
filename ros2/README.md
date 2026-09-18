@@ -555,10 +555,37 @@ ros2 launch smalldog_hardware robot.launch.py policy:=rl/policy lidar:=true   # 
 ```
 
 `policy:=<dir>` replaces the IK trot with the RL policy (`rl/policy/`): the servo node runs
-`runtime.policy.PolicySource` itself at 50 Hz, takes `/cmd_vel` (vx −0.2..0.4, vy ±0.1,
-wz ±0.5, zero after 0.5 s), publishes `/odom` and the TF pair like the walker, and stands up
+`runtime.policy.PolicySource` itself at 50 Hz, takes `/cmd_vel` (vx 0..0.4, vy ±0.1,
+wz ±0.5, zero after 0.5 s, slewed at 0.4 m/s² and 1 rad/s² because the policy rears on a
+stepped command), publishes `/odom` and the TF pair like the walker, and stands up
 fold → stance before handing over (servo_node.py, "The RL walker"). The trot slid in place
 on the glossy laminate at any speed (2026-09-17); the policy walks it at ~0.18 m/s at cmd 0.2.
+
+**Every run is recorded** unless `log:=''`: the servo node writes each tick (feedback, goal,
+duty, IMU, command) into `~/smalldog_logs/tick_<stamp>.npz` on the Pi, a ring of the last
+30 min written on exit and on a trip (`robot/runtime/ticklog.py`; the same format as
+`walk.py --log`). `python3 robot/bench/incident.py FILE` reads it back: how the run ended,
+each joint's peak duty, current and error with the time, the body's peaks, the last seconds
+tick by tick. Copy the file to the mac and commit it under `robot/bench/data/` if it is worth
+keeping — the run that broke the front hip brackets left nothing.
+
+Three launch arguments exist because of that run (2026-09-17, `robot/README.md`
+"The guard"):
+
+- `reverse:=true` admits vx down to −0.2. Off by default: Nav2 never asks the RL walker to
+  reverse except through the BackUp recovery, and the shipped stage 2 policy reverses
+  nose-down until it trips on the front legs (`ideas/TRAIN_HOST_LOOP.md`).
+- `tilt_deg:=` is the guard's roll-or-pitch trip: 25 with a policy (its own pitch is under
+  5°; the hops peaked at +32 and the trot's 40 let them land), 40 for the trot. **verify**.
+- `duty_cap:=pitch=600` caps the hip pitch servos at the ~2.3 N·m the firmware's own
+  protection allowed in position mode (`robot/runtime/mode2.py`, "A torque ceiling").
+  Slower joints; the exit report prints the peak each capped joint reached. **verify**.
+
+The heading hold no longer re-latches its reference while the body is still turning after
+a Nav2 turn (it waits for the yaw rate to settle, then holds the heading the robot
+actually stopped on), and its own wz is slewed at the same 1 rad/s²
+(`runtime/policy.py`, `HeadingHold`; `python3 runtime/policy.py --selftest` without a
+policy dir runs that check alone).
 
 `mode2:=true` (the default since 2026-09-16) runs the servos in MODE 2 with the position
 loop on the Pi — `robot/runtime/mode2.py`, `ideas/FAST_SERVOS.md` — and hands the walker
