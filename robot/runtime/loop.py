@@ -95,6 +95,12 @@ class Runtime:
         self.torque_on = False
         self.ticks = self.overruns = self.bus_errors = 0
         self._late = []
+        #: the last frame accepted per joint, and the one rejected just before it —
+        #: the plausibility check in `read` needs both
+        self._last_ok: dict[str, dict] = {}
+        self._last_rej: dict[str, dict] = {}
+        #: frames that passed the checksum and were still garbage, per joint
+        self.implausible: dict[str, int] = {}
         #: max seconds each stage of a tick took: where a late tick went
         self._stage_max = {"read": 0.0, "source": 0.0, "send": 0.0, "on_tick": 0.0}
 
@@ -152,8 +158,50 @@ class Runtime:
         out = {}
         for n in self.calib.joints:
             r = raw.get(self.calib.id[n])
-            out[n] = self.servos[n].decode(r) if r and len(r) >= R.FEEDBACK_LEN else None
+            f = self.servos[n].decode(r) if r and len(r) >= R.FEEDBACK_LEN else None
+            out[n] = self._plausible(n, f)
         return out
+
+    #: a frame is garbage if, against the last accepted one, the joint moved this
+    #: far (rad) — 25 rad/s over a tick, three times the servo's no-load speed —
+    #: or the temperature byte stepped this many degrees, or the supply this many
+    #: volts. Nothing physical does any of those between two reads.
+    JUMP_Q, JUMP_T, JUMP_V = 0.5, 6.0, 1.5
+
+    def _plausible(self, n: str, f: dict | None) -> dict | None:
+        """The checksum is one byte, so one corrupt frame in 256 passes it.
+
+        Measured standing under torque (2026-09-18): the rear legs' replies failed
+        the checksum about half the time, and the ones that slipped through read
+        rl_knee at 150 °C and fl_knee at 68 with the joints at 33. A garbage
+        position is worse than a garbage temperature — the host loop's kp 9000
+        turns a phantom radian into a full-duty kick, and the RL policy observes
+        the jump. So a frame that disagrees with the last accepted one by more
+        than a servo can move, heat or sag in a tick is dropped as if the servo
+        had not answered. Two consecutive frames that agree with EACH OTHER are
+        accepted whatever the last good one said: then the world moved, not the
+        wire, and refusing forever would leave the joint blind after a fall.
+        """
+        if f is None:
+            return None
+        last = self._last_ok.get(n)
+        if last is not None:
+            jump = (abs(f["q"] - last["q"]) > self.JUMP_Q
+                    or abs(f["temp"] - last["temp"]) > self.JUMP_T
+                    or abs(f["volt"] - last["volt"]) > self.JUMP_V)
+            if jump:
+                rej = self._last_rej.get(n)
+                agrees = (rej is not None
+                          and abs(f["q"] - rej["q"]) <= 0.1
+                          and abs(f["temp"] - rej["temp"]) <= 2
+                          and abs(f["volt"] - rej["volt"]) <= 0.5)
+                if not agrees:
+                    self._last_rej[n] = f
+                    self.implausible[n] = self.implausible.get(n, 0) + 1
+                    return None
+        self._last_ok[n] = f
+        self._last_rej.pop(n, None)
+        return f
 
     def send(self, q) -> list:
         """Clamp to the soft limits and write all twelve goals in one packet.
@@ -365,7 +413,7 @@ class Runtime:
     def report(self) -> dict:
         late = sorted(self._late)
         out = dict(ticks=self.ticks, overruns=self.overruns, bus_errors=self.bus_errors,
-                   hz=self.hz, **self.guard.summary())
+                   hz=self.hz, implausible=dict(self.implausible), **self.guard.summary())
         if late:
             out["late_p50_ms"] = 1e3 * late[len(late) // 2]
             out["late_max_ms"] = 1e3 * late[-1]
@@ -393,6 +441,9 @@ class Runtime:
                 if d:
                     s.append(f"  {what}: " + ", ".join(
                         f"{name.get(i, i)} {c}" for i, c in sorted(d.items(), key=lambda kv: -kv[1])))
+            if r.get("implausible"):
+                s.append("  passed the checksum but were garbage: " + ", ".join(
+                    f"{n} {c}" for n, c in sorted(r["implausible"].items(), key=lambda kv: -kv[1])))
             x = b.get("bad_xor") or {}
             if x:
                 top = sorted(x.items(), key=lambda kv: -kv[1])[:6]
@@ -516,6 +567,29 @@ def _selftest(seconds=2.0) -> int:
     held = rt2.send([0.4] * 12)
     q = rt2.send([float("nan")] * 12)
     chk("a NaN holds the last goal rather than moving", q == held)
+
+    # a frame that passes the checksum and is still garbage: dropped as unheard,
+    # unless the next frame agrees with it (then the joint really is there now)
+    rt5 = Runtime(Bus(transport=FollowingLoopback(calib.ids), discard_echo=False), calib,
+                  log=lambda *_: None)
+    fb = rt5.read()
+    chk("a first frame is taken on trust", fb["rl_knee"] is not None)
+    rt5.bus.io.set(calib.id["rl_knee"], R.PRESENT_TEMPERATURE, 150)
+    fb = rt5.read()
+    chk("a 150 C byte on a 30 C joint is garbage, not news", fb["rl_knee"] is None)
+    chk("... and is counted against the joint", rt5.implausible == {"rl_knee": 1})
+    rt5.bus.io.set(calib.id["rl_knee"], R.PRESENT_TEMPERATURE, 30)
+    fb = rt5.read()
+    chk("... and the next sane frame is accepted", fb["rl_knee"] is not None)
+    q = [0.0] * 12
+    q[calib.joints.index("fl_knee")] = 1.2       # the loopback follows its goal at once
+    rt5.send(q)
+    fb = rt5.read()
+    chk("a 1.2 rad jump in one tick is garbage", fb["fl_knee"] is None)
+    fb = rt5.read()
+    chk("... until a second frame agrees: the world moved", fb["fl_knee"] is not None
+        and abs(fb["fl_knee"]["q"] - 1.2) < 0.01)
+    chk("... one rejection, not two", rt5.implausible.get("fl_knee") == 1)
 
     # one servo off the bus: the read localises it instead of going blind, and
     # engage refuses rather than ramping twelve joints from an eleven-joint guess
