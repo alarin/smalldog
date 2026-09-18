@@ -32,6 +32,7 @@ def main():
     ap.add_argument("--i2c-bus", type=int, default=1)
     a = ap.parse_args()
     imu = BMI088(a.i2c_bus)
+    imu.configure()
     acc = [[], [], []]
     gyr = [[], [], []]
     dt = 1.0 / a.hz

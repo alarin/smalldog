@@ -120,6 +120,12 @@ def main():
 
     out = {"ids": ids, "budget": b, "dry_run": a.dry_run}
     servo = Servo(bus, ids[0])
+    # The goal written is each servo's own present position: a goal write enables
+    # torque on an ST3215, and 2048 is not this robot's zero (2026-09-18: writing 2048
+    # drove rr_pitch, zero 1017, to +91 deg and the robot off the table).
+    hold = {i: 2048 for i in ids}
+    if not a.dry_run:
+        hold = {i: bus.read(i, R.PRESENT_POSITION) for i in ids}
     out["ping"] = report("ping, one servo", timed(lambda: bus.ping(ids[0]), a.n))
     out["read_pos"] = report("read position, one servo",
                              timed(lambda: bus.read(ids[0], R.PRESENT_POSITION), a.n))
@@ -127,7 +133,7 @@ def main():
                              timed(servo.feedback, a.n))
     out["sync_write"] = report(f"SyncWrite goal, {len(ids)} servos",
                                timed(lambda: bus.sync_write(
-                                   R.GOAL_POSITION, {i: 2048 for i in ids}), a.n))
+                                   R.GOAL_POSITION, hold), a.n))
     out["sync_read"] = report(f"SyncRead feedback, {len(ids)} servos",
                               timed(lambda: bus.sync_read(
                                   R.FEEDBACK_START, R.FEEDBACK_LEN, ids), a.n))
@@ -145,7 +151,7 @@ def main():
         t0 = time.perf_counter()
         try:
             bus.sync_read(R.FEEDBACK_START, R.FEEDBACK_LEN, ids)
-            bus.sync_write(R.GOAL_POSITION, {i: 2048 for i in ids})
+            bus.sync_write(R.GOAL_POSITION, hold)
         except BusError:
             pass
         work.append(time.perf_counter() - t0)
