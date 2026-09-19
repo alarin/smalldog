@@ -176,11 +176,11 @@
   "contact": {
     "friction": {
       "range": [
-        0.55,
-        1.45
+        0.9,
+        2.5
       ],
       "evidence": "guessed",
-      "why": "tangential friction of a printed foot on whatever it is standing on. check_model.py names it a guess and says a tilt test measures it in an afternoon; until then the range spans lino to carpet."
+      "why": "tangential friction of a printed foot on whatever it is standing on. check_model.py names it a guess and says a tilt test measures it in an afternoon; until then the range spans lino to carpet. 2026-09-19: the siped soles stick-slip in a turn in place on the floor while MJX turns at 0.9 rad/s; the band now reaches soft rubber on laminate."
     }
   },
   "terrain": {
