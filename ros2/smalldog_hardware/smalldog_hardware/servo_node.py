@@ -257,6 +257,7 @@ class ServoNode(Node):
         self.tick = None                   # TickLog, made in start_log()
         self.log_path = os.path.expanduser(str(g('log')))
         self._part_max = {k: 0.0 for k in ('joint_states', 'imu', 'odom_tf', 'diagnostics', 'ticklog')}
+        self._part_when = 0.0
 
         gait = TrotGait(self.params)
         if list(gait.joint_names) != self.joints:
@@ -458,7 +459,10 @@ class ServoNode(Node):
                 # the explorer stood still for 50 s asking for 0.1 (2026-09-18). The
                 # measured rate is on /imu.
                 self.publish_odom(dt, now, roll, pitch, self._cmd_now[2])
-                t3 = time.perf_counter(); pm['odom_tf'] = max(pm['odom_tf'], t3 - t2)
+                t3 = time.perf_counter()
+                if t3 - t2 > pm['odom_tf']:
+                    pm['odom_tf'] = t3 - t2
+                    self._part_when = k * self.rt.dt     # seconds into the run
 
         t4 = time.perf_counter()
         if self.diag_every and k % self.diag_every == 0:
@@ -660,7 +664,8 @@ class ServoNode(Node):
             code = 1
         finally:
             self.get_logger().info('  on_tick max ms: ' + ', '.join(
-                f'{k} {1e3 * v:.1f}' for k, v in self._part_max.items()))
+                f'{k} {1e3 * v:.1f}' for k, v in self._part_max.items())
+                + f' (odom_tf max at {self._part_when:.1f} s into the run)')
             for line in self.rt.report_lines().split('\n'):
                 log.info(line)
             log.info(f'{self._msgs} trajectory messages, {self._reordered} reordered')
