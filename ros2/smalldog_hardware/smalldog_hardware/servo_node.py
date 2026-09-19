@@ -256,6 +256,7 @@ class ServoNode(Node):
 
         self.tick = None                   # TickLog, made in start_log()
         self.log_path = os.path.expanduser(str(g('log')))
+        self._part_max = {k: 0.0 for k in ('joint_states', 'imu', 'odom_tf', 'diagnostics', 'ticklog')}
 
         gait = TrotGait(self.params)
         if list(gait.joint_names) != self.joints:
@@ -417,6 +418,10 @@ class ServoNode(Node):
         self.tf.sendTransform([t_ob, t_bb])
 
     def on_tick(self, k, dt, fb):
+        # max seconds per part: a 335 ms on_tick tripped the walker under Nav2
+        # (2026-09-18) and the exit report has to say which publish it was
+        pm = self._part_max
+        t0 = time.perf_counter()
         now = self.get_clock().now().to_msg()
         js = JointState()
         js.header.stamp = now
@@ -425,6 +430,7 @@ class ServoNode(Node):
         js.velocity = [fb[n]['w'] if fb[n] else math.nan for n in self.joints]
         js.effort = [float(fb[n]['load']) if fb[n] else math.nan for n in self.joints]
         self.pub_js.publish(js)
+        t1 = time.perf_counter(); pm['joint_states'] = max(pm['joint_states'], t1 - t0)
 
         if self.imu is not None:
             # in policy mode the source read the chip this tick already (LiveIMU.last)
@@ -443,6 +449,7 @@ class ServoNode(Node):
             # roll/pitch from a complementary filter, yaw integrated: the covariances say so
             m.orientation_covariance = [0.01, 0.0, 0.0, 0.0, 0.01, 0.0, 0.0, 0.0, 1.0]
             self.pub_imu.publish(m)
+            t2 = time.perf_counter(); pm['imu'] = max(pm['imu'], t2 - t1)
             if self.src is not None:
                 # the twist's yaw rate is the COMMAND, like its linear part, not the
                 # gyro: Nav2's rotate-to-heading ramps its turn up from this twist at
@@ -451,11 +458,16 @@ class ServoNode(Node):
                 # the explorer stood still for 50 s asking for 0.1 (2026-09-18). The
                 # measured rate is on /imu.
                 self.publish_odom(dt, now, roll, pitch, self._cmd_now[2])
+                t3 = time.perf_counter(); pm['odom_tf'] = max(pm['odom_tf'], t3 - t2)
 
+        t4 = time.perf_counter()
         if self.diag_every and k % self.diag_every == 0:
             self.pub_diag.publish(self.diagnostics(fb, now))
+            t5 = time.perf_counter(); pm['diagnostics'] = max(pm['diagnostics'], t5 - t4)
+        t5 = time.perf_counter()
         if self.tick is not None:
             self.tick(k, dt, fb)
+            pm['ticklog'] = max(pm['ticklog'], time.perf_counter() - t5)
 
     # ------------------------------------------------------------ the black box
     def start_log(self):
@@ -647,6 +659,8 @@ class ServoNode(Node):
             trip = e
             code = 1
         finally:
+            self.get_logger().info('  on_tick max ms: ' + ', '.join(
+                f'{k} {1e3 * v:.1f}' for k, v in self._part_max.items()))
             for line in self.rt.report_lines().split('\n'):
                 log.info(line)
             log.info(f'{self._msgs} trajectory messages, {self._reordered} reordered')
@@ -704,6 +718,8 @@ class ServoNode(Node):
             trip = e
             code = 1
         finally:
+            self.get_logger().info('  on_tick max ms: ' + ', '.join(
+                f'{k} {1e3 * v:.1f}' for k, v in self._part_max.items()))
             for line in self.rt.report_lines().split('\n'):
                 log.info(line)
             log.info('policy ' + self.src.report())
