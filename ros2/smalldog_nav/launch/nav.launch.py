@@ -43,6 +43,7 @@ def _nodes(context):
     share = get_package_share_directory('smalldog_nav')
     sim = LaunchConfiguration('use_sim_time').perform(context).lower() in ('true', '1')
     speed = float(LaunchConfiguration('speed').perform(context))
+    arcs = LaunchConfiguration('arcs').perform(context).lower() in ('true', '1')
     cloud = LaunchConfiguration('cloud').perform(context)
     common = {'use_sim_time': sim}
     nav2_yaml = os.path.join(share, 'config', 'nav2.yaml')
@@ -75,7 +76,12 @@ def _nodes(context):
 
         Node(package='nav2_controller', executable='controller_server', output='screen',
              parameters=[nav2_yaml, common,
-                         {'FollowPath.desired_linear_vel': speed}],
+                         {'FollowPath.desired_linear_vel': speed},
+                         # arcs: never turn on the spot, and never slow below what the
+                         # walker still walks at (the RL policy stands still under 0.1)
+                         ({'FollowPath.use_rotate_to_heading': False,
+                           'FollowPath.regulated_linear_scaling_min_speed': 0.12}
+                          if arcs else {})],
              remappings=[('cmd_vel', '/cmd_vel')]),
         Node(package='nav2_planner', executable='planner_server', output='screen',
              parameters=[nav2_yaml, common]),
@@ -110,6 +116,13 @@ def generate_launch_description():
                               description='m/s Nav2 asks for on a straight; 0.08 on the '
                                           'robot with the heading hold, 0.11 blind '
                                           '(robot.launch.py)'),
+        DeclareLaunchArgument('arcs', default_value='false',
+                              description='turn only while walking: rotate-to-heading '
+                                          'off and the linear floor 0.12. For the RL '
+                                          'walker on the floor, whose turn in place '
+                                          'stick-slips on the siped soles and rears '
+                                          '(2026-09-19; in MJX it turns at 0.9 rad/s '
+                                          'upright). Use with spin_first:=false'),
         DeclareLaunchArgument('explore', default_value='false',
                               description='walk the frontiers until the map is closed'),
         DeclareLaunchArgument('save_map', default_value='',
