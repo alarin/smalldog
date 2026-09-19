@@ -80,7 +80,7 @@ def _nodes(context):
                          # arcs: never turn on the spot, and never slow below what the
                          # walker still walks at (the RL policy stands still under 0.1)
                          ({'FollowPath.use_rotate_to_heading': False,
-                           'FollowPath.regulated_linear_scaling_min_speed': 0.12,
+                           'FollowPath.regulated_linear_scaling_min_speed': 0.15,
                            # a farther carrot is a gentler arc: at 0.35 the controller
                            # asked +-0.5 rad/s at 0.12 m/s and flipped sign every few s
                            'FollowPath.lookahead_dist': 0.5}
