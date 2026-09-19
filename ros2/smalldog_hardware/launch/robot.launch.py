@@ -96,6 +96,11 @@ def _nodes(context):
                           'mode2': mode2,
                           'policy': policy,
                           'tilt_deg': tilt,
+                          # the RL walker's yaw clamp: at 0.5 with vx 0.12 (a 24 cm arc
+                          # under Nav2) the policy is nearly turning in place, which
+                          # stick-slips on the siped soles and rears (2026-09-19)
+                          'wz_max': ParameterValue(LaunchConfiguration('policy_wz_max'),
+                                                   value_type=float),
                           # the black box (runtime/ticklog.py); bench/incident.py reads it
                           'log': LaunchConfiguration('log'),
                           # mode2.py "A torque ceiling": the front hip brackets broke under
@@ -227,6 +232,10 @@ def generate_launch_description():
         DeclareLaunchArgument('reverse', default_value='false',
                               description='let the RL walker take vx < 0 (to -0.2) from /cmd_vel; '
                                           'off, a BackUp recovery or a stick back stands it still'),
+        DeclareLaunchArgument('policy_wz_max', default_value='0.3',
+                              description='rad/s the RL walker will turn at; 0.5 is the '
+                                          'trained range, 0.3 what the siped soles allow '
+                                          'while walking (verify)'),
         DeclareLaunchArgument('yaw_max', default_value='0.2',
                               description='rad/s the heading hold may add; 0 = the gait\'s own 0.5'),
         # off by default: the teleop reads keys from a TTY it does not have under launch
