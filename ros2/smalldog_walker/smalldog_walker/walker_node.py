@@ -32,6 +32,7 @@ class SmallDogWalker(Node):
         self.declare_parameter('period', 0.45)
         self.declare_parameter('swing_height', 0.022)
         self.declare_parameter('body_height', 0.158)
+        self.declare_parameter('stance_x', 0.0)      # m, feet ahead of the hips (gait.py stance_x)
         self.declare_parameter('max_step', 0.060)
         # 0 = the gait's own. `period_for` pins the period at 2*stride_max/speed, so a
         # period chosen for the servo's rate ceiling (robot.launch.py: 1.35 s at 0.11
@@ -100,6 +101,7 @@ class SmallDogWalker(Node):
         self.gait.swing_height = self.get_parameter('swing_height').value
         self.gait.max_step = self.get_parameter('max_step').value
         self.gait.body_height = self.get_parameter('body_height').value
+        self.gait.stance_x = self.get_parameter('stance_x').value
         if self.get_parameter('stride_max').value > 0:
             self.gait.stride_max = self.get_parameter('stride_max').value
         if self.get_parameter('period_min').value > 0:
@@ -118,6 +120,7 @@ class SmallDogWalker(Node):
         self.create_subscription(Twist, '/cmd_vel', self.on_cmd_vel, 10)
         self.create_subscription(Bool, '/smalldog/enable', self.on_enable, 10)
         self.create_subscription(Float64, '/smalldog/body_height', self.on_height, 10)
+        self.create_subscription(Float64, '/smalldog/stance_x', self.on_stance_x, 10)
 
         # Terrain feedback. Both are optional: with neither topic publishing, the gait is
         # the open-loop trot it has always been, and it falls back to that on its own if
@@ -173,7 +176,8 @@ class SmallDogWalker(Node):
         self.get_logger().info(
             f'leg reach {r["d_min"]*1000:.0f}..{r["d_max"]*1000:.0f} mm -> body height '
             f'{r["height_min"]*1000:.0f}..{r["height_max"]*1000:.0f} mm, using '
-            f'{r["body_height"]*1000:.0f} mm, swing {r["swing_height"]*1000:.0f} mm')
+            f'{r["body_height"]*1000:.0f} mm, swing {r["swing_height"]*1000:.0f} mm, '
+            f'feet {self.gait.stance_x*1000:+.0f} mm ahead of the hips')
         self.get_logger().info(
             f'terrain feedback listening on {self.get_parameter("imu_topic").value} and '
             f'{self.get_parameter("foot_load_topic").value}; open loop until they publish')
@@ -200,6 +204,10 @@ class SmallDogWalker(Node):
 
     def on_height(self, msg):
         self.gait.body_height = msg.data      # the gait clamps to its reachable band
+
+    def on_stance_x(self, msg):
+        self.gait.stance_x = msg.data
+        self.get_logger().info(f'feet {msg.data*1000:+.0f} mm ahead of the hips')
 
     def on_imu(self, msg):
         # Say it once, out loud.  Whether this topic is arriving is the single difference

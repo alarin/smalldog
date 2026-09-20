@@ -31,12 +31,15 @@ class TrotGait:
             self.kin[l] = LegKinematics(dy, dz, p["l_thigh_mm"] * mm, p["l_shin_mm"] * mm,
                                         p["foot_r_mm"] * mm)
         self.foot_r = p["foot_r_mm"] * mm
-        # nominal foot placement in the base frame, directly under the pitch axis
+        # nominal foot placement in the base frame: under the pitch axis, all four shifted
+        # forward by stance_x so the support rectangle sits under the real CoM. The CAD
+        # puts the body's CoM 10 mm ahead of the hip centre; the robot standing on its
+        # own feet holds 2-4x the rear knee load in the front knees and reads 3-6 deg
+        # nose-down on the IMU (2026-09-19), so the CoM is well ahead of that
+        self._hip_dy = {l: p["hip_to_pitch_mm"][l][1] * mm for l in self.legs}
         self.nominal = {}
-        for l in self.legs:
-            hx, hy, hz = self.hip[l]
-            dy = p["hip_to_pitch_mm"][l][1] * mm
-            self.nominal[l] = [hx, hy + dy, 0.0]          # z filled from body_height
+        self._stance_x = 0.0
+        self.stance_x = 0.0                            # runs the setter -> fills nominal
 
         # ---- reachable band of one leg, measured from the hip-pitch axis -------------
         # the knee soft limit sets how short the leg can get, full extension how long
@@ -128,6 +131,18 @@ class TrotGait:
         self._v_exec = (0.0, 0.0, 0.0)  # what the stance feet are sweeping, see body_velocity()
 
     # ------------------------------------------------------------------
+    @property
+    def stance_x(self):
+        return self._stance_x
+
+    @stance_x.setter
+    def stance_x(self, x):
+        """m, + forward: every foot's stance position ahead of its pitch axis."""
+        self._stance_x = float(x)
+        for l in self.legs:
+            hx, hy, hz = self.hip[l]
+            self.nominal[l] = [hx + self._stance_x, hy + self._hip_dy[l], 0.0]   # z filled from body_height
+
     @property
     def body_height(self):
         return self._body_height

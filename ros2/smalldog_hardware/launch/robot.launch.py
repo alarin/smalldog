@@ -48,6 +48,7 @@ REPO = os.environ.get('SMALLDOG_REPO') or os.path.dirname(os.path.dirname(os.pat
     os.path.dirname(os.path.realpath(__file__)))))
 
 sys.path.insert(0, os.path.join(REPO, 'robot'))
+from runtime.mode2 import KP, KD, KFF                                # noqa: E402
 from runtime.safety import Limits                                    # noqa: E402
 
 #: robot/runtime/walk.py MODE2_RATE_LIMIT — the bridge at full duty at the pack's 11.3 V
@@ -62,8 +63,14 @@ FIT = {True: (0.95, 0.90, 0.12), False: (1.35, 0.65, 0.08)}
 def _nodes(context):
     mode2 = LaunchConfiguration('mode2').perform(context).lower() in ('true', '1', 'yes')
     PERIOD, TURN, speed_default = FIT[mode2]
+    period = LaunchConfiguration('period').perform(context)
+    PERIOD = float(period) if period else PERIOD
     speed = LaunchConfiguration('speed').perform(context)
     speed = float(speed) if speed else speed_default
+    swing = float(LaunchConfiguration('swing').perform(context))
+    body_height = float(LaunchConfiguration('body_height').perform(context))
+    stance_x = float(LaunchConfiguration('stance_x').perform(context))
+    level_kp = float(LaunchConfiguration('level_kp').perform(context))
     yaw_max = float(LaunchConfiguration('yaw_max').perform(context))
     policy = LaunchConfiguration('policy').perform(context)
     if policy and not os.path.isabs(policy):
@@ -106,6 +113,13 @@ def _nodes(context):
                           # mode2.py "A torque ceiling": the front hip brackets broke under
                           # the pitch servos' full duty the day the feet gripped
                           'duty_cap': LaunchConfiguration('duty_cap'),
+                          # the host loop's gains (mode2.py KP/KD/KFF). kd 150 chatters a
+                          # roll joint that stands in its own play at full duty, +-3 deg
+                          # at 12 Hz (rr_roll, 2026-09-19); the policy runs kd 0 and no
+                          # roll joint has ever rung under it
+                          'kp': ParameterValue(LaunchConfiguration('kp'), value_type=float),
+                          'kd': ParameterValue(LaunchConfiguration('kd'), value_type=float),
+                          'kff': ParameterValue(LaunchConfiguration('kff'), value_type=float),
                           # Nav2 never asks the RL walker to reverse (RPP allow_reversing
                           # false) except through the BackUp recovery, which the shipped
                           # stage 2 policy answers nose-down until it trips on the front
@@ -115,17 +129,20 @@ def _nodes(context):
                           'odom_scale': 0.9}]),
     ]
     if not policy:
-        nodes.append(_walker(mode2, PERIOD, speed, yaw_max))
+        nodes.append(_walker(mode2, PERIOD, speed, yaw_max, swing, body_height, stance_x, level_kp))
     return nodes + _extras(speed, TURN)
 
 
-def _walker(mode2, PERIOD, speed, yaw_max):
+def _walker(mode2, PERIOD, speed, yaw_max, swing, body_height, stance_x, level_kp):
     return Node(package='smalldog_walker', executable='walker', name='smalldog_walker',
              output='screen',
              parameters=[{'use_sim_time': False,
                           'rate': 50.0,
                           'imu_topic': '/imu',
                           'period': PERIOD,
+                          'swing_height': swing,
+                          'body_height': body_height,
+                          'stance_x': stance_x,
                           'stride_max': speed * PERIOD / 2.0,
                           # and never shorter: `period_for` counts a turn as speed and
                           # cut the cycle to 0.86 s at Nav2's 0.5 rad/s, where the
@@ -148,7 +165,7 @@ def _walker(mode2, PERIOD, speed, yaw_max):
                           # the roll loop diverged on the mirrored map (walker_node.py,
                           # level_kp). The IMU still feeds the heading hold and the
                           # level frame for smalldog_nav
-                          'level_kp': 0.0,
+                          'level_kp': level_kp,
                           # three 7 s walks measured by the LiDAR scan match
                           # (tools/straight_test.py, 2026-09-15): 0.38 / 0.41 / 0.41 m
                           # real against 0.55 / 0.55 / 0.55 m of stance-foot travel
@@ -226,6 +243,29 @@ def generate_launch_description():
                               description='MODE 2 per-joint duty ceiling, e.g. pitch=600 (a joint '
                                           'name or roll/pitch/knee); 600 at 12 V is the ~2.3 N*m '
                                           'the firmware\'s own protection allowed. Empty = none'),
+        DeclareLaunchArgument('period', default_value='',
+                              description='gait period, s; empty = the FIT point for the loop'),
+        DeclareLaunchArgument('swing', default_value='0.022',
+                              description='swing height, m. 22 mm is the sim\'s; a body rocking '
+                                          '6 deg lifts a foot 300 mm away by 30, and the swing foot '
+                                          'then drags on a gripping sole (2026-09-19)'),
+        DeclareLaunchArgument('body_height', default_value='0.158',
+                              description='body height, m (leg reach admits 150..170)'),
+        DeclareLaunchArgument('stance_x', default_value='0.0',
+                              description='all four feet this far ahead of their hips, m (+ forward). '
+                                          'The real CoM is ahead of the hip centre: standing, the '
+                                          'front knees hold 2-4x the rear load and the body reads '
+                                          '3-6 deg nose-down (2026-09-19); live on /smalldog/stance_x'),
+        DeclareLaunchArgument('level_kp', default_value='0.0',
+                              description='the gait\'s attitude levelling; 0 off, the gait\'s own '
+                                          'is 1.4. Off until it has been tried on the floor with '
+                                          'the corrected leg map'),
+        DeclareLaunchArgument('kp', default_value=str(KP),
+                              description='MODE 2 host loop: duty per rad of error'),
+        DeclareLaunchArgument('kd', default_value=str(KD),
+                              description='MODE 2 host loop: duty per rad/s of measured speed'),
+        DeclareLaunchArgument('kff', default_value=str(KFF),
+                              description='MODE 2 host loop: duty per rad/s of target speed'),
         DeclareLaunchArgument('tilt_deg', default_value='',
                               description='body roll or pitch that sits the robot down; empty = '
                                           '25 with a policy, 40 for the trot'),
