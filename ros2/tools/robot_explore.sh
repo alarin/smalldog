@@ -23,6 +23,14 @@ if [ "$1" = "stop" ]; then
   rm -f "$PIDF"; echo "stopped"; exit 0
 fi
 SPEED=${SPEED:-0.08}
+# the L2 feed (3d/tools/stream_pcd.cpp) is a plain process, not a service: without it the
+# lidar node dies at start and the explorer stands waiting for a cloud that never comes
+STREAM_PCD=${STREAM_PCD:-$HOME/unilidar_sdk2/unitree_lidar_sdk/bin/stream_pcd}
+if ! ss -ltn | grep -q ':9910 '; then
+  echo "starting stream_pcd"
+  (setsid nohup "$STREAM_PCD" 9910 192.168.1.62 192.168.1.2 > "$HOME/stream_pcd.log" 2>&1 < /dev/null &)
+  sleep 3
+fi
 STAMP=$(date +%Y%m%d_%H%M%S)
 OUT=$HOME/smalldog_logs/explore_$STAMP; mkdir -p "$OUT"; echo "$OUT" > "$HOME/smalldog_logs/explore.latest"
 setsid ros2 launch smalldog_hardware robot.launch.py mode2:=false imu:=true lidar:=true lidar_idle_stop:=0 "$@" > "$OUT/robot.log" 2>&1 &
