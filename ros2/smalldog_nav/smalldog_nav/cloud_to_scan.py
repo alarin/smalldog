@@ -80,6 +80,14 @@ class CloudToScan(Node):
         self.declare_parameter('scan_time', 1.0 / 12.0)
         self.declare_parameter('drop_depth', 0.12)    # m below the floor plane = a drop; a tread is 0.17
         self.declare_parameter('drop_range', 2.0)     # m, how far out to look for one: 3.4 deg of tilt there
+        # Two gates on the drop, because the trot rocks the body: a cloud is 1/12 s of
+        # returns taken while the body pitches, so one frame's floor fit can be 9 deg off
+        # (2026-09-19, the walking robot) and the floor beyond a metre reads as a hole —
+        # 277 scans of one explorer run put phantom wall arcs across the room and the
+        # planner could not leave it. A real edge is there in every frame and the floor
+        # around it is level; a phantom flickers and comes with a tilted fit.
+        self.declare_parameter('drop_frames', 3)       # consecutive clouds a drop must be seen in
+        self.declare_parameter('drop_tilt_max', 4.0)   # deg of fitted floor tilt above which no drop is believed
         # The floor as the sensor sees it, not as TF says. On the real robot the L2's floor
         # returns at 0.3-1.5 m sat 8 cm BELOW z = 0 at every bearing while the ceiling read
         # its true 2.50 m (2026-09-17): a bias on grazing floor returns, not geometry, and
@@ -100,6 +108,10 @@ class CloudToScan(Node):
         self.scan_time = float(g('scan_time'))
         self.drop_depth, self.drop_range = float(g('drop_depth')), float(g('drop_range'))
         self.drops = 0
+        self.drop_frames, self.drop_tilt = int(g('drop_frames')), math.radians(float(g('drop_tilt_max')))
+        self._drop_run = 0                                # consecutive clouds with a hole in view
+        self.drops_gated = 0
+        self.hole_hist = []                               # (range, depth, bearing deg) of every hole point believed, this report
         self.floor_range, self.floor_min_pts = float(g('floor_fit_range')), int(g('floor_fit_min_pts'))
         self.floor = np.zeros(3)                         # (a, b, c) of the last fit, carried when a frame has too few
         self.floor_hist = []
@@ -115,9 +127,21 @@ class CloudToScan(Node):
         fz = np.median(self.floor_hist) if self.floor_hist else float('nan')
         b_, c_ = self.floor[1], self.floor[2]
         self.get_logger().info(f'{self.n} scans, {self.dropped} clouds without TF, {self.drops} with a '
-                               f'drop in view, floor at z {fz:+.3f} m, tilt {math.degrees(math.atan(b_)):+.1f} '
+                               f'drop in view ({self.drops_gated} gated), floor at z {fz:+.3f} m, tilt {math.degrees(math.atan(b_)):+.1f} '
                                f'(pitch) {math.degrees(math.atan(c_)):+.1f} (roll) deg, fit on {len(self.floor_hist)} frames')
+        if self.hole_hist:
+            # what the believed drops looked like: a stairwell is a band of bearings at one
+            # range, its points a tread (0.17) or more down; a mirror image of a wall in a
+            # glossy floor, or the L2's grazing-angle floor bias, sit just under the
+            # threshold and spread with range
+            hh = np.array(self.hole_hist)
+            r_, d_, b_ = hh[:, 0], hh[:, 1], hh[:, 2]
+            self.get_logger().info(f'  holes: {len(hh)} pts, range p10/50/90 {np.percentile(r_, 10):.2f}/'
+                                   f'{np.percentile(r_, 50):.2f}/{np.percentile(r_, 90):.2f} m, depth p50/90 '
+                                   f'{np.percentile(d_, 50):.2f}/{np.percentile(d_, 90):.2f} m, bearing '
+                                   f'{b_.min():+.0f}..{b_.max():+.0f} deg')
         self.floor_hist.clear()
+        self.hole_hist.clear()
 
     def on_cloud(self, msg):
         stamp = Time.from_msg(msg.header.stamp)
@@ -160,12 +184,17 @@ class CloudToScan(Node):
             z = p[:, 2]
             rr = np.hypot(p[:, 0], p[:, 1])
             hole = (z < -self.drop_depth) & (rr <= self.drop_range) & (rr > 1e-3)
-            if hole.any():
+            tilted = math.hypot(self.floor[1], self.floor[2]) > math.tan(self.drop_tilt)
+            self._drop_run = self._drop_run + 1 if (hole.any() and not tilted) else 0
+            if hole.any() and self._drop_run < self.drop_frames:
+                self.drops_gated += 1
+            if hole.any() and self._drop_run >= self.drop_frames:
                 self.drops += 1
                 # where each ray crossed z = 0 on its way down: the edge
                 # (an edge under `range_min` - the robot standing at it - is reported at
                 # `range_min`: still a wall in front, not a return the consumers discard)
                 edge = np.maximum(rr[hole] * h / (h - z[hole]), self.rmin)
+                self.hole_hist.extend(zip(rr[hole], -z[hole], np.degrees(np.arctan2(p[hole, 1], p[hole, 0]))))
                 r = np.concatenate([r, edge])
                 a = np.concatenate([a, np.arctan2(p[hole, 1], p[hole, 0])])
         ok = (r >= self.rmin) & (r <= self.rmax) & (a >= self.a0) & (a <= self.a1)
