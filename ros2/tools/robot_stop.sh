@@ -5,7 +5,7 @@
 # the servo node sits the robot down and writes its tick log, TERM after 6 s.
 #     tools/robot_stop.sh
 me=$$
-pids() { pgrep -f 'ros2 launch smalldog|smalldog_walker/lib|smalldog_hardware/lib|straight_test.py|tools/moves.sh|robot_explore.sh|ros2 bag record|smalldog_nav/lib|nav2_|slam_toolbox' | grep -vx "$me"; }
+pids() { pgrep -f 'ros2 launch smalldog|smalldog_walker/lib|smalldog_hardware/lib|straight_test.py|tools/moves.sh|robot_explore.sh|ros2 bag record|smalldog_nav/lib|nav2_|slam_toolbox' | grep -vx -e "$me" -e "$PPID"; }
 p=$(pids); [ -z "$p" ] && { echo "nothing running"; exit 0; }
 kill -INT $p 2>/dev/null
 for i in $(seq 1 12); do [ -z "$(pids)" ] && break; sleep 0.5; done
