@@ -17,6 +17,10 @@ HERE=$(cd "$(dirname "$0")/.." && pwd)
 PIDF=$HOME/smalldog_logs/explore.pids
 if [ "$1" = "stop" ]; then
   [ -f "$PIDF" ] || { echo "nothing running"; exit 0; }
+  # the map first, while slam_toolbox is still up: the explorer saves it only on "explored"
+  L=$(cat "$HOME/smalldog_logs/explore.latest" 2>/dev/null)
+  [ -n "$L" ] && timeout 20 ros2 service call /slam_toolbox/save_map slam_toolbox/srv/SaveMap \
+      "{name: {data: \"$L/map\"}}" >/dev/null 2>&1 && echo "map: $L/map.pgm"
   for p in $(tac "$PIDF"); do kill -INT -- -"$p" 2>/dev/null; done
   for i in $(seq 1 40); do alive=0; for p in $(cat "$PIDF"); do kill -0 "$p" 2>/dev/null && alive=1; done; [ $alive = 0 ] && break; sleep 0.5; done
   for p in $(cat "$PIDF"); do kill -0 "$p" 2>/dev/null && kill -TERM -- -"$p"; done
@@ -41,7 +45,8 @@ echo $! > "$PIDF"
 for i in $(seq 1 80); do grep -q "streaming the walker" "$OUT/robot.log" && break; sleep 0.5; done
 grep -q "streaming the walker" "$OUT/robot.log" || { echo "!! the robot did not stand up; see $OUT/robot.log"; "$0" stop; exit 1; }
 echo "standing; starting SLAM + Nav2 + explorer at $SPEED m/s"
-setsid ros2 launch smalldog_nav nav.launch.py use_sim_time:=false cloud:=/lidar/points speed:=$SPEED explore:=true > "$OUT/nav.log" 2>&1 &
+setsid ros2 launch smalldog_nav nav.launch.py use_sim_time:=false cloud:=/lidar/points speed:=$SPEED explore:=true \
+    save_map:="$OUT/map" > "$OUT/nav.log" 2>&1 &
 echo $! >> "$PIDF"
 setsid ros2 bag record -s mcap -o "$OUT/bag" /scan /map /tf /tf_static /cmd_vel /odom /imu /lidar/points \
     /smalldog/foot_load /joint_states /rosout > "$OUT/bag.log" 2>&1 &
