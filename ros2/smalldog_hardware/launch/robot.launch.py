@@ -256,11 +256,13 @@ def generate_launch_description():
                                           'then drags on a gripping sole (2026-09-19)'),
         DeclareLaunchArgument('body_height', default_value='0.158',
                               description='body height, m (leg reach admits 150..170)'),
-        DeclareLaunchArgument('stance_x', default_value='0.0',
+        DeclareLaunchArgument('stance_x', default_value='0.02',
                               description='all four feet this far ahead of their hips, m (+ forward). '
-                                          'The real CoM is ahead of the hip centre: standing, the '
-                                          'front knees hold 2-4x the rear load and the body reads '
-                                          '3-6 deg nose-down (2026-09-19); live on /smalldog/stance_x'),
+                                          'The CoM is ~35 mm ahead of the hip centre (kitchen scale, '
+                                          '2026-09-20: 69 % of the weight on the front feet). 20 mm '
+                                          'measured by tools/moves.sh: forward 0.23 m as at 0, back '
+                                          '0.52 (0.19 at 0), turns +49/-35; 30 mm killed the forward '
+                                          'walk (0.00 m, back 0.56). Live on /smalldog/stance_x'),
         DeclareLaunchArgument('level_kp', default_value='0.0',
                               description='the gait\'s attitude levelling; 0 off, the gait\'s own '
                                           'is 1.4. Off until it has been tried on the floor with '
