@@ -72,7 +72,12 @@ def _nodes(context):
              parameters=[slam_yaml, common, {'use_lifecycle_manager': True}]),
         Node(package='nav2_lifecycle_manager', executable='lifecycle_manager',
              name='lifecycle_manager_slam', output='screen',
-             parameters=[common, {'autostart': True, 'node_names': ['slam_toolbox']}]),
+             # bond_timeout 0 = no heartbeat watchdog: slam_toolbox blocks for seconds in
+             # save_map, missed its bond, and the manager reset it to an empty map with
+             # the robot 20 minutes into a run (2026-09-20). A crashed slam_toolbox is
+             # visible in the log either way
+             parameters=[common, {'autostart': True, 'node_names': ['slam_toolbox'],
+                                  'bond_timeout': 0.0}]),
 
         Node(package='nav2_controller', executable='controller_server', output='screen',
              parameters=[nav2_yaml, common,
