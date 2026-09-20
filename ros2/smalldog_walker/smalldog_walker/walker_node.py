@@ -33,6 +33,7 @@ class SmallDogWalker(Node):
         self.declare_parameter('swing_height', 0.022)
         self.declare_parameter('body_height', 0.158)
         self.declare_parameter('stance_x', 0.0)      # m, feet ahead of the hips (gait.py stance_x)
+        self.declare_parameter('stance_slew', 0.01)  # m/s, how fast the feet move there once standing
         self.declare_parameter('max_step', 0.060)
         # 0 = the gait's own. `period_for` pins the period at 2*stride_max/speed, so a
         # period chosen for the servo's rate ceiling (robot.launch.py: 1.35 s at 0.11
@@ -101,7 +102,16 @@ class SmallDogWalker(Node):
         self.gait.swing_height = self.get_parameter('swing_height').value
         self.gait.max_step = self.get_parameter('max_step').value
         self.gait.body_height = self.get_parameter('body_height').value
-        self.gait.stance_x = self.get_parameter('stance_x').value
+        # The stance offset is reached by a slew, not set: the servo node stands the robot
+        # up from wherever it lies by ramping to the walker's first goal, and a first goal
+        # with the feet 30 mm ahead of the hips lifts the body rear-first and rolls it
+        # onto its back (2026-09-20, pitch -72 in 0.3 s). The feet stay under the hips
+        # until the servo node is standing - its IMU starts publishing at that moment -
+        # then move forward at `stance_slew` m/s. Without an IMU, 10 s after start
+        self._stance_x_goal = float(self.get_parameter('stance_x').value)
+        self._stance_slew = float(self.get_parameter('stance_slew').value)
+        self._stance_t0 = None
+        self.gait.stance_x = 0.0
         if self.get_parameter('stride_max').value > 0:
             self.gait.stride_max = self.get_parameter('stride_max').value
         if self.get_parameter('period_min').value > 0:
@@ -142,7 +152,7 @@ class SmallDogWalker(Node):
         # sending?" is a wall-clock question: the sim can run many times real time,
         # and then a steady 20 Hz teleop looks stale on the sim clock.
         self._wall = Clock(clock_type=ClockType.SYSTEM_TIME)
-        self.last_cmd = self._wall.now()
+        self.last_cmd = self._t_start = self._wall.now()
         self.timeout = self.get_parameter('cmd_timeout').value
         self.fit_cmd = bool(self.get_parameter('fit_cmd').value)
         self._fit_n = 0
@@ -206,8 +216,23 @@ class SmallDogWalker(Node):
         self.gait.body_height = msg.data      # the gait clamps to its reachable band
 
     def on_stance_x(self, msg):
-        self.gait.stance_x = msg.data
-        self.get_logger().info(f'feet {msg.data*1000:+.0f} mm ahead of the hips')
+        self._stance_x_goal = float(msg.data)
+        self.get_logger().info(f'feet to {msg.data*1000:+.0f} mm ahead of the hips')
+
+    def slew_stance(self, dt):
+        if self._stance_t0 is None:
+            if self.imu_seen or (self._wall.now() - self._t_start).nanoseconds * 1e-9 > 10.0:
+                self._stance_t0 = True
+            else:
+                return
+        x = self.gait.stance_x
+        step = self._stance_slew * dt
+        if abs(self._stance_x_goal - x) <= step:
+            if x != self._stance_x_goal:
+                self.gait.stance_x = self._stance_x_goal
+                self.get_logger().info(f'feet {self._stance_x_goal*1000:+.0f} mm ahead of the hips')
+        else:
+            self.gait.stance_x = x + math.copysign(step, self._stance_x_goal - x)
 
     def on_imu(self, msg):
         # Say it once, out loud.  Whether this topic is arriving is the single difference
@@ -258,6 +283,7 @@ class SmallDogWalker(Node):
             dt = min(max((now - self._last_tick).nanoseconds * 1e-9, 1e-4), 3.0 * self.dt)
         self._last_tick = now
         self.dt = dt
+        self.slew_stance(dt)
 
         q = self.gait.joint_targets(dt, *cmd)
 
