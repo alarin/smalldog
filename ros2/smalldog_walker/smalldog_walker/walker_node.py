@@ -6,14 +6,14 @@ JointTrajectoryController, which is the same pattern the hexapod uses but
 streamed continuously instead of action-per-step, because a trot has no
 natural step boundary to wait on.
 """
-import json, math, os, time
+import json, math, os, shutil, subprocess, time
 import rclpy
 import rclpy.executors
 from rclpy.node import Node
 from rclpy.clock import Clock, ClockType
 from geometry_msgs.msg import Twist, TransformStamped
 from nav_msgs.msg import Odometry
-from sensor_msgs.msg import Imu
+from sensor_msgs.msg import Imu, LaserScan
 from tf2_ros import TransformBroadcaster
 from std_msgs.msg import Bool, Float64, Float64MultiArray
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
@@ -34,6 +34,17 @@ class SmallDogWalker(Node):
         self.declare_parameter('body_height', 0.158)
         self.declare_parameter('stance_x', 0.0)      # m, feet ahead of the hips (gait.py stance_x)
         self.declare_parameter('stance_slew', 0.01)  # m/s, how fast the feet move there once standing
+        # The scan guard, the last thing between Nav2 and the stairs. smalldog_nav's
+        # cloud_to_scan reports a drop as a wall where the ray crossed the floor, and an
+        # edge nearer than the scan's range_min - the robot standing at it - at exactly
+        # range_min. 2026-09-20 the explorer stood 0.3 m from the stairwell on three
+        # sides for 30 s while Nav2 crept and then spun it, and it went down. So: a return
+        # at range_min freezes every command until the scan clears (someone moved the
+        # robot); anything nearer than front_clear in the front +-60 deg stops vx > 0.
+        # No scan for a second = no guard (moves.sh without the L2 walks as before)
+        self.declare_parameter('scan_guard', True)
+        self.declare_parameter('scan_topic', '/scan')
+        self.declare_parameter('front_clear', 0.40)  # m
         self.declare_parameter('max_step', 0.060)
         # 0 = the gait's own. `period_for` pins the period at 2*stride_max/speed, so a
         # period chosen for the servo's rate ceiling (robot.launch.py: 1.35 s at 0.11
@@ -136,6 +147,13 @@ class SmallDogWalker(Node):
         # the open-loop trot it has always been, and it falls back to that on its own if
         # either stream stops. Nothing in this workspace publishes them yet — see the
         # "Known gaps" section of the README.
+        self._scan = None                     # (wall time, min range overall, min range in the front +-60 deg, range_min)
+        self._guard_said = 0.0
+        self._guard_state = None
+        if self.get_parameter('scan_guard').value:
+            from rclpy.qos import qos_profile_sensor_data
+            self.create_subscription(LaserScan, self.get_parameter('scan_topic').value, self.on_scan,
+                                     qos_profile_sensor_data)
         self.create_subscription(Imu, self.get_parameter('imu_topic').value,
                                  self.on_imu, 10)
         self.create_subscription(Float64MultiArray,
@@ -154,6 +172,7 @@ class SmallDogWalker(Node):
         self._wall = Clock(clock_type=ClockType.SYSTEM_TIME)
         self.last_cmd = self._t_start = self._wall.now()
         self.timeout = self.get_parameter('cmd_timeout').value
+        self.front_clear = float(self.get_parameter('front_clear').value)
         self.fit_cmd = bool(self.get_parameter('fit_cmd').value)
         self._fit_n = 0
         if self.fit_cmd:
@@ -234,6 +253,42 @@ class SmallDogWalker(Node):
         else:
             self.gait.stance_x = x + math.copysign(step, self._stance_x_goal - x)
 
+    def on_scan(self, msg):
+        r = [x for x in msg.ranges if x == x and x != float('inf')]
+        if not r:
+            self._scan = (self._wall.now(), float('inf'), float('inf'), msg.range_min)
+            return
+        lo, hi = -math.radians(60.0), math.radians(60.0)
+        front = [x for k, x in enumerate(msg.ranges)
+                 if lo <= msg.angle_min + k * msg.angle_increment <= hi and x == x and x != float('inf')]
+        self._scan = (self._wall.now(), min(r), min(front) if front else float('inf'), msg.range_min)
+
+    def guard(self, cmd):
+        """cmd -> cmd, held back by the scan (see scan_guard)."""
+        if self._scan is None:
+            return cmd
+        t, near, front, rmin = self._scan
+        if (self._wall.now() - t).nanoseconds * 1e-9 > 1.0:
+            return cmd
+        state = 'edge' if near <= rmin + 0.005 else ('front' if front < self.front_clear and cmd[0] > 0 else None)
+        if state != self._guard_state:
+            self._guard_state = state
+            if state == 'edge':
+                self.get_logger().error(f'scan guard: an edge within {rmin:.2f} m - not moving until it is gone')
+            elif state == 'front':
+                self.get_logger().warn(f'scan guard: {front:.2f} m ahead, no forward')
+            else:
+                self.get_logger().info('scan guard: clear')
+        if state == 'edge':
+            now = time.time()
+            if now - self._guard_said > 10.0 and shutil.which('say'):
+                self._guard_said = now
+                subprocess.Popen(['say', 'edge, not moving'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            return (0.0, 0.0, 0.0)
+        if state == 'front':
+            return (0.0, cmd[1], cmd[2])
+        return cmd
+
     def on_imu(self, msg):
         # Say it once, out loud.  Whether this topic is arriving is the single difference
         # between the terrain-aware gait and the blind one, and it is invisible otherwise:
@@ -269,7 +324,7 @@ class SmallDogWalker(Node):
 
     def tick(self):
         stale = (self._wall.now() - self.last_cmd).nanoseconds * 1e-9 > self.timeout
-        cmd = (0.0, 0.0, 0.0) if (stale or not self.enabled) else self.cmd
+        cmd = (0.0, 0.0, 0.0) if (stale or not self.enabled) else self.guard(self.cmd)
 
         # The gait's clock is the time that actually passed (on the node's clock: sim time
         # under the sim), not the timer's nominal period. A loaded machine fires a 100 Hz

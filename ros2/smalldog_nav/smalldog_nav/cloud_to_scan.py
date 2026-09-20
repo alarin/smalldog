@@ -88,6 +88,14 @@ class CloudToScan(Node):
         # around it is level; a phantom flickers and comes with a tilted fit.
         self.declare_parameter('drop_frames', 3)       # consecutive clouds a drop must be seen in
         self.declare_parameter('drop_tilt_max', 4.0)   # deg of fitted floor tilt above which no drop is believed
+        # An edge must not flicker: the costmap raytraces free space along every ray, so a
+        # frame in which the gate withholds the edge and the ray goes on to the far wall
+        # CLEARS the edge cell, and an edge that is a wall 70 % of the time is a gap the
+        # planner finds. 2026-09-20 the explorer walked to within 0.3 m of the stairwell
+        # that way (1200 of 3800 drop frames gated) and the Spin recovery took it over.
+        # So: a bearing with a hole in it, gated or not, reports nothing beyond the hole;
+        # and a confirmed edge is held in its bearing for drop_hold s after it vanishes
+        self.declare_parameter('drop_hold', 2.0)       # s a confirmed edge stays in the scan unseen
         # The floor as the sensor sees it, not as TF says. On the real robot the L2's floor
         # returns at 0.3-1.5 m sat 8 cm BELOW z = 0 at every bearing while the ceiling read
         # its true 2.50 m (2026-09-17): a bias on grazing floor returns, not geometry, and
@@ -111,6 +119,8 @@ class CloudToScan(Node):
         self.drop_frames, self.drop_tilt = int(g('drop_frames')), math.radians(float(g('drop_tilt_max')))
         self._drop_run = 0                                # consecutive clouds with a hole in view
         self.drops_gated = 0
+        self.drop_hold = float(g('drop_hold'))
+        self._edge_hold = None                            # per bin: (range, expiry stamp) of the last confirmed edge
         self.hole_hist = []                               # (range, depth, bearing deg) of every hole point believed, this report
         self.floor_range, self.floor_min_pts = float(g('floor_fit_range')), int(g('floor_fit_min_pts'))
         self.floor = np.zeros(3)                         # (a, b, c) of the last fit, carried when a frame has too few
@@ -188,21 +198,45 @@ class CloudToScan(Node):
             self._drop_run = self._drop_run + 1 if (hole.any() and not tilted) else 0
             if hole.any() and self._drop_run < self.drop_frames:
                 self.drops_gated += 1
+            if hole.any():
+                # nothing is reported beyond a hole in its bearing, believed or not: the
+                # rays there went down, and a wall return past them would clear the edge
+                ha = np.arctan2(p[hole, 1], p[hole, 0])
+                hb = np.clip(np.round((ha - self.a0) / self.da).astype(int), 0, self.nbins - 1)
+                hole_near = np.full(self.nbins, np.inf)
+                np.minimum.at(hole_near, hb, rr[hole])
+                b = np.clip(np.round((a - self.a0) / self.da).astype(int), 0, self.nbins - 1)
+                keep_r = r < hole_near[b]
+                r, a = r[keep_r], a[keep_r]
             if hole.any() and self._drop_run >= self.drop_frames:
                 self.drops += 1
                 # where each ray crossed z = 0 on its way down: the edge
                 # (an edge under `range_min` - the robot standing at it - is reported at
                 # `range_min`: still a wall in front, not a return the consumers discard)
                 edge = np.maximum(rr[hole] * h / (h - z[hole]), self.rmin)
-                self.hole_hist.extend(zip(rr[hole], -z[hole], np.degrees(np.arctan2(p[hole, 1], p[hole, 0]))))
+                edge_a = np.arctan2(p[hole, 1], p[hole, 0])
+                self.hole_hist.extend(zip(rr[hole], -z[hole], np.degrees(edge_a)))
                 r = np.concatenate([r, edge])
-                a = np.concatenate([a, np.arctan2(p[hole, 1], p[hole, 0])])
+                a = np.concatenate([a, edge_a])
+                if self.drop_hold > 0:
+                    if self._edge_hold is None:
+                        self._edge_hold = np.full((self.nbins, 2), np.inf)   # per bin: range, expiry
+                    eb = np.clip(np.round((edge_a - self.a0) / self.da).astype(int), 0, self.nbins - 1)
+                    fresh = np.full(self.nbins, np.inf)
+                    np.minimum.at(fresh, eb, edge)
+                    seen = np.isfinite(fresh)
+                    self._edge_hold[seen, 0] = fresh[seen]
+                    self._edge_hold[seen, 1] = stamp.nanoseconds * 1e-9 + self.drop_hold
         ok = (r >= self.rmin) & (r <= self.rmax) & (a >= self.a0) & (a <= self.a1)
         r, a = r[ok], a[ok]
         ranges = np.full(self.nbins, np.inf)
         if len(r):
             b = np.clip(np.round((a - self.a0) / self.da).astype(int), 0, self.nbins - 1)
             np.minimum.at(ranges, b, r)
+        if self._edge_hold is not None:
+            # the held edges: a bin's last confirmed edge stays for drop_hold s
+            live = self._edge_hold[:, 1] > stamp.nanoseconds * 1e-9
+            ranges[live] = np.minimum(ranges[live], self._edge_hold[live, 0])
 
         s = LaserScan()
         s.header.stamp = msg.header.stamp

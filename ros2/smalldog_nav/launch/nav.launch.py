@@ -97,7 +97,10 @@ def _nodes(context):
              parameters=[nav2_yaml, common],
              remappings=[('cmd_vel', '/cmd_vel')]),
         Node(package='nav2_bt_navigator', executable='bt_navigator', output='screen',
-             parameters=[nav2_yaml, common]),
+             # config/navigate_no_spin.xml: the stock tree minus the Spin and BackUp
+             # recoveries, which ran the trot off the stairwell it stood at (2026-09-20)
+             parameters=[nav2_yaml, common,
+                         {'default_nav_to_pose_bt_xml': os.path.join(share, 'config', 'navigate_no_spin.xml')}]),
         Node(package='nav2_lifecycle_manager', executable='lifecycle_manager',
              name='lifecycle_manager_navigation', output='screen',
              parameters=[common, {'autostart': True, 'node_names': lifecycle,
