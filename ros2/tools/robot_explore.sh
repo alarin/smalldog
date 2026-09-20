@@ -44,4 +44,10 @@ setsid ros2 bag record -s mcap -o "$OUT/bag" /scan /map /tf /tf_static /cmd_vel 
     /smalldog/foot_load /joint_states /rosout > "$OUT/bag.log" 2>&1 &
 echo $! >> "$PIDF"
 echo "logs: $OUT"
+# a dog that explores a house barks now and then: a random cut of the recording every
+# 40-160 s (robot/sound/bark), for as long as the launches run. BARKS=0 keeps it quiet
+if [ "${BARKS:-1}" != 0 ] && command -v bark >/dev/null; then
+  setsid bash -c 'while true; do sleep $((40 + RANDOM % 121)); bark bark $((RANDOM % 3 + 1)).$((RANDOM % 10)) >/dev/null 2>&1; done' &
+  echo $! >> "$PIDF"
+fi
 wait
