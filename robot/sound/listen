@@ -1,0 +1,38 @@
+#!/usr/bin/env python3
+"""listen [--dry] [--seconds N] — voice commands on the robot without ROS: "псина, стоп" /
+"псина, гуляй" (ears.py has the how). Under ROS the same ears are `smalldog_hardware ears`
+(robot.launch.py voice:=true); this is the bare-robot and the testing front.
+
+Actions, the robot answering on its speaker with `say`:
+    стоп   → ros2 topic pub -1 /smalldog/explore std_msgs/msg/Bool "{data: false}"  (pause: cancels the Nav2 goal, the walker stops)
+    гуляй  → ... "{data: true}"                                                       (resume)
+--dry prints what it hears and runs nothing. STOP_CMD / GO_CMD in the environment override.
+"""
+import os
+import subprocess
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
+from sound.ears import Ears, REPLY, say   # noqa: E402
+
+ACTIONS = {'stop': os.environ.get('STOP_CMD', 'ros2 topic pub -1 /smalldog/explore std_msgs/msg/Bool "{data: false}"'),
+           'go': os.environ.get('GO_CMD', 'ros2 topic pub -1 /smalldog/explore std_msgs/msg/Bool "{data: true}"')}
+
+
+def main():
+    dry = '--dry' in sys.argv
+    secs = float(sys.argv[sys.argv.index('--seconds') + 1]) if '--seconds' in sys.argv else None
+    ears = Ears(seconds=secs)
+    print(f'listening on {ears.mic}' + (' (dry)' if dry else ''), flush=True)
+    for kind, text in ears:
+        if kind == 'heard':
+            print(f'heard: {text!r}', flush=True)
+        elif kind == 'cmd':
+            print(f'>>> {text}', flush=True)
+            if not dry:
+                subprocess.Popen(ACTIONS[text], shell=True)
+                say(REPLY[text])
+
+
+if __name__ == '__main__':
+    main()

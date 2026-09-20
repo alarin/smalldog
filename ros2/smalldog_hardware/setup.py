@@ -27,6 +27,7 @@ setup(
             'servos = smalldog_hardware.servo_node:main',
             'lidar = smalldog_hardware.lidar_node:main',
             'camera = smalldog_hardware.camera_node:main',
+            'ears = smalldog_hardware.ears_node:main',
         ],
     },
 )

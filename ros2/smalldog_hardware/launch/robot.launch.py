@@ -209,6 +209,11 @@ def _extras(speed, TURN):
                           'width': ParameterValue(LaunchConfiguration('camera_width'), value_type=int),
                           'height': ParameterValue(LaunchConfiguration('camera_height'), value_type=int)}]),
 
+        # the ears: the camera module's mic through sherpa-onnx (robot/sound/ears.py) —
+        # "стоп" pauses the explorer and zeroes /cmd_vel, "гуляй" resumes
+        Node(package='smalldog_hardware', executable='ears', name='smalldog_ears',
+             output='screen', condition=IfCondition(LaunchConfiguration('voice'))),
+
         # Foxglove over the LAN: everything above (the robot itself from
         # /robot_description), plus /map, /scan and the costmaps when nav.launch.py is
         # up. 0.0.0.0, unlike the sim's bridge — the Pi is the robot, the mac is where
@@ -290,6 +295,8 @@ def generate_launch_description():
                                           '(it needs ~25 s to come back); 0 keeps it spinning'),
         DeclareLaunchArgument('camera', default_value='false',
                               description='publish the IMX415 on /camera/image/compressed'),
+        DeclareLaunchArgument('voice', default_value='false',
+                              description='«псина, стоп» / «псина, гуляй» on the camera mic (ears_node.py)'),
         DeclareLaunchArgument('camera_device', default_value='/dev/video0'),
         DeclareLaunchArgument('camera_input', default_value='v4l2',
                               description='ffmpeg input format; lavfi + '

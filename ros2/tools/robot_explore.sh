@@ -23,6 +23,9 @@ if [ "$1" = "stop" ]; then
   rm -f "$PIDF"; echo "stopped"; exit 0
 fi
 SPEED=${SPEED:-0.08}
+# and it listens: «псина, стоп» / «псина, гуляй» pause and resume the explorer (the ears
+# node, robot/sound/ears.py, ~30 cm range). VOICE=0 keeps it deaf
+VOICE_ARG=voice:=$([ "${VOICE:-1}" != 0 ] && echo true || echo false)
 # the L2 feed (3d/tools/stream_pcd.cpp) is a plain process, not a service: without it the
 # lidar node dies at start and the explorer stands waiting for a cloud that never comes
 STREAM_PCD=${STREAM_PCD:-$HOME/unilidar_sdk2/unitree_lidar_sdk/bin/stream_pcd}
@@ -33,7 +36,7 @@ if ! ss -ltn | grep -q ':9910 '; then
 fi
 STAMP=$(date +%Y%m%d_%H%M%S)
 OUT=$HOME/smalldog_logs/explore_$STAMP; mkdir -p "$OUT"; echo "$OUT" > "$HOME/smalldog_logs/explore.latest"
-setsid ros2 launch smalldog_hardware robot.launch.py mode2:=false imu:=true lidar:=true lidar_idle_stop:=0 "$@" > "$OUT/robot.log" 2>&1 &
+setsid ros2 launch smalldog_hardware robot.launch.py mode2:=false imu:=true lidar:=true lidar_idle_stop:=0 $VOICE_ARG "$@" > "$OUT/robot.log" 2>&1 &
 echo $! > "$PIDF"
 for i in $(seq 1 80); do grep -q "streaming the walker" "$OUT/robot.log" && break; sleep 0.5; done
 grep -q "streaming the walker" "$OUT/robot.log" || { echo "!! the robot did not stand up; see $OUT/robot.log"; "$0" stop; exit 1; }

@@ -595,6 +595,13 @@ measured under the firmware's loop and still hold as a conservative operating po
 bench walk at 0.16 m/s / 0.95 s slipped to ~0.10 real on the bare bench (**verify** on the
 floor with `tools/straight_test.py` before raising `speed`).
 
+`voice:=true` is `smalldog_hardware/ears_node.py`: the camera module's mic through
+sherpa-onnx (`robot/sound/ears.py`, `robot/sound/README.md` for the model and the range —
+about 30 cm). «псина, стоп» publishes `/smalldog/explore false` and one zero `/cmd_vel`,
+«псина, гуляй» `/smalldog/explore true`; every finished utterance goes out on
+`/smalldog/voice` as heard, and the robot answers «стою» / «гуляю» on its speaker.
+`robot_explore.sh` passes it (`VOICE=0` not to).
+
 `lidar:=true` is `smalldog_hardware/lidar_node.py`: `3d/tools/stream_pcd`'s TCP feed
 (`robot/slam/slam.py`'s reader, imported) republished as `PointCloud2` in `lidar_link`,
 the same shape the sim publishes, so `nav.launch.py` is the same launch over either. Needs
