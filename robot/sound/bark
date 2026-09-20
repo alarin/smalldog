@@ -1,0 +1,10 @@
+#!/bin/sh
+# bark [NAME] [SECONDS] — play a recording from robot/sound/ (default: bark) on the robot's
+# speaker, same output path as `say`. SECONDS cuts a long file.
+# Synthesised barks were tried first (formant synthesis) and sounded like opera; recordings won.
+dir=$(dirname "$(readlink -f "$0")")
+name=${1:-bark}
+f="$dir/$name.ogg"
+[ -f "$f" ] || { echo "no $f; have: $(ls "$dir"/*.ogg | xargs -n1 basename | sed 's/.ogg//' | tr '\n' ' ')" >&2; exit 1; }
+ffmpeg -v error -i "$f" ${2:+-t "$2"} -af "loudnorm=I=-8:TP=-0.5:LRA=5,pan=stereo|c0=c0|c1=0*c0" -ar 48000 -f s16le - \
+  | aplay -q -D hw:2,0 -f S16_LE -r 48000 -c 2

@@ -25,7 +25,9 @@ because `robot/bench` had to run before there was a robot.
 | `runtime/mode2.py` | the same tick with the servo's position loop replaced by a PD on the host (MODE 2, open-loop PWM) — `--mode2` on `walk.py` and `policy.py`; `--sine` runs one free servo through it |
 | `runtime/walk.py` | the CLI that runs the trot on the robot; `--go S` walks straight for S seconds, `--log FILE.npz` records every tick, `--imu` adds the BMI088 to it |
 | `runtime/ticklog.py` | the black box: every tick's feedback, goal, duty, IMU and command into one `.npz` — `walk.py --log`, and the ROS servo node's `log:=` (on by default, a ring of the last 30 min, written on a trip) |
+| `bench/leg_probe.py` | is one leg's centre where `calib.json` says? Stand, sweep one joint slowly with its duty capped, read where the foot picks up load. A hand-captured centre is what it catches: `rr_roll` was 6° out and the foot hung 3–7 mm in stance (2026-09-19) |
 | `bench/incident.py` | that recording after something broke: how it ended, each joint's peak duty / current / error and when, the body's peaks, and the last seconds tick by tick |
+| `sound/` | the speaker: `say "text"` and `bark` on the robot, see `sound/README.md` |
 | `slam/slam.py` | LiDAR odometry and a voxel map from the L2. **Not the robot's mapping stack** — `ros2/smalldog_nav` is. Read "SLAM" below before relying on a pose it prints |
 
 Nothing here needs hardware to be exercised:
@@ -142,7 +144,12 @@ rates while walking are still 0.5–0.6 rad/s std against the sim's 0.1–0.3. B
    hand:** the hub goes onto the output in 90° steps, so a centre either moves by a
    multiple of 1024 counts or it did not move. A capture that differs from the old value by
    11° is the held pose, not the servo — that one (2026-09-18, `fl_pitch`) made the RL
-   walker rear and hop on the front feet until it was put back.
+   walker rear and hop on the front feet until it was put back. A replacement servo has
+   no hub history, so its capture cannot be checked that way: stand the robot and read
+   the four knee loads (`bench/leg_probe.py --range 1`); a foot that carries a quarter
+   of its diagonal partner's load is hanging, and a slow sweep of the suspect joint says
+   where the floor is. The rr foot sits 40 mm outboard of its roll axis, so a roll error
+   is first-order in foot height there: 5° lifts it 4 mm.
 4. **`python runtime/calib.py --sign all`** moves each joint 8.6° and asks a human which way
    it went — the bus cannot tell which way the fork went on. Prompts are in the robot's
    frame (+X forward, +Y left, +Z up; positive roll swings the foot left, positive pitch

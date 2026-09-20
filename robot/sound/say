@@ -1,0 +1,9 @@
+#!/bin/sh
+# say "text" — speak through the robot's speaker.
+# Output: ES8388 = card 2 on the Orange Pi 5 Pro, 3.5 mm jack → PAM8403-class amp → one
+# speaker on the amp's LEFT channel (right plays nothing). The codec is stereo-only and
+# plughw refuses mono, so ffmpeg converts and puts everything on L.
+# Level: mixer stored at max (alsactl store); espeak is ~-14 dBFS mean, so +18 dB into a limiter.
+exec espeak-ng -a 200 -s 150 --stdout "$*" \
+  | ffmpeg -v error -i - -af "volume=18dB,alimiter=limit=0.95,pan=stereo|c0=c0|c1=0*c0" -ar 48000 -f s16le - \
+  | aplay -q -D hw:2,0 -f S16_LE -r 48000 -c 2
