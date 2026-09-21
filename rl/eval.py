@@ -148,6 +148,11 @@ def parse():
                          "(firmware-trained) has to walk at 0.2 in the host-loop model.")
     ap.add_argument("--cmd", type=float, nargs=3, default=None, metavar=("VX", "VY", "YAW"),
                     help="the vanilla-MuJoCo pass's command instead of 0.4 0 0")
+    ap.add_argument("--com-offset", type=float, nargs=3, default=None, metavar=("X", "Y", "Z"),
+                    help="move the base link's centre of mass by this xyz, metres, on every "
+                         "pass. The nominal is the CAD's +10 mm and the robot on the scale "
+                         "is not there: params/domain_rand.json's com_offset_m_abs band "
+                         "is the measurement, so its midpoint is the honest score.")
     ap.add_argument("--shot", default=None, help="write one frame here")
     ap.add_argument("--mem-fraction", type=float, default=0.60)
     ap.add_argument("--json", default=None)
@@ -212,7 +217,11 @@ def main():
           f"terrain {targs['terrain']}"
           + (f", {meta['wall_clock_min']:.1f} min" if "wall_clock_min" in meta else ""))
 
-    env = Walk(terrain=targs["terrain"], n_boxes=targs["boxes"], host_loop=host)
+    env = Walk(terrain=targs["terrain"], n_boxes=targs["boxes"], host_loop=host,
+               com_offset=a.com_offset)
+    if a.com_offset is not None:
+        print(f"com         base_link centre of mass moved by "
+              f"{tuple(round(v * 1000, 1) for v in a.com_offset)} mm on every pass")
 
     # ---- the policy, deterministic
     networks = ppo_networks.make_ppo_networks(
@@ -342,7 +351,8 @@ def main():
     sim = {}
     sim_cmd = tuple(a.cmd) if a.cmd else (0.4, 0.0, 0.0)
     for name, terrain, logs in surfaces:
-        mj, notes = model_mod.build(terrain=terrain, n_boxes=0, mjx_safe=not logs)
+        mj, notes = model_mod.build(terrain=terrain, n_boxes=0, mjx_safe=not logs,
+                                    com_offset=a.com_offset)
         out = rollout_mujoco(mj, policy_jit, env, p, cmd=sim_cmd,
                              seconds=a.seconds, shot=a.shot if name == "flat" else None)
         sim[name] = out
@@ -360,7 +370,8 @@ def main():
               f"  Re-run with --seconds {BASELINE_SECONDS:g} to put them side by side.")
 
     if a.terrain_seeds:
-        mj, _ = model_mod.build(terrain=True, n_boxes=0, mjx_safe=True)
+        mj, _ = model_mod.build(terrain=True, n_boxes=0, mjx_safe=True,
+                                com_offset=a.com_offset)
         runs = [rollout_mujoco(mj, policy_jit, env, p, cmd=sim_cmd,
                                seconds=a.seconds, seed=s) for s in range(a.terrain_seeds)]
         xs = np.array([r["x_m"] for r in runs]) * 1000

@@ -210,8 +210,15 @@ def torque_ceiling(base: actuator.Params | None = None,
 # ===================================================================== build
 def build_spec(terrain: bool = False, n_boxes: int = 0, p: actuator.Params | None = None,
                impratio: float = 10.0, foot_priority: bool = True,
-               mjx_safe: bool = True, frictionloss: bool = True):
-    """The training spec. Returns (spec, notes) where notes lists every edit."""
+               mjx_safe: bool = True, frictionloss: bool = True,
+               com_offset=None):
+    """The training spec. Returns (spec, notes) where notes lists every edit.
+
+    `com_offset` moves the base link's centre of mass by an xyz in metres. It is
+    for eval.py: the CAD's inertial is the nominal, and the robot on the scale is
+    not at it (params/domain_rand.json, com_offset_m_abs). Training does not use
+    this — env/randomize.py draws the band per environment on top of the nominal.
+    """
     p = p or actuator.load(quiet=True)
     scene = os.path.join(MJCF, "scene_terrain.xml" if terrain else "scene.xml")
     spec = mujoco.MjSpec.from_file(scene)
@@ -329,6 +336,14 @@ def build_spec(terrain: bool = False, n_boxes: int = 0, p: actuator.Params | Non
     notes.append(f"imu site at {tuple(round(float(v), 4) for v in imu.pos)} m of "
                  f"base_link — read off the model, not assumed; the observation's "
                  f"accelerometer channel is measured HERE")
+
+    if com_offset is not None and np.any(np.asarray(com_offset, float) != 0.0):
+        b = spec.body("base_link")
+        before = np.array(b.ipos, float)
+        b.ipos = before + np.asarray(com_offset, float)
+        b.explicitinertial = True
+        notes.append(f"base_link centre of mass {tuple(round(float(v) * 1000, 1) for v in before)} "
+                     f"-> {tuple(round(float(v) * 1000, 1) for v in b.ipos)} mm (com_offset)")
 
     return spec, notes
 
