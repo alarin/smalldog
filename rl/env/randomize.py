@@ -71,7 +71,10 @@ def domain_randomize(sys, rng: jax.Array, ranges: dict | None = None,
     ranges = ranges or model_mod.domain_ranges()
     fr_lo, fr_hi = ranges["contact"]["friction"]["range"]
     m_lo, m_hi = ranges["body"]["mass_scale"]["range"]
-    c_lo, c_hi = ranges["body"]["com_offset_m_abs"]["range"]
+    # [lo_xyz, hi_xyz], not a scalar band: the measured error is along x only
+    # (params/domain_rand.json, the scale test), so each axis gets its own.
+    c_lo, c_hi = (jnp.asarray(v, dtype=float)
+                  for v in ranges["body"]["com_offset_m_abs"]["range"])
     p_lo, p_hi = ranges["body"]["payload_kg_abs"]["range"]
     h_lo, h_hi = ranges["terrain"]["box_height_m_abs"]["range"]
     d_lo, d_hi = ranges["terrain"]["box_density"]["range"]
@@ -130,7 +133,8 @@ def domain_randomize(sys, rng: jax.Array, ranges: dict | None = None,
         mass = mass.at[1].add(payload)
 
         # -- where the mass actually sits. The CAD knows the structure's centre
-        #    of mass; it does not know how the harness was dressed.
+        #    of mass; it does not know how the harness was dressed, and the
+        #    robot on the scale is nose-heavy by 25 mm the CAD does not show.
         ipos = sys.body_ipos.at[1].add(
             jax.random.uniform(k_c, (3,), minval=c_lo, maxval=c_hi))
 
@@ -254,6 +258,19 @@ def _selftest(n: int = 8):
 
     mass = np.asarray(sys_v.body_mass)
     check("body_mass is still batched", mass.shape == (n, env.sys.nbody))
+    # the base link's centre of mass: per-axis band, and the x band is the one
+    # measured on the scale, so it must land nose-forward of the CAD, never behind.
+    c_lo, c_hi = (np.asarray(v, dtype=float)
+                  for v in ranges["body"]["com_offset_m_abs"]["range"])
+    d_ipos = np.asarray(sys_v.body_ipos)[:, 1] - np.asarray(env.sys.body_ipos)[1]
+    check("body_ipos[base] is batched", d_ipos.shape == (n, 3))
+    check("body_ipos[base] offset spans its per-axis band and nothing wider",
+          bool(np.all(d_ipos >= c_lo - 1e-9) and np.all(d_ipos <= c_hi + 1e-9)),
+          f"x {d_ipos[:, 0].min() * 1000:.1f}..{d_ipos[:, 0].max() * 1000:.1f} mm of "
+          f"{c_lo[0] * 1000:.0f}..{c_hi[0] * 1000:.0f}")
+    check("body_ipos[base] x is ahead of the CAD on every environment",
+          bool(d_ipos[:, 0].min() > 0.0))
+    check("body_ipos[base] differs between environments", bool(d_ipos.std(axis=0).min() > 0.0))
     fr = np.asarray(sys_v.geom_friction)
     check("geom_friction is still batched", fr.shape[0] == n)
 

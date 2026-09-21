@@ -158,11 +158,11 @@
     },
     "com_offset_m_abs": {
       "range": [
-        -0.01,
-        0.01
+        [0.022, -0.01, -0.01],
+        [0.048, 0.01, 0.01]
       ],
-      "evidence": "guessed",
-      "why": "where the battery, the Pi and the harness actually end up. The CAD knows the structure's centre of mass; it does not know how the wiring was dressed."
+      "evidence": "measured",
+      "why": "where the battery, the Pi and the harness actually end up, as [lo_xyz, hi_xyz] on the base link's own centre of mass. Kitchen scale 2026-09-20, robot standing on the servos: 69 % of the weight on the front feet, i.e. the whole-robot CoM 25..40 mm ahead of the hip centre against the CAD's 10 (base_link inertial at +10, the legs cancel). The base link is 1.615 of 2.549 kg, so a shift of d on it moves the whole robot 0.634 d: +22..+48 mm here is a whole-robot CoM of 24..40 mm. Until 2026-09-21 this was +-10 mm on every axis, so no policy had ever stood on the real weight distribution - the IK trot needs stance_x 20 mm to walk at all (ros2 robot.launch), and the RL walker's nose-down drift on the floor is the same 60 g*m. y and z stay a guess: the scale cannot see them."
     },
     "payload_kg_abs": {
       "range": [
